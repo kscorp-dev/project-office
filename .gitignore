@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.js.map
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Backend
+backend/dist/
+backend/node_modules/
+
+# Web
+web/node_modules/
+web/dist/
+
+# iOS
+ios/**/*.xcworkspace
+ios/**/xcuserdata/
+ios/**/DerivedData/
+ios/**/*.xcodeproj/project.xcworkspace/
+ios/**/*.xcodeproj/xcuserdata/
+ios/**/Pods/
+ios/**/*.pbxuser
+ios/**/*.mode1v3
+ios/**/*.mode2v3
+ios/**/*.perspectivev3
+ios/**/*.moved-aside
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/app/*.iml
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
