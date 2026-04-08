@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X, ChevronDown,
-  Camera, Clock, Calendar, Newspaper,
+  Camera, Clock, Calendar, Newspaper, ClipboardList, Package,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -15,6 +15,8 @@ const navItems = [
   { to: '/attendance', icon: Clock, label: '근태관리' },
   { to: '/calendar', icon: Calendar, label: '캘린더' },
   { to: '/board', icon: Newspaper, label: '게시판' },
+  { to: '/task-orders', icon: ClipboardList, label: '작업지시서' },
+  { to: '/inventory', icon: Package, label: '자재관리' },
 ];
 
 export default function Layout() {

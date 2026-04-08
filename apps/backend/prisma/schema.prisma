@@ -79,6 +79,17 @@ model User {
   authoredComments    Comment[]            @relation("AuthoredComments")
   postReads           PostRead[]           @relation("PostReads")
 
+  // 작업지시서
+  createdTaskOrders    TaskOrder[]          @relation("CreatedTaskOrders")
+  taskAssignees        TaskAssignee[]       @relation("TaskAssignees")
+  taskStatusChanges    TaskStatusHistory[]  @relation("TaskStatusChanges")
+  taskComments         TaskComment[]        @relation("TaskComments")
+  uploadedDesignFiles  TaskDesignFile[]     @relation("UploadedDesignFiles")
+  taskFileLogs         TaskFileLog[]        @relation("TaskFileLogs")
+
+  // 자재관리
+  inventoryProcessed   InventoryTransaction[] @relation("InventoryProcessed")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -658,6 +669,341 @@ model PostAttachment {
 
   @@index([postId])
   @@map("post_attachments")
+}
+
+// ===== 작업지시서 =====
+
+enum TaskOrderStatus {
+  draft
+  instructed
+  in_progress
+  partial_complete
+  work_complete
+  billing_complete
+  final_complete
+  discarded
+}
+
+enum TaskPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum BillingType {
+  tax_invoice
+  cash_receipt
+  other
+}
+
+enum BillingStatus {
+  pending
+  billed
+  paid
+}
+
+enum FileLogAction {
+  upload
+  download
+  view
+  approve
+  reject
+}
+
+model Client {
+  id              String  @id @default(uuid())
+  companyName     String  @map("company_name")
+  businessNumber  String? @map("business_number")
+  representative  String?
+  contactPerson   String? @map("contact_person")
+  phone           String?
+  email           String?
+  address         String?
+  note            String?
+  isActive        Boolean @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  taskOrders     TaskOrder[]
+  supplierItems  InventoryItem[] @relation("SupplierItems")
+
+  @@map("clients")
+}
+
+model TaskOrder {
+  id                  String          @id @default(uuid())
+  taskNumber          String          @unique @map("task_number")
+  title               String
+  description         String?
+  creatorId           String          @map("creator_id")
+  priority            TaskPriority    @default(normal)
+  status              TaskOrderStatus @default(draft)
+  category            String?
+  instructionDate     DateTime?       @map("instruction_date")
+  dueDate             DateTime?       @map("due_date")
+  completedAt         DateTime?       @map("completed_at")
+  clientId            String?         @map("client_id")
+  deliveryAddress     Json?           @map("delivery_address")
+  additionalNote      String?         @map("additional_note")
+  approvalDocumentId  String?         @map("approval_document_id")
+  isActive            Boolean         @default(true) @map("is_active")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  creator       User                @relation("CreatedTaskOrders", fields: [creatorId], references: [id])
+  client        Client?             @relation(fields: [clientId], references: [id])
+  assignees     TaskAssignee[]
+  items         TaskItem[]
+  billing       TaskBilling?
+  statusHistory TaskStatusHistory[]
+  checklist     TaskChecklist[]
+  comments      TaskComment[]
+  designFiles   TaskDesignFile[]
+  fileLogs      TaskFileLog[]
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([clientId])
+  @@map("task_orders")
+}
+
+model TaskAssignee {
+  id     String @id @default(uuid())
+  taskId String @map("task_id")
+  userId String @map("user_id")
+  role   String @default("main") // main, support, reviewer, designer
+  status String @default("pending") // pending, accepted, completed
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User      @relation("TaskAssignees", fields: [userId], references: [id])
+
+  @@unique([taskId, userId])
+  @@map("task_assignees")
+}
+
+model TaskItem {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  itemName    String   @map("item_name")
+  description String?
+  quantity    Float    @default(1)
+  unit        String?
+  unitPrice   Float?   @map("unit_price")
+  totalPrice  Float?   @map("total_price")
+  sortOrder   Int      @default(0) @map("sort_order")
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_items")
+}
+
+model TaskBilling {
+  id               String        @id @default(uuid())
+  taskId           String        @unique @map("task_id")
+  billingRequired  Boolean       @default(true) @map("billing_required")
+  billingType      BillingType?  @map("billing_type")
+  amount           Float?
+  vatIncluded      Boolean       @default(true) @map("vat_included")
+  noBillingReason  String?       @map("no_billing_reason")
+  billingStatus    BillingStatus @default(pending) @map("billing_status")
+  billedAt         DateTime?     @map("billed_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_billings")
+}
+
+model TaskStatusHistory {
+  id         String   @id @default(uuid())
+  taskId     String   @map("task_id")
+  fromStatus String?  @map("from_status")
+  toStatus   String   @map("to_status")
+  changedBy  String   @map("changed_by")
+  comment    String?
+  changedAt  DateTime @default(now()) @map("changed_at")
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User      @relation("TaskStatusChanges", fields: [changedBy], references: [id])
+
+  @@index([taskId])
+  @@map("task_status_history")
+}
+
+model TaskChecklist {
+  id          String   @id @default(uuid())
+  taskId      String   @map("task_id")
+  content     String
+  isCompleted Boolean  @default(false) @map("is_completed")
+  completedBy String?  @map("completed_by")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_checklists")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  userId    String   @map("user_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task TaskOrder @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User      @relation("TaskComments", fields: [userId], references: [id])
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+model TaskDesignFile {
+  id             String    @id @default(uuid())
+  taskId         String    @map("task_id")
+  fileName       String    @map("file_name")
+  filePath       String    @map("file_path")
+  fileSize       BigInt    @map("file_size")
+  fileType       String    @map("file_type") // ai, psd, pdf, eps, svg
+  mimeType       String    @map("mime_type")
+  version        Int       @default(1)
+  thumbnailPath  String?   @map("thumbnail_path")
+  uploadedBy     String    @map("uploaded_by")
+  isApproved     Boolean   @default(false) @map("is_approved")
+  approvedBy     String?   @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  approveComment String?   @map("approve_comment")
+  isLatest       Boolean   @default(true) @map("is_latest")
+  parentFileId   String?   @map("parent_file_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  task       TaskOrder       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader   User            @relation("UploadedDesignFiles", fields: [uploadedBy], references: [id])
+  parentFile TaskDesignFile?  @relation("DesignFileVersions", fields: [parentFileId], references: [id])
+  versions   TaskDesignFile[] @relation("DesignFileVersions")
+  logs       TaskFileLog[]
+
+  @@index([taskId])
+  @@index([uploadedBy])
+  @@map("task_design_files")
+}
+
+model TaskFileLog {
+  id          String        @id @default(uuid())
+  taskId      String        @map("task_id")
+  fileId      String        @map("file_id")
+  userId      String        @map("user_id")
+  action      FileLogAction
+  ipAddress   String?       @map("ip_address")
+  deviceType  String?       @map("device_type")
+  deviceInfo  String?       @map("device_info")
+  fileVersion Int           @map("file_version")
+  comment     String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  task TaskOrder      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  file TaskDesignFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user User           @relation("TaskFileLogs", fields: [userId], references: [id])
+
+  @@index([taskId])
+  @@index([fileId])
+  @@index([userId])
+  @@map("task_file_logs")
+}
+
+model DeliveryPreset {
+  id            String  @id @default(uuid())
+  name          String
+  companyName   String? @map("company_name")
+  contactPerson String? @map("contact_person")
+  phone         String?
+  address       String?
+  isDefault     Boolean @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("delivery_presets")
+}
+
+// ===== 자재관리 =====
+
+enum InventoryTxType {
+  in_stock     // 입고
+  out_stock    // 출고
+  return_stock // 반품
+  adjust       // 재고 조정
+}
+
+model InventoryCategory {
+  id        String  @id @default(uuid())
+  name      String
+  parentId  String? @map("parent_id")
+  sortOrder Int     @default(0) @map("sort_order")
+  isActive  Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parent   InventoryCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children InventoryCategory[] @relation("CategoryTree")
+  items    InventoryItem[]
+
+  @@map("inventory_categories")
+}
+
+model InventoryItem {
+  id            String  @id @default(uuid())
+  code          String  @unique // 자재코드
+  name          String
+  categoryId    String? @map("category_id")
+  unit          String  @default("EA") // EA, BOX, SET, KG, M 등
+  specification String? // 규격
+  description   String?
+  minStock      Int     @default(0) @map("min_stock")
+  currentStock  Int     @default(0) @map("current_stock")
+  unitPrice     Float?  @map("unit_price")
+  location      String? // 보관위치
+  supplierId    String? @map("supplier_id")
+  imageUrl      String? @map("image_url")
+  isActive      Boolean @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  category     InventoryCategory? @relation(fields: [categoryId], references: [id])
+  supplier     Client?            @relation("SupplierItems", fields: [supplierId], references: [id])
+  transactions InventoryTransaction[]
+
+  @@index([categoryId])
+  @@index([code])
+  @@map("inventory_items")
+}
+
+model InventoryTransaction {
+  id          String          @id @default(uuid())
+  itemId      String          @map("item_id")
+  type        InventoryTxType
+  quantity    Int
+  unitPrice   Float?          @map("unit_price")
+  totalPrice  Float?          @map("total_price")
+  beforeStock Int             @map("before_stock")
+  afterStock  Int             @map("after_stock")
+  reason      String?
+  reference   String?         // 관련 문서번호 (작업지시서 등)
+  processedBy String          @map("processed_by")
+  processedAt DateTime        @default(now()) @map("processed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+  processor User          @relation("InventoryProcessed", fields: [processedBy], references: [id])
+
+  @@index([itemId])
+  @@index([type])
+  @@index([processedAt])
+  @@map("inventory_transactions")
 }
 
 // ===== 기능 모듈 관리 =====

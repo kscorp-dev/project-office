@@ -16,6 +16,8 @@ import cctvRoutes from './routes/cctv.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import calendarRoutes from './routes/calendar.routes';
 import boardRoutes from './routes/board.routes';
+import taskOrderRoutes from './routes/task-orders.routes';
+import inventoryRoutes from './routes/inventory.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -66,6 +68,8 @@ app.use('/api/cctv', cctvRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/board', boardRoutes);
+app.use('/api/task-orders', taskOrderRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 // 404 Handler
 app.use((_req, res) => {

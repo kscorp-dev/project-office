@@ -11,6 +11,8 @@ import CCTVPage from './pages/CCTV';
 import AttendancePage from './pages/Attendance';
 import CalendarPage from './pages/CalendarPage';
 import BoardPage from './pages/Board';
+import TaskOrdersPage from './pages/TaskOrders';
+import InventoryPage from './pages/Inventory';
 
 export default function App() {
   return (
@@ -36,6 +38,8 @@ export default function App() {
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/board" element={<BoardPage />} />
+          <Route path="/task-orders" element={<TaskOrdersPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />
