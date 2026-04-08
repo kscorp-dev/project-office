@@ -67,10 +67,24 @@ export default function MeetingPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [meetRes, statRes] = await Promise.all([
-        api.get('/meeting/rooms'),
-        api.get('/meeting/stats'),
+      const [meetRes] = await Promise.all([
+        api.get('/meeting'),
       ]);
+      const meetingsData = meetRes.data.data || [];
+      const statRes = {
+        data: {
+          data: {
+            scheduled: meetingsData.filter((m: any) => m.status === 'scheduled').length,
+            in_progress: meetingsData.filter((m: any) => m.status === 'in_progress').length,
+            today: meetingsData.filter((m: any) => {
+              const d = new Date(m.scheduledAt);
+              const now = new Date();
+              return d.toDateString() === now.toDateString();
+            }).length,
+            total: meetingsData.length,
+          },
+        },
+      };
       setMeetings(meetRes.data.data || []);
       setStats(statRes.data.data || { scheduled: 0, in_progress: 0, today: 0, total: 0 });
     } catch (err) {
@@ -82,7 +96,7 @@ export default function MeetingPage() {
 
   const fetchDetail = async (id: string) => {
     try {
-      const res = await api.get(`/meeting/rooms/${id}`);
+      const res = await api.get(`/meeting/${id}`);
       setSelectedMeeting(res.data.data);
     } catch (err) {
       console.error('Meeting detail error:', err);
@@ -94,7 +108,7 @@ export default function MeetingPage() {
     const form = new FormData(e.currentTarget);
     setCreating(true);
     try {
-      await api.post('/meeting/rooms', {
+      await api.post('/meeting', {
         title: form.get('title'),
         description: form.get('description') || undefined,
         scheduledAt: new Date(form.get('scheduledAt') as string).toISOString(),
@@ -112,7 +126,7 @@ export default function MeetingPage() {
 
   const handleStart = async (id: string) => {
     try {
-      await api.post(`/meeting/rooms/${id}/start`);
+      await api.post(`/meeting/${id}/start`);
       fetchDetail(id);
       fetchAll();
     } catch (err: any) {
@@ -123,7 +137,7 @@ export default function MeetingPage() {
   const handleEnd = async (id: string) => {
     if (!confirm('회의를 종료하시겠습니까?')) return;
     try {
-      await api.post(`/meeting/rooms/${id}/end`);
+      await api.post(`/meeting/${id}/end`);
       setSelectedMeeting(null);
       fetchAll();
     } catch (err: any) {
@@ -134,7 +148,7 @@ export default function MeetingPage() {
   const handleCancel = async (id: string) => {
     if (!confirm('회의를 취소하시겠습니까?')) return;
     try {
-      await api.post(`/meeting/rooms/${id}/cancel`);
+      await api.post(`/meeting/${id}/cancel`);
       setSelectedMeeting(null);
       fetchAll();
     } catch (err: any) {
@@ -144,7 +158,7 @@ export default function MeetingPage() {
 
   const handleJoin = async (meeting: Meeting) => {
     try {
-      const res = await api.post(`/meeting/rooms/${meeting.id}/join`);
+      const res = await api.post(`/meeting/${meeting.id}/join`);
       setRoomCode(res.data.data?.roomCode || meeting.id);
     } catch (err: any) {
       alert(err.response?.data?.error?.message || '입장 중 오류가 발생했습니다');

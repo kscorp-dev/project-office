@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
-import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 
@@ -14,22 +13,32 @@ router.use(checkModule('document'));
 const folderSchema = z.object({
   name: z.string().min(1).max(100),
   parentId: z.string().uuid().optional().nullable(),
+  isShared: z.boolean().optional().default(false),
 });
 
 // GET /document/folders - 폴더 목록 (내 소유 + 공유된 폴더, 트리 구조)
 router.get('/folders', authenticate, async (req: Request, res: Response) => {
   try {
+    const type = req.query.type as string | undefined;
+
+    const where: any = {};
+    if (type === 'my') {
+      where.ownerId = req.user!.id;
+    } else if (type === 'shared') {
+      where.isShared = true;
+      where.ownerId = { not: req.user!.id };
+    } else {
+      where.OR = [
+        { ownerId: req.user!.id },
+        { isShared: true },
+      ];
+    }
+
     const folders = await prisma.documentFolder.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { ownerId: req.user!.id },
-          { sharedUsers: { some: { userId: req.user!.id } } },
-        ],
-      },
+      where,
       include: {
         owner: { select: { id: true, name: true } },
-        _count: { select: { files: true, children: true } },
+        _count: { select: { documents: true, children: true } },
       },
       orderBy: [{ parentId: 'asc' }, { name: 'asc' }],
     });
@@ -58,7 +67,7 @@ router.post('/folders', authenticate, validate(folderSchema), async (req: Reques
     // parentId가 있으면 소유자 또는 공유된 폴더인지 확인
     if (req.body.parentId) {
       const parent = await prisma.documentFolder.findUnique({ where: { id: req.body.parentId } });
-      if (!parent || !parent.isActive) {
+      if (!parent) {
         res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '상위 폴더를 찾을 수 없습니다' } });
         return;
       }
@@ -72,6 +81,7 @@ router.post('/folders', authenticate, validate(folderSchema), async (req: Reques
       data: {
         name: req.body.name,
         parentId: req.body.parentId || null,
+        isShared: req.body.isShared || false,
         ownerId: req.user!.id,
       },
       include: {
@@ -89,7 +99,7 @@ router.post('/folders', authenticate, validate(folderSchema), async (req: Reques
 router.patch('/folders/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const folder = await prisma.documentFolder.findUnique({ where: { id: req.params.id } });
-    if (!folder || !folder.isActive) {
+    if (!folder) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '폴더를 찾을 수 없습니다' } });
       return;
     }
@@ -112,11 +122,11 @@ router.patch('/folders/:id', authenticate, async (req: Request, res: Response) =
   }
 });
 
-// DELETE /document/folders/:id - 폴더 삭제 (soft)
+// DELETE /document/folders/:id - 폴더 삭제 (hard delete)
 router.delete('/folders/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const folder = await prisma.documentFolder.findUnique({ where: { id: req.params.id } });
-    if (!folder || !folder.isActive) {
+    if (!folder) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '폴더를 찾을 수 없습니다' } });
       return;
     }
@@ -125,7 +135,7 @@ router.delete('/folders/:id', authenticate, async (req: Request, res: Response) 
       return;
     }
 
-    await prisma.documentFolder.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.documentFolder.delete({ where: { id: req.params.id } });
     res.json({ success: true, data: { message: '폴더가 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -158,7 +168,7 @@ router.get('/files', authenticate, async (req: Request, res: Response) => {
       OR: [
         { uploaderId: req.user!.id },
         { isShared: true },
-        { folder: { sharedUsers: { some: { userId: req.user!.id } } } },
+        { folder: { isShared: true } },
       ],
     };
 
@@ -177,20 +187,27 @@ router.get('/files', authenticate, async (req: Request, res: Response) => {
     }
 
     const [files, total] = await Promise.all([
-      prisma.documentFile.findMany({
+      prisma.document.findMany({
         where,
         include: {
-          uploader: { select: { id: true, name: true } },
+          uploader: { select: { id: true, name: true, position: true } },
           folder: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.documentFile.count({ where }),
+      prisma.document.count({ where }),
     ]);
 
-    res.json({ success: true, data: files, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
+    // BigInt → Number 변환 + uploadedAt alias
+    const serialized = files.map((f: any) => ({
+      ...f,
+      fileSize: Number(f.fileSize),
+      uploadedAt: f.createdAt,
+    }));
+
+    res.json({ success: true, data: serialized, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -199,7 +216,7 @@ router.get('/files', authenticate, async (req: Request, res: Response) => {
 // GET /document/files/:id - 파일 상세
 router.get('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.documentFile.findUnique({
+    const file = await prisma.document.findUnique({
       where: { id: req.params.id },
       include: {
         uploader: { select: { id: true, name: true, position: true } },
@@ -217,7 +234,10 @@ router.get('/files/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json({ success: true, data: file });
+    res.json({
+      success: true,
+      data: { ...file, fileSize: Number(file.fileSize), uploadedAt: file.createdAt },
+    });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -229,17 +249,17 @@ router.post('/files', authenticate, validate(fileSchema), async (req: Request, r
     // 폴더가 지정된 경우 존재 여부 확인
     if (req.body.folderId) {
       const folder = await prisma.documentFolder.findUnique({ where: { id: req.body.folderId } });
-      if (!folder || !folder.isActive) {
+      if (!folder) {
         res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '폴더를 찾을 수 없습니다' } });
         return;
       }
     }
 
-    const file = await prisma.documentFile.create({
+    const file = await prisma.document.create({
       data: {
         fileName: req.body.fileName,
         filePath: req.body.filePath,
-        fileSize: req.body.fileSize,
+        fileSize: BigInt(req.body.fileSize),
         mimeType: req.body.mimeType,
         folderId: req.body.folderId || null,
         description: req.body.description,
@@ -253,7 +273,10 @@ router.post('/files', authenticate, validate(fileSchema), async (req: Request, r
       },
     });
 
-    res.status(201).json({ success: true, data: file });
+    res.status(201).json({
+      success: true,
+      data: { ...file, fileSize: Number(file.fileSize), uploadedAt: file.createdAt },
+    });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -262,7 +285,7 @@ router.post('/files', authenticate, validate(fileSchema), async (req: Request, r
 // PATCH /document/files/:id - 파일 수정 (description, tags, isShared)
 router.patch('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.documentFile.findUnique({ where: { id: req.params.id } });
+    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
     if (!file || !file.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
       return;
@@ -272,7 +295,7 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
       return;
     }
 
-    const updated = await prisma.documentFile.update({
+    const updated = await prisma.document.update({
       where: { id: req.params.id },
       data: {
         description: req.body.description,
@@ -281,7 +304,7 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
       },
     });
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: { ...updated, fileSize: Number(updated.fileSize) } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -290,7 +313,7 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
 // DELETE /document/files/:id - 파일 비활성화 (soft delete)
 router.delete('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.documentFile.findUnique({ where: { id: req.params.id } });
+    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
     if (!file || !file.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
       return;
@@ -300,8 +323,28 @@ router.delete('/files/:id', authenticate, async (req: Request, res: Response) =>
       return;
     }
 
-    await prisma.documentFile.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.document.update({ where: { id: req.params.id }, data: { isActive: false } });
     res.json({ success: true, data: { message: '파일이 삭제되었습니다' } });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /document/files/:id/download - 다운로드 카운트 증가
+router.post('/files/:id/download', authenticate, async (req: Request, res: Response) => {
+  try {
+    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
+    if (!file || !file.isActive) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+      return;
+    }
+
+    const updated = await prisma.document.update({
+      where: { id: req.params.id },
+      data: { downloadCount: { increment: 1 } },
+    });
+
+    res.json({ success: true, data: { downloadCount: updated.downloadCount } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -309,22 +352,22 @@ router.delete('/files/:id', authenticate, async (req: Request, res: Response) =>
 
 // ===== 통계 =====
 
-// GET /document/stats/summary - 통계 (totalFiles, totalFolders, totalSize, sharedFiles)
-router.get('/stats/summary', authenticate, async (req: Request, res: Response) => {
+// GET /document/stats - 통계 (totalFiles, totalFolders, totalSize, sharedFiles)
+router.get('/stats', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
 
     const [totalFiles, totalFolders, sharedFiles, sizeResult] = await Promise.all([
-      prisma.documentFile.count({
+      prisma.document.count({
         where: { uploaderId: userId, isActive: true },
       }),
       prisma.documentFolder.count({
-        where: { ownerId: userId, isActive: true },
+        where: { ownerId: userId },
       }),
-      prisma.documentFile.count({
+      prisma.document.count({
         where: { uploaderId: userId, isActive: true, isShared: true },
       }),
-      prisma.documentFile.aggregate({
+      prisma.document.aggregate({
         where: { uploaderId: userId, isActive: true },
         _sum: { fileSize: true },
       }),
@@ -335,7 +378,7 @@ router.get('/stats/summary', authenticate, async (req: Request, res: Response) =
       data: {
         totalFiles,
         totalFolders,
-        totalSize: sizeResult._sum.fileSize || 0,
+        totalSize: Number(sizeResult._sum.fileSize || 0),
         sharedFiles,
       },
     });

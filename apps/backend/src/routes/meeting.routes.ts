@@ -227,6 +227,29 @@ router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// POST /meeting/:id/cancel - 회의 취소 (호스트만)
+router.post('/:id/cancel', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    if (!meeting) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+      return;
+    }
+    if (meeting.hostId !== req.user!.id) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트만 회의를 취소할 수 있습니다' } });
+      return;
+    }
+    if (meeting.status === 'ended' || meeting.status === 'cancelled') {
+      res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: '이미 종료되거나 취소된 회의입니다' } });
+      return;
+    }
+    await prisma.meeting.update({ where: { id: req.params.id }, data: { status: 'cancelled' } });
+    res.json({ success: true, data: { message: '회의가 취소되었습니다' } });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
 // DELETE /meeting/:id - 회의 취소 (호스트만)
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {

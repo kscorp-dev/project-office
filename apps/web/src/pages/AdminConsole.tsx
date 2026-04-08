@@ -137,7 +137,7 @@ export default function AdminConsolePage() {
 
   const fetchStats = async () => {
     try {
-      const res = await api.get('/admin/stats');
+      const res = await api.get('/admin/stats/dashboard');
       setStats(res.data.data || { totalUsers: 0, activeUsers: 0, todayLogins: 0, pendingApprovals: 0 });
     } catch (err) {
       console.error('Admin stats error:', err);
