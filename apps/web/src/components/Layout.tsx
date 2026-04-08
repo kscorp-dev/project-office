@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/auth';
 import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X, ChevronDown,
   Camera, Clock, Calendar, Newspaper, ClipboardList, Package,
+  Video, FolderOpen, Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -17,6 +18,9 @@ const navItems = [
   { to: '/board', icon: Newspaper, label: '게시판' },
   { to: '/task-orders', icon: ClipboardList, label: '작업지시서' },
   { to: '/inventory', icon: Package, label: '자재관리' },
+  { to: '/meeting', icon: Video, label: '화상회의' },
+  { to: '/documents', icon: FolderOpen, label: '문서관리' },
+  { to: '/admin', icon: Settings, label: '관리콘솔' },
 ];
 
 export default function Layout() {

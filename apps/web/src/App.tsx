@@ -13,6 +13,9 @@ import CalendarPage from './pages/CalendarPage';
 import BoardPage from './pages/Board';
 import TaskOrdersPage from './pages/TaskOrders';
 import InventoryPage from './pages/Inventory';
+import MeetingPage from './pages/Meeting';
+import DocumentsPage from './pages/Documents';
+import AdminConsolePage from './pages/AdminConsole';
 
 export default function App() {
   return (
@@ -40,6 +43,9 @@ export default function App() {
           <Route path="/board" element={<BoardPage />} />
           <Route path="/task-orders" element={<TaskOrdersPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/meeting" element={<MeetingPage />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/admin" element={<AdminConsolePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

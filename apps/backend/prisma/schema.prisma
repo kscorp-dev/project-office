@@ -90,6 +90,14 @@ model User {
   // 자재관리
   inventoryProcessed   InventoryTransaction[] @relation("InventoryProcessed")
 
+  // 화상회의
+  hostedMeetings       Meeting[]              @relation("HostedMeetings")
+  meetingParticipants  MeetingParticipant[]   @relation("MeetingParticipants")
+
+  // 문서관리
+  ownedFolders         DocumentFolder[]       @relation("OwnedFolders")
+  uploadedDocuments    Document[]             @relation("UploadedDocuments")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -1004,6 +1012,116 @@ model InventoryTransaction {
   @@index([type])
   @@index([processedAt])
   @@map("inventory_transactions")
+}
+
+// ===== 화상회의 =====
+
+enum MeetingStatus {
+  scheduled
+  in_progress
+  ended
+  cancelled
+}
+
+model Meeting {
+  id           String        @id @default(uuid())
+  title        String
+  description  String?
+  hostId       String        @map("host_id")
+  status       MeetingStatus @default(scheduled)
+  roomCode     String        @unique @map("room_code")
+  scheduledAt  DateTime?     @map("scheduled_at")
+  startedAt    DateTime?     @map("started_at")
+  endedAt      DateTime?     @map("ended_at")
+  maxParticipants Int        @default(20) @map("max_participants")
+  isRecording  Boolean       @default(false) @map("is_recording")
+  password     String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  host         User               @relation("HostedMeetings", fields: [hostId], references: [id])
+  participants MeetingParticipant[]
+
+  @@index([hostId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id        String    @id @default(uuid())
+  meetingId String    @map("meeting_id")
+  userId    String    @map("user_id")
+  role      String    @default("participant") // host, participant
+  joinedAt  DateTime? @map("joined_at")
+  leftAt    DateTime? @map("left_at")
+  isInvited Boolean   @default(true) @map("is_invited")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation("MeetingParticipants", fields: [userId], references: [id])
+
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+// ===== 문서관리 =====
+
+model DocumentFolder {
+  id        String  @id @default(uuid())
+  name      String
+  parentId  String? @map("parent_id")
+  ownerId   String  @map("owner_id")
+  isShared  Boolean @default(false) @map("is_shared")
+  sortOrder Int     @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parent    DocumentFolder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children  DocumentFolder[] @relation("FolderTree")
+  owner     User             @relation("OwnedFolders", fields: [ownerId], references: [id])
+  documents Document[]
+
+  @@index([ownerId])
+  @@index([parentId])
+  @@map("document_folders")
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  folderId    String?  @map("folder_id")
+  uploaderId  String   @map("uploader_id")
+  fileName    String   @map("file_name")
+  filePath    String   @map("file_path")
+  fileSize    BigInt   @map("file_size")
+  mimeType    String   @map("mime_type")
+  version     Int      @default(1)
+  description String?
+  tags        String[] @default([])
+  isShared    Boolean  @default(false) @map("is_shared")
+  isActive    Boolean  @default(true) @map("is_active")
+  downloadCount Int    @default(0) @map("download_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  folder   DocumentFolder? @relation(fields: [folderId], references: [id])
+  uploader User            @relation("UploadedDocuments", fields: [uploaderId], references: [id])
+
+  @@index([folderId])
+  @@index([uploaderId])
+  @@map("documents")
+}
+
+// ===== 관리콘솔 (SystemSetting) =====
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  category  String   @default("general") // general, security, notification, system
+  description String?
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
 }
 
 // ===== 기능 모듈 관리 =====
