@@ -98,7 +98,67 @@ async function main() {
     });
   }
 
+  // 모듈명 통일 (task_orders, task_order 둘 다 대응)
+  await prisma.featureModule.upsert({
+    where: { name: 'task_orders' },
+    update: {},
+    create: { name: 'task_orders', displayName: '작업지시서', sortOrder: 8 },
+  });
+
+  // 게시판 시드
+  const boards = [
+    { name: '공지사항', type: 'notice', sortOrder: 1 },
+    { name: '자유게시판', type: 'general', sortOrder: 2 },
+    { name: '질문/답변', type: 'general', sortOrder: 3 },
+  ];
+
+  for (const board of boards) {
+    await prisma.board.upsert({
+      where: { id: board.name },
+      update: {},
+      create: board,
+    });
+  }
+
+  // 테스트 사용자 추가
+  const testUsers = [
+    { employeeId: 'user01', email: 'user01@kscorp.com', name: '김철수', role: UserRole.user, position: '사원', deptCode: 'DEV' },
+    { employeeId: 'user02', email: 'user02@kscorp.com', name: '이영희', role: UserRole.user, position: '대리', deptCode: 'DESIGN' },
+    { employeeId: 'user03', email: 'user03@kscorp.com', name: '박민수', role: UserRole.dept_admin, position: '팀장', deptCode: 'PROD' },
+  ];
+
+  for (const u of testUsers) {
+    const dept = await prisma.department.findUnique({ where: { code: u.deptCode } });
+    await prisma.user.upsert({
+      where: { employeeId: u.employeeId },
+      update: {},
+      create: {
+        employeeId: u.employeeId,
+        email: u.email,
+        name: u.name,
+        password: hashedPassword,
+        role: u.role,
+        status: 'active',
+        position: u.position,
+        departmentId: dept?.id,
+      },
+    });
+  }
+
+  // 근무 스케줄
+  await prisma.workSchedule.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: { id: 'default', name: '기본 근무', startTime: '09:00', endTime: '18:00', isDefault: true },
+  });
+
   console.log('Seed completed');
+  console.log('');
+  console.log('=== 테스트 계정 ===');
+  console.log('관리자: admin / Admin@1234');
+  console.log('일반: user01 / Admin@1234 (김철수/개발팀)');
+  console.log('일반: user02 / Admin@1234 (이영희/디자인팀)');
+  console.log('팀장: user03 / Admin@1234 (박민수/생산팀)');
 }
 
 main()
