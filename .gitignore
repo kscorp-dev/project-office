@@ -31,34 +31,30 @@ uploads/
 *.log
 npm-debug.log*
 
+# Turbo
+.turbo/
+
 # Backend
-backend/dist/
-backend/node_modules/
+apps/backend/dist/
+apps/backend/node_modules/
 
 # Web
-web/node_modules/
-web/dist/
+apps/web/node_modules/
+apps/web/dist/
 
-# iOS
-ios/**/*.xcworkspace
-ios/**/xcuserdata/
-ios/**/DerivedData/
-ios/**/*.xcodeproj/project.xcworkspace/
-ios/**/*.xcodeproj/xcuserdata/
-ios/**/Pods/
-ios/**/*.pbxuser
-ios/**/*.mode1v3
-ios/**/*.mode2v3
-ios/**/*.perspectivev3
-ios/**/*.moved-aside
+# Mobile (React Native + Expo)
+apps/mobile/node_modules/
+apps/mobile/.expo/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
 
-# Android
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/*.iml
-android/app/*.iml
-android/captures/
-android/.externalNativeBuild/
-android/.cxx/
+# Shared
+packages/shared/dist/
+packages/shared/node_modules/

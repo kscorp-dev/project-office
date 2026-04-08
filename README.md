@@ -1,81 +1,49 @@
-# Project Office
+# Project Office v0.2.0
 
-사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV 모니터링
+사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV, 근태관리, 작업지시서 외 12개 모듈
 
-## 주요 기능
+## 기능 모듈 (12개)
 
-### 1. 전자결재
-- 결재 문서 작성 및 상신
-- 결재선 설정 (순차/병렬 결재)
-- 결재 승인/반려/보류
-- 결재 문서 템플릿 관리
-- 결재 이력 및 현황 조회
+| # | 모듈 | 주요 기능 | Phase |
+|---|------|----------|-------|
+| 1 | 인증/조직관리 | JWT 인증, RBAC, 조직도, 인사관리 | 1 |
+| 2 | 전자결재 | 결재선, 위임/대결, 양식관리, 문서함 | 1 |
+| 3 | 메신저 | 1:1/그룹 채팅, 읽음확인, 멘션, 파일공유 | 1 |
+| 4 | CCTV 모니터링 | RTSP→HLS 스트리밍, PTZ, 녹화 재생 | 2 |
+| 5 | 근태관리 | GPS/IP 출퇴근, 휴가, 연차 자동부여 | 2 |
+| 6 | 캘린더 | 개인/공유 일정, 결재/근태 연동 | 2 |
+| 7 | 게시판 | 공지사항, 필독, 부서별 게시판 | 2 |
+| 8 | 작업지시서 | 6단계 워크플로우, 발주/대금청구 (TOPAZ 통합) | 3 |
+| 9 | 재고관리 | 입출고, 재고실사, 통계 대시보드 | 3 |
+| 10 | 화상회의 | WebRTC SFU, STT, AI 자동 회의록 | 4 |
+| 11 | 문서관리 | 버전관리, 미리보기, 외부 공유링크 | 4 |
+| 12 | 관리자콘솔 | 모듈 ON/OFF, 보안설정, 감사로그 | 4 |
 
-### 2. 메신저
-- 1:1 / 그룹 채팅
-- 파일 첨부 및 공유
-- 읽음 확인
-- 푸시 알림
-- 채팅방 검색
+## 기술 스택
 
-### 3. CCTV 모니터링
-- 실시간 CCTV 영상 스트리밍
-- 다중 카메라 뷰
-- 녹화 영상 재생
-- 카메라 제어 (PTZ)
-- 이벤트 알림
+| 영역 | 기술 |
+|------|------|
+| Backend | Node.js 20+ / Express / TypeScript / Prisma / Socket.IO |
+| Web | React 18 / TypeScript / Vite / Zustand / Tailwind + shadcn/ui |
+| Mobile | React Native 0.76+ / Expo SDK 52+ / TypeScript / Expo Router |
+| DB | PostgreSQL 15+ / Redis 7+ |
+| 실시간 | WebSocket (Socket.IO) / WebRTC (mediasoup) |
+| 영상 | FFmpeg (RTSP→HLS) |
+| AI | Claude API (회의록) / Whisper (STT) |
 
-## 지원 플랫폼
-
-| 플랫폼 | 기술 스택 |
-|--------|----------|
-| Web (PC) | React + TypeScript |
-| iOS | Swift + SwiftUI |
-| Android | Kotlin + Jetpack Compose |
-| Backend | Node.js + Express + TypeScript |
-| Database | PostgreSQL + Redis |
-| Real-time | WebSocket (Socket.IO) |
-| Streaming | RTSP / HLS |
-
-## 프로젝트 구조
+## 프로젝트 구조 (모노레포)
 
 ```
 project-office/
-├── backend/          # API 서버 (Node.js + Express)
-│   └── src/
-│       ├── config/       # 환경 설정
-│       ├── controllers/  # 컨트롤러
-│       ├── middleware/   # 미들웨어
-│       ├── models/       # 데이터 모델
-│       ├── routes/       # 라우트
-│       ├── services/     # 비즈니스 로직
-│       ├── utils/        # 유틸리티
-│       └── websocket/    # WebSocket 핸들러
-├── web/              # 웹 프론트엔드 (React)
-│   └── src/
-│       ├── assets/       # 정적 리소스
-│       ├── components/   # 공통 컴포넌트
-│       ├── pages/        # 페이지
-│       ├── services/     # API 서비스
-│       ├── store/        # 상태 관리
-│       ├── styles/       # 스타일
-│       └── utils/        # 유틸리티
-├── ios/              # iOS 앱 (Swift + SwiftUI)
-│   └── ProjectOffice/
-│       ├── Views/        # SwiftUI 뷰
-│       ├── ViewModels/   # 뷰모델
-│       ├── Models/       # 데이터 모델
-│       ├── Services/     # 네트워크/서비스
-│       ├── Utils/        # 유틸리티
-│       └── Resources/    # 리소스
-├── android/          # Android 앱 (Kotlin + Jetpack Compose)
-│   └── app/src/main/java/com/kscorp/projectoffice/
-│       ├── ui/           # UI 컴포넌트
-│       ├── data/         # 데이터 레이어
-│       ├── domain/       # 도메인 레이어
-│       ├── di/           # 의존성 주입
-│       └── util/         # 유틸리티
-└── docs/             # 문서
+├── apps/
+│   ├── backend/          # API 서버 (Node.js + Express)
+│   ├── web/              # 웹 프론트엔드 (React + Vite)
+│   └── mobile/           # 모바일 앱 (React Native + Expo)
+├── packages/
+│   └── shared/           # 공유 코드 (Types, API, Validation, Utils)
+├── docs/                 # 기획 문서
+├── package.json          # 루트 (npm workspaces)
+└── turbo.json            # 모노레포 빌드 설정
 ```
 
 ## 시작하기
@@ -84,22 +52,28 @@ project-office/
 - Node.js 20+
 - PostgreSQL 15+
 - Redis 7+
-- Xcode 15+ (iOS 개발)
-- Android Studio (Android 개발)
+- Expo CLI (`npm install -g expo-cli`)
 
-### Backend 실행
+### 설치
 ```bash
-cd backend
-npm install
-npm run dev
+npm install          # 루트에서 전체 의존성 설치
 ```
 
-### Web 실행
+### 실행
 ```bash
-cd web
-npm install
-npm run dev
+npm run dev:backend  # API 서버 (http://localhost:3000)
+npm run dev:web      # 웹 앱 (http://localhost:5173)
+npm run dev:mobile   # 모바일 앱 (Expo)
 ```
+
+## 문서
+
+- [기술 스택 변경](docs/00-기술스택-변경.md)
+- [시스템 아키텍처](docs/01-시스템-아키텍처.md)
+- [데이터베이스 설계](docs/02-데이터베이스-설계.md)
+- [API 설계](docs/03-API-설계.md)
+- [보안 아키텍처](docs/04-보안-아키텍처.md)
+- [기능명세서](docs/기능명세/) (10개 문서)
 
 ## 라이선스
 

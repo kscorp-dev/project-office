@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Project Office",
+    "slug": "project-office",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kscorp.projectoffice",
+      "infoPlist": {
+        "NSCameraUsageDescription": "바코드 스캔 및 사진 촬영에 카메라를 사용합니다.",
+        "NSLocationWhenInUseUsageDescription": "출퇴근 GPS 인증에 위치 정보를 사용합니다.",
+        "NSFaceIDUsageDescription": "생체 인증 로그인에 Face ID를 사용합니다."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.kscorp.projectoffice",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "USE_BIOMETRIC",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-camera",
+      "expo-location",
+      "expo-notifications"
+    ],
+    "scheme": "projectoffice"
+  }
+}
