@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== 사용자 및 조직 =====
+
+enum UserRole {
+  super_admin
+  admin
+  dept_admin
+  user
+  guest
+}
+
+enum UserStatus {
+  active
+  inactive
+  locked
+  pending
+}
+
+model User {
+  id             String     @id @default(uuid())
+  employeeId     String     @unique @map("employee_id")
+  email          String     @unique
+  name           String
+  password       String
+  phone          String?
+  role           UserRole   @default(user)
+  status         UserStatus @default(pending)
+  position       String?
+  profileImage   String?    @map("profile_image")
+  departmentId   String?    @map("department_id")
+  lastLoginAt    DateTime?  @map("last_login_at")
+  loginFailCount Int        @default(0) @map("login_fail_count")
+  lockedUntil    DateTime?  @map("locked_until")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  department      Department?      @relation(fields: [departmentId], references: [id])
+  devices         UserDevice[]
+  passwordHistory PasswordHistory[]
+  refreshTokens   RefreshToken[]
+  auditLogs       AuditLog[]
+
+  // 부서 관리자 역참조
+  managedDepartments Department[] @relation("DepartmentManager")
+
+  @@index([departmentId])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Department {
+  id        String  @id @default(uuid())
+  name      String
+  code      String  @unique
+  parentId  String? @map("parent_id")
+  managerId String? @map("manager_id")
+  sortOrder Int     @default(0) @map("sort_order")
+  isActive  Boolean @default(true) @map("is_active")
+  depth     Int     @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Department?  @relation("DepartmentTree", fields: [parentId], references: [id])
+  children Department[] @relation("DepartmentTree")
+  manager  User?        @relation("DepartmentManager", fields: [managerId], references: [id])
+  users    User[]
+
+  @@index([parentId])
+  @@index([code])
+  @@map("departments")
+}
+
+model UserDevice {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  deviceId   String   @map("device_id")
+  deviceType String   @map("device_type") // web, ios, android
+  deviceName String   @map("device_name")
+  pushToken  String?  @map("push_token")
+  isActive   Boolean  @default(true) @map("is_active")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("user_devices")
+}
+
+model PasswordHistory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_history")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  family    String   // Token family for rotation detection
+  deviceId  String?  @map("device_id")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+// ===== 기능 모듈 관리 =====
+
+model FeatureModule {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  displayName String  @map("display_name")
+  description String?
+  isEnabled   Boolean @default(true) @map("is_enabled")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_modules")
+}
+
+// ===== 감사 로그 =====
+
+enum AuditAction {
+  login
+  logout
+  login_failed
+  token_refresh
+  password_change
+  user_create
+  user_update
+  user_delete
+  role_change
+  department_create
+  department_update
+  department_delete
+  module_toggle
+  settings_change
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+  critical
+}
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  userId       String?     @map("user_id")
+  action       AuditAction
+  resourceType String?     @map("resource_type")
+  resourceId   String?     @map("resource_id")
+  ipAddress    String?     @map("ip_address")
+  userAgent    String?     @map("user_agent")
+  deviceId     String?     @map("device_id")
+  details      Json?
+  result       String      @default("success") // success, failure
+  riskLevel    RiskLevel   @default(low) @map("risk_level")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([riskLevel])
+  @@map("audit_logs")
+}

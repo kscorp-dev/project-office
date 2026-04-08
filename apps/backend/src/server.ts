@@ -1,49 +1,78 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { config } from './config';
 
-dotenv.config();
+// Routes
+import authRoutes from './routes/auth.routes';
+import userRoutes from './routes/user.routes';
+import departmentRoutes from './routes/department.routes';
 
 const app = express();
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: config.corsOrigin,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security Middleware
+app.use(helmet());
+app.use(cors({
+  origin: config.corsOrigin,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400,
+}));
+
+// Global Rate Limiter
+app.use(rateLimit({
+  windowMs: config.rateLimit.api.windowMs,
+  max: config.rateLimit.api.max,
+  message: { success: false, error: { code: 'RATE_LIMITED', message: '요청이 너무 많습니다' } },
+}));
+
+// Body Parser
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '0.2.0', timestamp: new Date().toISOString() });
 });
 
-// TODO: Routes
-// app.use('/api/auth', authRoutes);
-// app.use('/api/approval', approvalRoutes);
-// app.use('/api/messenger', messengerRoutes);
-// app.use('/api/cctv', cctvRoutes);
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/departments', departmentRoutes);
+
+// 404 Handler
+app.use((_req, res) => {
+  res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '요청한 리소스를 찾을 수 없습니다' } });
+});
+
+// Error Handler
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 내부 오류가 발생했습니다' } });
+});
 
 // WebSocket
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
-
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+httpServer.listen(config.port, () => {
+  console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);
 });
 
 export { app, io };
