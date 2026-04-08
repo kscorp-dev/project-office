@@ -12,6 +12,10 @@ import userRoutes from './routes/user.routes';
 import departmentRoutes from './routes/department.routes';
 import approvalRoutes from './routes/approval.routes';
 import messengerRoutes from './routes/messenger.routes';
+import cctvRoutes from './routes/cctv.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import calendarRoutes from './routes/calendar.routes';
+import boardRoutes from './routes/board.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -58,6 +62,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/messenger', messengerRoutes);
+app.use('/api/cctv', cctvRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/calendar', calendarRoutes);
+app.use('/api/board', boardRoutes);
 
 // 404 Handler
 app.use((_req, res) => {
