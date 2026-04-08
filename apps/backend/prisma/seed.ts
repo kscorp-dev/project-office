@@ -78,6 +78,26 @@ async function main() {
     },
   });
 
+  // 결재 양식 시드
+  const templates = [
+    { name: '업무 기안', code: 'DRAFT', category: '기안', sortOrder: 1 },
+    { name: '지출 결의서', code: 'EXPENSE', category: '지출', sortOrder: 2 },
+    { name: '휴가 신청서', code: 'VACATION', category: '휴가', sortOrder: 3 },
+    { name: '출장 신청서', code: 'TRIP', category: '출장', sortOrder: 4 },
+    { name: '구매 요청서', code: 'PURCHASE', category: '구매', sortOrder: 5 },
+    { name: '업무 보고서', code: 'REPORT', category: '보고', sortOrder: 6 },
+    { name: '회의록', code: 'MINUTES', category: '회의록', sortOrder: 7 },
+    { name: '자유 양식', code: 'FREE', category: '자유양식', sortOrder: 8 },
+  ];
+
+  for (const tmpl of templates) {
+    await prisma.approvalTemplate.upsert({
+      where: { code: tmpl.code },
+      update: {},
+      create: tmpl,
+    });
+  }
+
   console.log('Seed completed');
 }
 

@@ -51,6 +51,20 @@ model User {
   // 부서 관리자 역참조
   managedDepartments Department[] @relation("DepartmentManager")
 
+  // 전자결재
+  draftedDocuments    ApprovalDocument[]   @relation("DraftedDocuments")
+  approvalLines       ApprovalLine[]       @relation("ApprovalLines")
+  approvalReferences  ApprovalReference[]  @relation("ApprovalReferences")
+  delegationsFrom     ApprovalDelegation[] @relation("DelegationsFrom")
+  delegationsTo       ApprovalDelegation[] @relation("DelegationsTo")
+
+  // 메신저
+  createdRooms        ChatRoom[]           @relation("CreatedRooms")
+  chatParticipants    ChatParticipant[]    @relation("ChatParticipants")
+  sentMessages        Message[]            @relation("SentMessages")
+  messageReads        MessageRead[]        @relation("MessageReads")
+  messageMentions     MessageMention[]     @relation("MessageMentions")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -128,6 +142,237 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+// ===== 전자결재 =====
+
+enum ApprovalDocStatus {
+  draft
+  pending
+  approved
+  rejected
+  withdrawn
+}
+
+enum ApprovalLineStatus {
+  pending
+  approved
+  rejected
+  skipped
+}
+
+enum ApprovalLineType {
+  serial
+  parallel
+}
+
+model ApprovalTemplate {
+  id          String  @id @default(uuid())
+  name        String
+  code        String  @unique
+  category    String  // 기안, 지출, 휴가, 출장, 구매, 보고, 회의록, 자유양식
+  description String?
+  formSchema  Json?   @map("form_schema") // 양식 필드 정의
+  isActive    Boolean @default(true) @map("is_active")
+  sortOrder   Int     @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  documents ApprovalDocument[]
+
+  @@map("approval_templates")
+}
+
+model ApprovalDocument {
+  id             String            @id @default(uuid())
+  docNumber      String            @unique @map("doc_number") // {양식코드}-{연도}-{순번}
+  templateId     String            @map("template_id")
+  title          String
+  content        String            // HTML 본문
+  formData       Json?             @map("form_data") // 양식 데이터
+  status         ApprovalDocStatus @default(draft)
+  drafterId      String            @map("drafter_id")
+  currentStep    Int               @default(0) @map("current_step")
+  urgency        String            @default("normal") // normal, urgent
+  submittedAt    DateTime?         @map("submitted_at")
+  completedAt    DateTime?         @map("completed_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  template    ApprovalTemplate   @relation(fields: [templateId], references: [id])
+  drafter     User               @relation("DraftedDocuments", fields: [drafterId], references: [id])
+  lines       ApprovalLine[]
+  attachments ApprovalAttachment[]
+  references  ApprovalReference[]
+
+  @@index([drafterId])
+  @@index([status])
+  @@index([templateId])
+  @@index([createdAt])
+  @@map("approval_documents")
+}
+
+model ApprovalLine {
+  id         String             @id @default(uuid())
+  documentId String             @map("document_id")
+  approverId String             @map("approver_id")
+  step       Int                // 결재 순서
+  type       ApprovalLineType   @default(serial)
+  status     ApprovalLineStatus @default(pending)
+  comment    String?
+  actedAt    DateTime?          @map("acted_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  document ApprovalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  approver User             @relation("ApprovalLines", fields: [approverId], references: [id])
+
+  @@index([documentId])
+  @@index([approverId])
+  @@index([status])
+  @@map("approval_lines")
+}
+
+model ApprovalAttachment {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  fileName   String   @map("file_name")
+  filePath   String   @map("file_path")
+  fileSize   Int      @map("file_size")
+  mimeType   String   @map("mime_type")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document ApprovalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("approval_attachments")
+}
+
+model ApprovalReference {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  userId     String   @map("user_id")
+  isRead     Boolean  @default(false) @map("is_read")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document ApprovalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User             @relation("ApprovalReferences", fields: [userId], references: [id])
+
+  @@unique([documentId, userId])
+  @@index([userId])
+  @@map("approval_references")
+}
+
+model ApprovalDelegation {
+  id          String    @id @default(uuid())
+  fromUserId  String    @map("from_user_id")
+  toUserId    String    @map("to_user_id")
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime  @map("end_date")
+  reason      String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  fromUser User @relation("DelegationsFrom", fields: [fromUserId], references: [id])
+  toUser   User @relation("DelegationsTo", fields: [toUserId], references: [id])
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("approval_delegations")
+}
+
+// ===== 메신저 =====
+
+enum MessageType {
+  text
+  image
+  file
+  system
+}
+
+model ChatRoom {
+  id        String   @id @default(uuid())
+  name      String?
+  type      String   @default("direct") // direct, group
+  creatorId String?  @map("creator_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  creator      User?             @relation("CreatedRooms", fields: [creatorId], references: [id])
+  participants ChatParticipant[]
+  messages     Message[]
+
+  @@map("chat_rooms")
+}
+
+model ChatParticipant {
+  id            String    @id @default(uuid())
+  roomId        String    @map("room_id")
+  userId        String    @map("user_id")
+  lastReadAt    DateTime  @default(now()) @map("last_read_at")
+  isNotifyOn    Boolean   @default(true) @map("is_notify_on")
+  joinedAt      DateTime  @default(now()) @map("joined_at")
+  leftAt        DateTime? @map("left_at")
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation("ChatParticipants", fields: [userId], references: [id])
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@map("chat_participants")
+}
+
+model Message {
+  id        String      @id @default(uuid())
+  roomId    String      @map("room_id")
+  senderId  String?     @map("sender_id")
+  type      MessageType @default(text)
+  content   String
+  metadata  Json?       // 파일정보, 이미지 사이즈 등
+  parentId  String?     @map("parent_id") // 답장
+  isEdited  Boolean     @default(false) @map("is_edited")
+  isDeleted Boolean     @default(false) @map("is_deleted")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  room    ChatRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender  User?        @relation("SentMessages", fields: [senderId], references: [id])
+  parent  Message?     @relation("MessageReplies", fields: [parentId], references: [id])
+  replies Message[]    @relation("MessageReplies")
+  reads   MessageRead[]
+  mentions MessageMention[]
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model MessageRead {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  readAt    DateTime @default(now()) @map("read_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation("MessageReads", fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@map("message_reads")
+}
+
+model MessageMention {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation("MessageMentions", fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+  @@map("message_mentions")
+}
+
 // ===== 기능 모듈 관리 =====
 
 model FeatureModule {
@@ -161,6 +406,10 @@ enum AuditAction {
   department_delete
   module_toggle
   settings_change
+  approval_submit
+  approval_approve
+  approval_reject
+  approval_withdraw
 }
 
 enum RiskLevel {

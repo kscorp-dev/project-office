@@ -10,6 +10,11 @@ import { config } from './config';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import departmentRoutes from './routes/department.routes';
+import approvalRoutes from './routes/approval.routes';
+import messengerRoutes from './routes/messenger.routes';
+
+// WebSocket handlers
+import { setupMessengerSocket } from './websocket/messenger';
 
 const app = express();
 const httpServer = createServer(app);
@@ -51,6 +56,8 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/approvals', approvalRoutes);
+app.use('/api/messenger', messengerRoutes);
 
 // 404 Handler
 app.use((_req, res) => {
@@ -64,12 +71,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // WebSocket
-io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
-  socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`);
-  });
-});
+setupMessengerSocket(io);
 
 httpServer.listen(config.port, () => {
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);

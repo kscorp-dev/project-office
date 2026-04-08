@@ -5,6 +5,8 @@ import LoginPage from './pages/Login';
 import RegisterPage from './pages/Register';
 import DashboardPage from './pages/Dashboard';
 import OrganizationPage from './pages/Organization';
+import ApprovalPage from './pages/Approval';
+import MessengerPage from './pages/Messenger';
 
 export default function App() {
   return (
@@ -24,24 +26,12 @@ export default function App() {
         >
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/organization" element={<OrganizationPage />} />
-          {/* Phase 1 추가 예정 */}
-          <Route path="/approval" element={<ComingSoon title="전자결재" />} />
-          <Route path="/messenger" element={<ComingSoon title="메신저" />} />
+          <Route path="/approval" element={<ApprovalPage />} />
+          <Route path="/messenger" element={<MessengerPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
-  );
-}
-
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center text-gray-400">
-        <p className="text-4xl font-bold mb-2">{title}</p>
-        <p>Phase 1에서 구현 예정</p>
-      </div>
-    </div>
   );
 }
