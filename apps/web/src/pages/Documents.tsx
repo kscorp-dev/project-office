@@ -215,7 +215,7 @@ export default function DocumentsPage() {
     new Date(dt).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
 
   const STAT_CARDS = [
-    { label: '전체 파일',  value: `${stats.totalFiles}개`,            icon: Files,     color: 'text-blue-600' },
+    { label: '전체 파일',  value: `${stats.totalFiles}개`,            icon: Files,     color: 'text-primary-600' },
     { label: '폴더 수',    value: `${stats.totalFolders}개`,           icon: Folder,    color: 'text-yellow-600' },
     { label: '사용 용량',  value: formatFileSize(stats.totalSize),     icon: HardDrive, color: 'text-purple-600' },
     { label: '공유 파일',  value: `${stats.sharedFiles}개`,            icon: Share2,    color: 'text-green-600' },
@@ -351,7 +351,7 @@ export default function DocumentsPage() {
                       <tr
                         key={doc.id}
                         onClick={() => setSelectedDoc(doc)}
-                        className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                        className="border-b last:border-0 hover:bg-primary-50/50 cursor-pointer"
                       >
                         <td className="py-3">
                           <div className="flex items-center gap-2">
@@ -431,7 +431,7 @@ export default function DocumentsPage() {
       {/* File Detail Modal */}
       {selectedDoc && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className="text-3xl">{fileIcon(selectedDoc.mimeType)}</span>
@@ -503,7 +503,7 @@ export default function DocumentsPage() {
       {/* Create Folder Modal */}
       {showCreateFolder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">폴더 생성</h3>
               <button onClick={() => setShowCreateFolder(false)} className="text-gray-400 hover:text-gray-600">
@@ -531,7 +531,7 @@ export default function DocumentsPage() {
       {/* Upload File Modal */}
       {showUploadFile && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">파일 등록</h3>
               <button onClick={() => setShowUploadFile(false)} className="text-gray-400 hover:text-gray-600">

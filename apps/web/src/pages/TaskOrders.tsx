@@ -49,7 +49,7 @@ interface Stats { sent: number; received: number; inProgress: number; overdue: n
 
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: '임시저장', color: 'bg-gray-100 text-gray-700' },
-  instructed: { text: '작업지시', color: 'bg-blue-100 text-blue-700' },
+  instructed: { text: '작업지시', color: 'bg-primary-100 text-primary-700' },
   in_progress: { text: '진행중', color: 'bg-yellow-100 text-yellow-700' },
   partial_complete: { text: '부분완료', color: 'bg-orange-100 text-orange-700' },
   work_complete: { text: '작업완료', color: 'bg-green-100 text-green-700' },
@@ -60,7 +60,7 @@ const statusLabel: Record<string, { text: string; color: string }> = {
 
 const priorityLabel: Record<string, { text: string; color: string }> = {
   low: { text: '낮음', color: 'text-gray-400' },
-  normal: { text: '보통', color: 'text-blue-500' },
+  normal: { text: '보통', color: 'text-primary-500' },
   high: { text: '높음', color: 'text-orange-500' },
   urgent: { text: '긴급', color: 'text-red-600' },
 };
@@ -294,7 +294,7 @@ export default function TaskOrdersPage() {
               </div>
               <div className="space-y-2">
                 {selectedTask.checklist.map(c => (
-                  <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                  <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-primary-50/50 p-1 rounded">
                     <input type="checkbox" checked={c.isCompleted} onChange={() => handleChecklistToggle(c.id)} className="rounded" />
                     <span className={c.isCompleted ? 'line-through text-gray-400' : ''}>{c.content}</span>
                   </label>
@@ -362,7 +362,7 @@ export default function TaskOrdersPage() {
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: '보낸 지시서', value: stats.sent, color: 'text-blue-600' },
+            { label: '보낸 지시서', value: stats.sent, color: 'text-primary-600' },
             { label: '받은 지시서', value: stats.received, color: 'text-green-600' },
             { label: '진행중', value: stats.inProgress, color: 'text-yellow-600' },
             { label: '지연', value: stats.overdue, color: 'text-red-600' },
@@ -377,14 +377,14 @@ export default function TaskOrdersPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex gap-1 bg-primary-50/50 p-1.5 rounded-2xl">
           {[
             { key: 'all', label: '전체' },
             { key: 'sent', label: '보낸 지시서' },
             { key: 'received', label: '받은 지시서' },
           ].map(b => (
             <button key={b.key} onClick={() => setBox(b.key)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${box === b.key ? 'bg-white shadow text-primary-700' : 'text-gray-500'}`}>
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${box === b.key ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}>
               {b.label}
             </button>
           ))}
@@ -427,7 +427,7 @@ export default function TaskOrdersPage() {
               const dd = getDDay(task.dueDate);
               return (
                 <tr key={task.id} onClick={() => fetchDetail(task.id)}
-                  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer">
+                  className="border-b last:border-0 hover:bg-primary-50/50 cursor-pointer">
                   <td className="py-3 font-mono text-xs text-gray-500">{task.taskNumber}</td>
                   <td className="py-3">
                     <div className="font-medium">{task.title}</div>
@@ -484,7 +484,7 @@ export default function TaskOrdersPage() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">작업지시서 작성</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>

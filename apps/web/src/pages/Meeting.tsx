@@ -43,7 +43,7 @@ interface MeetingStats {
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; pulse?: boolean }> = {
-  scheduled:   { label: '예정',    color: 'bg-blue-100 text-blue-700' },
+  scheduled:   { label: '예정',    color: 'bg-primary-100 text-primary-700' },
   in_progress: { label: '진행중',  color: 'bg-green-100 text-green-700', pulse: true },
   ended:       { label: '종료',    color: 'bg-gray-100 text-gray-500' },
   cancelled:   { label: '취소',    color: 'bg-red-100 text-red-600' },
@@ -174,7 +174,7 @@ export default function MeetingPage() {
   const isHost = (m: Meeting | MeetingDetail) => m.hostId === user?.id;
 
   const STAT_CARDS = [
-    { label: '예정된 회의',  value: stats.scheduled,   icon: CalendarDays, color: 'text-blue-600' },
+    { label: '예정된 회의',  value: stats.scheduled,   icon: CalendarDays, color: 'text-primary-600' },
     { label: '진행중',       value: stats.in_progress, icon: Play,         color: 'text-green-600' },
     { label: '오늘 예정',    value: stats.today,        icon: Clock,        color: 'text-yellow-600' },
     { label: '총 회의수',    value: stats.total,        icon: Video,        color: 'text-gray-600' },
@@ -244,7 +244,7 @@ export default function MeetingPage() {
                     <tr
                       key={m.id}
                       onClick={() => fetchDetail(m.id)}
-                      className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                      className="border-b last:border-0 hover:bg-primary-50/50 cursor-pointer"
                     >
                       <td className="py-3">
                         <div className="flex items-center gap-2">
@@ -294,10 +294,10 @@ export default function MeetingPage() {
       {/* Room Code Popup */}
       {roomCode && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-8 w-full max-w-sm text-center shadow-xl">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-sm text-center shadow-xl">
             <Video size={40} className="mx-auto text-green-500 mb-4" />
             <h3 className="text-lg font-bold mb-2">회의 입장 코드</h3>
-            <p className="text-3xl font-mono font-bold tracking-widest text-primary-700 bg-gray-100 rounded-lg py-4 mb-4">
+            <p className="text-3xl font-mono font-bold tracking-widest text-primary-700 bg-primary-50/50 rounded-2xl py-4 mb-4">
               {roomCode}
             </p>
             <p className="text-sm text-gray-500 mb-6">위 코드를 사용하여 회의에 입장하세요</p>
@@ -309,7 +309,7 @@ export default function MeetingPage() {
       {/* Meeting Detail Modal */}
       {selectedMeeting && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="text-lg font-bold">{selectedMeeting.title}</h3>
@@ -357,7 +357,7 @@ export default function MeetingPage() {
                   <p className="text-sm text-gray-400 text-center py-4">참석자 없음</p>
                 ) : (
                   selectedMeeting.participants.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-gray-50">
+                    <div key={p.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-primary-50/50">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center text-xs text-primary-700 font-semibold">
                           {p.user.name[0]}
@@ -417,7 +417,7 @@ export default function MeetingPage() {
       {/* Create Meeting Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">회의 생성</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">

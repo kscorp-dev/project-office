@@ -301,7 +301,7 @@ export default function AdminConsolePage() {
   }
 
   const STAT_CARDS = [
-    { label: '전체 사용자',   value: stats.totalUsers,       icon: Users,      color: 'text-blue-600' },
+    { label: '전체 사용자',   value: stats.totalUsers,       icon: Users,      color: 'text-primary-600' },
     { label: '활성 사용자',   value: stats.activeUsers,      icon: UserCheck,  color: 'text-green-600' },
     { label: '오늘 로그인',   value: stats.todayLogins,      icon: LogIn,      color: 'text-yellow-600' },
     { label: '대기중 결재',   value: stats.pendingApprovals, icon: FileCheck,  color: 'text-red-600' },
@@ -327,14 +327,14 @@ export default function AdminConsolePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit overflow-x-auto">
+      <div className="flex gap-1 mb-6 bg-primary-50/50 p-1.5 rounded-2xl w-fit overflow-x-auto">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === key
-                ? 'bg-white shadow text-primary-700'
+                ? 'bg-white shadow-sm text-primary-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -361,7 +361,7 @@ export default function AdminConsolePage() {
               {modules.map((mod) => (
                 <div
                   key={mod.id}
-                  className="flex items-center justify-between py-3 px-4 rounded-lg border hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between py-3 px-4 rounded-2xl border hover:bg-primary-50/50 transition-colors"
                 >
                   <div>
                     <p className="font-medium">{mod.displayName}</p>
@@ -437,7 +437,7 @@ export default function AdminConsolePage() {
                     </tr>
                   ) : (
                     users.map((u) => (
-                      <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <tr key={u.id} className="border-b last:border-0 hover:bg-primary-50/50">
                         <td className="py-3">
                           <div>
                             <p className="font-medium">{u.name}</p>
@@ -534,7 +534,7 @@ export default function AdminConsolePage() {
               </thead>
               <tbody>
                 {settings.map((s) => (
-                  <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50">
+                  <tr key={s.id} className="border-b last:border-0 hover:bg-primary-50/50">
                     <td className="py-3">
                       <p className="font-mono text-xs font-medium">{s.key}</p>
                       {s.category && (
@@ -650,7 +650,7 @@ export default function AdminConsolePage() {
                     </tr>
                   ) : (
                     logs.map((log) => (
-                      <tr key={log.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <tr key={log.id} className="border-b last:border-0 hover:bg-primary-50/50">
                         <td className="py-3">
                           <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{log.action}</span>
                         </td>

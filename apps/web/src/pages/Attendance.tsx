@@ -127,7 +127,7 @@ export default function AttendancePage() {
       </h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-6 bg-primary-50/50 rounded-2xl p-1.5 w-fit">
         {[
           { key: 'today', label: '오늘', icon: Clock },
           { key: 'monthly', label: '월별 기록', icon: Calendar },
@@ -136,8 +136,8 @@ export default function AttendancePage() {
           <button
             key={key}
             onClick={() => setTab(key as any)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === key ? 'bg-white shadow text-primary-700' : 'text-gray-500 hover:text-gray-700'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              tab === key ? 'bg-white shadow-sm text-primary-700' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             <Icon size={16} />
@@ -189,14 +189,14 @@ export default function AttendancePage() {
                   disabled={checking || !!todayStatus.checkOut}
                   className={`card py-6 text-center transition-all ${
                     todayStatus.checkOut
-                      ? 'bg-blue-50 border-blue-200'
+                      ? 'bg-primary-50 border-primary-200'
                       : 'hover:bg-primary-50 hover:border-primary-300 cursor-pointer'
                   }`}
                 >
-                  <LogOut size={32} className={`mx-auto mb-2 ${todayStatus.checkOut ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <LogOut size={32} className={`mx-auto mb-2 ${todayStatus.checkOut ? 'text-primary-600' : 'text-gray-400'}`} />
                   <p className="font-semibold text-lg">퇴근</p>
                   {todayStatus.checkOut ? (
-                    <p className="text-blue-600 font-mono mt-1">{formatTime(todayStatus.checkOut.checkTime)}</p>
+                    <p className="text-primary-600 font-mono mt-1">{formatTime(todayStatus.checkOut.checkTime)}</p>
                   ) : (
                     <p className="text-gray-400 text-sm mt-1">미체크</p>
                   )}
@@ -204,7 +204,7 @@ export default function AttendancePage() {
               </div>
 
               {todayStatus.workHours && (
-                <div className="card text-center py-4 bg-gray-50">
+                <div className="card text-center py-4 bg-primary-50/50">
                   <p className="text-gray-500 text-sm">오늘 근무 시간</p>
                   <p className="text-2xl font-bold text-primary-700 mt-1">{todayStatus.workHours}</p>
                 </div>
@@ -229,11 +229,11 @@ export default function AttendancePage() {
                     <tr><td colSpan={4} className="py-8 text-center text-gray-400">기록이 없습니다</td></tr>
                   ) : (
                     monthlyRecords.map((r) => (
-                      <tr key={r.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <tr key={r.id} className="border-b last:border-0 hover:bg-primary-50/50">
                         <td className="py-3">{formatDate(r.checkTime)}</td>
                         <td className="py-3">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            r.type === 'check_in' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                            r.type === 'check_in' ? 'bg-green-100 text-green-700' : 'bg-primary-100 text-primary-700'
                           }`}>
                             {r.type === 'check_in' ? '출근' : '퇴근'}
                           </span>
@@ -291,7 +291,7 @@ export default function AttendancePage() {
                       <tr><td colSpan={5} className="py-8 text-center text-gray-400">휴가 신청 내역이 없습니다</td></tr>
                     ) : (
                       vacations.map((v) => (
-                        <tr key={v.id} className="border-b last:border-0 hover:bg-gray-50">
+                        <tr key={v.id} className="border-b last:border-0 hover:bg-primary-50/50">
                           <td className="py-3">{vacationTypeLabel[v.type] || v.type}</td>
                           <td className="py-3">{formatDate(v.startDate)} ~ {formatDate(v.endDate)}</td>
                           <td className="py-3">{v.days}일</td>
@@ -315,7 +315,7 @@ export default function AttendancePage() {
       {/* Vacation Modal */}
       {showVacationModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md">
             <h3 className="text-lg font-bold mb-4">휴가 신청</h3>
             <form onSubmit={handleVacationSubmit} className="space-y-4">
               <div>

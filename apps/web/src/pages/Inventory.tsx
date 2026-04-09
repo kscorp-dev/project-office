@@ -51,7 +51,7 @@ interface Stats {
 const txTypeLabel: Record<string, { text: string; color: string; icon: any }> = {
   in_stock: { text: '입고', color: 'text-green-600 bg-green-50', icon: ArrowDownCircle },
   out_stock: { text: '출고', color: 'text-red-600 bg-red-50', icon: ArrowUpCircle },
-  return_stock: { text: '반품', color: 'text-blue-600 bg-blue-50', icon: RotateCcw },
+  return_stock: { text: '반품', color: 'text-primary-600 bg-primary-50', icon: RotateCcw },
   adjust: { text: '조정', color: 'text-orange-600 bg-orange-50', icon: Settings2 },
 };
 
@@ -195,17 +195,17 @@ export default function InventoryPage() {
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center py-4 bg-gray-50 rounded-lg">
+            <div className="text-center py-4 bg-primary-50/50 rounded-2xl">
               <p className="text-gray-500 text-sm">현재 재고</p>
               <p className={`text-3xl font-bold mt-1 ${selectedItem.currentStock <= selectedItem.minStock ? 'text-red-600' : 'text-gray-800'}`}>
                 {selectedItem.currentStock} <span className="text-sm font-normal text-gray-500">{selectedItem.unit}</span>
               </p>
             </div>
-            <div className="text-center py-4 bg-gray-50 rounded-lg">
+            <div className="text-center py-4 bg-primary-50/50 rounded-2xl">
               <p className="text-gray-500 text-sm">안전 재고</p>
               <p className="text-3xl font-bold mt-1">{selectedItem.minStock} <span className="text-sm font-normal text-gray-500">{selectedItem.unit}</span></p>
             </div>
-            <div className="text-center py-4 bg-gray-50 rounded-lg">
+            <div className="text-center py-4 bg-primary-50/50 rounded-2xl">
               <p className="text-gray-500 text-sm">단가</p>
               <p className="text-3xl font-bold mt-1">{selectedItem.unitPrice?.toLocaleString() || '-'}<span className="text-sm font-normal text-gray-500">원</span></p>
             </div>
@@ -264,7 +264,7 @@ export default function InventoryPage() {
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: '전체 자재', value: stats.totalItems.toString(), unit: '종', color: 'text-blue-600' },
+            { label: '전체 자재', value: stats.totalItems.toString(), unit: '종', color: 'text-primary-600' },
             { label: '부족 재고', value: stats.lowStockCount.toString(), unit: '종', color: stats.lowStockCount > 0 ? 'text-red-600' : 'text-green-600' },
             { label: '총 재고가치', value: stats.totalValue.toLocaleString(), unit: '원', color: 'text-gray-800' },
             { label: '오늘 입출고', value: stats.todayTransactions.toString(), unit: '건', color: 'text-purple-600' },
@@ -279,13 +279,13 @@ export default function InventoryPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex gap-1 bg-primary-50/50 p-1.5 rounded-2xl">
           <button onClick={() => setTab('items')}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'items' ? 'bg-white shadow text-primary-700' : 'text-gray-500'}`}>
+            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'items' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}>
             자재 목록
           </button>
           <button onClick={() => setTab('transactions')}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'transactions' ? 'bg-white shadow text-primary-700' : 'text-gray-500'}`}>
+            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'transactions' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}>
             입출고 이력
           </button>
         </div>
@@ -334,7 +334,7 @@ export default function InventoryPage() {
               ) : items.length === 0 ? (
                 <tr><td colSpan={8} className="py-12 text-center text-gray-400">자재가 없습니다</td></tr>
               ) : items.map(item => (
-                <tr key={item.id} className="border-b last:border-0 hover:bg-gray-50">
+                <tr key={item.id} className="border-b last:border-0 hover:bg-primary-50/50">
                   <td className="py-3 font-mono text-xs text-gray-500 cursor-pointer" onClick={() => fetchItemDetail(item.id)}>{item.code}</td>
                   <td className="py-3 cursor-pointer" onClick={() => fetchItemDetail(item.id)}>
                     <span className="font-medium">{item.name}</span>
@@ -380,7 +380,7 @@ export default function InventoryPage() {
               ) : transactions.map(tx => {
                 const typeInfo = txTypeLabel[tx.type];
                 return (
-                  <tr key={tx.id} className="border-b last:border-0 hover:bg-gray-50">
+                  <tr key={tx.id} className="border-b last:border-0 hover:bg-primary-50/50">
                     <td className="py-3 text-gray-500">{formatDateTime(tx.processedAt)}</td>
                     <td className="py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${typeInfo?.color}`}>{typeInfo?.text}</span>
@@ -415,7 +415,7 @@ export default function InventoryPage() {
       {/* Create Item Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">자재 등록</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -480,7 +480,7 @@ export default function InventoryPage() {
       {/* Transaction Modal */}
       {showTxModal && txItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">입출고 처리 - {txItem.name}</h3>
               <button onClick={() => { setShowTxModal(false); setTxItem(null); }} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
