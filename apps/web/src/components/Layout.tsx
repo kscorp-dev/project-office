@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { useLayoutStore, type SidebarPosition } from '../store/layout';
 import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X,
-  Camera, Clock, Calendar, Newspaper, ClipboardList, Package,
+  Camera, Clock, Calendar, Newspaper, ClipboardList, Package, Car,
   Video, FolderOpen, Settings, Leaf, ChevronDown, ChevronRight,
   PanelLeft, PanelRight, PanelTop, PanelBottom, RotateCcw, Cog, Mail,
 } from 'lucide-react';
@@ -22,6 +22,7 @@ const NAV_ITEMS: Record<string, { to: string; icon: any; label: string }> = {
   board:        { to: '/board',         icon: Newspaper,       label: '게시판' },
   'task-orders':{ to: '/task-orders',   icon: ClipboardList,   label: '작업지시서' },
   inventory:    { to: '/inventory',     icon: Package,         label: '자재관리' },
+  parking:      { to: '/parking',      icon: Car,             label: '주차관리' },
   meeting:      { to: '/meeting',       icon: Video,           label: '화상회의' },
   documents:    { to: '/documents',     icon: FolderOpen,      label: '문서관리' },
   admin:        { to: '/admin',         icon: Settings,        label: '관리콘솔' },

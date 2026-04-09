@@ -16,6 +16,7 @@ import InventoryPage from './pages/Inventory';
 import MeetingPage from './pages/Meeting';
 import MeetingRoom from './pages/MeetingRoom';
 import MailPage from './pages/Mail';
+import ParkingPage from './pages/Parking';
 import DocumentsPage from './pages/Documents';
 import AdminConsolePage from './pages/AdminConsole';
 
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/task-orders" element={<TaskOrdersPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/mail" element={<MailPage />} />
+          <Route path="/parking" element={<ParkingPage />} />
           <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/admin" element={<AdminConsolePage />} />

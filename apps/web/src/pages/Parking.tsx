@@ -1,0 +1,707 @@
+import { useState } from 'react';
+import {
+  Car, Search, Camera, MapPin, Clock, Phone, Mail,
+  ChevronRight, X, Image, AlertCircle, Check, RefreshCw,
+  ArrowRightLeft, User, FileText, Send,
+} from 'lucide-react';
+
+/* ── 타입 ── */
+type Zone = 'A' | 'B' | 'C';
+type VehicleStatus = 'parked' | 'departed';
+
+interface VehiclePhoto {
+  direction: '전면' | '후면' | '좌측' | '우측';
+  url: string;
+  timestamp: string;
+}
+
+interface ParkingRecord {
+  id: string;
+  plateNumber: string;
+  zone: Zone;
+  spot: string;            // e.g. "A-12"
+  status: VehicleStatus;
+  entryTime: string;
+  exitTime?: string;
+  driverName: string;
+  driverPhone: string;
+  driverCompany: string;
+  purpose: string;
+  destination?: string;     // 출고 시 도착지
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  entryPhotos: VehiclePhoto[];
+  exitPhotos: VehiclePhoto[];
+  notificationSent: boolean;
+}
+
+/* ── 데모 데이터 ── */
+const DEMO_RECORDS: ParkingRecord[] = [
+  {
+    id: 'p1', plateNumber: '12가 3456', zone: 'A', spot: 'A-05',
+    status: 'parked', entryTime: '2026-04-09T08:30:00',
+    driverName: '김운전', driverPhone: '010-1234-5678', driverCompany: '(주)KS코퍼레이션',
+    purpose: '자재 입고',
+    entryPhotos: [
+      { direction: '전면', url: '', timestamp: '2026-04-09T08:30:01' },
+      { direction: '후면', url: '', timestamp: '2026-04-09T08:30:02' },
+      { direction: '좌측', url: '', timestamp: '2026-04-09T08:30:03' },
+      { direction: '우측', url: '', timestamp: '2026-04-09T08:30:04' },
+    ],
+    exitPhotos: [], notificationSent: false,
+  },
+  {
+    id: 'p2', plateNumber: '34나 7890', zone: 'B', spot: 'B-12',
+    status: 'parked', entryTime: '2026-04-09T09:15:00',
+    driverName: '이배송', driverPhone: '010-9876-5432', driverCompany: '한진물류',
+    purpose: '택배 배송',
+    entryPhotos: [
+      { direction: '전면', url: '', timestamp: '2026-04-09T09:15:01' },
+      { direction: '후면', url: '', timestamp: '2026-04-09T09:15:02' },
+      { direction: '좌측', url: '', timestamp: '2026-04-09T09:15:03' },
+      { direction: '우측', url: '', timestamp: '2026-04-09T09:15:04' },
+    ],
+    exitPhotos: [], notificationSent: false,
+  },
+  {
+    id: 'p3', plateNumber: '56다 1234', zone: 'C', spot: 'C-03',
+    status: 'parked', entryTime: '2026-04-09T07:45:00',
+    driverName: '박방문', driverPhone: '010-5555-6666', driverCompany: '삼성전자',
+    purpose: '미팅 방문',
+    entryPhotos: [
+      { direction: '전면', url: '', timestamp: '2026-04-09T07:45:01' },
+      { direction: '후면', url: '', timestamp: '2026-04-09T07:45:02' },
+      { direction: '좌측', url: '', timestamp: '2026-04-09T07:45:03' },
+      { direction: '우측', url: '', timestamp: '2026-04-09T07:45:04' },
+    ],
+    exitPhotos: [], notificationSent: false,
+  },
+  {
+    id: 'p4', plateNumber: '78라 5678', zone: 'A', spot: 'A-08',
+    status: 'departed', entryTime: '2026-04-09T06:00:00', exitTime: '2026-04-09T08:00:00',
+    driverName: '정출발', driverPhone: '010-1111-2222', driverCompany: 'CJ대한통운',
+    purpose: '자재 출고', destination: '부산 공장',
+    recipientName: '홍담당', recipientEmail: 'hong@kscorp.kr', recipientPhone: '010-3333-4444',
+    entryPhotos: [
+      { direction: '전면', url: '', timestamp: '2026-04-09T06:00:01' },
+      { direction: '후면', url: '', timestamp: '2026-04-09T06:00:02' },
+      { direction: '좌측', url: '', timestamp: '2026-04-09T06:00:03' },
+      { direction: '우측', url: '', timestamp: '2026-04-09T06:00:04' },
+    ],
+    exitPhotos: [
+      { direction: '전면', url: '', timestamp: '2026-04-09T08:00:01' },
+      { direction: '후면', url: '', timestamp: '2026-04-09T08:00:02' },
+      { direction: '좌측', url: '', timestamp: '2026-04-09T08:00:03' },
+      { direction: '우측', url: '', timestamp: '2026-04-09T08:00:04' },
+    ],
+    notificationSent: true,
+  },
+];
+
+const ZONE_INFO: Record<Zone, { label: string; total: number; color: string }> = {
+  A: { label: 'A구역 (본관 앞)', total: 20, color: 'bg-blue-500' },
+  B: { label: 'B구역 (물류동)', total: 15, color: 'bg-primary-500' },
+  C: { label: 'C구역 (방문자)', total: 10, color: 'bg-yellow-500' },
+};
+
+/* ── 주차장 맵 컴포넌트 ── */
+function ParkingMap({ records }: { records: ParkingRecord[] }) {
+  const parked = records.filter(r => r.status === 'parked');
+
+  return (
+    <div className="card p-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <MapPin size={16} className="text-primary-500" /> 주차장 현황
+      </h3>
+      <div className="grid grid-cols-3 gap-3">
+        {(Object.keys(ZONE_INFO) as Zone[]).map(zone => {
+          const info = ZONE_INFO[zone];
+          const occupied = parked.filter(r => r.zone === zone).length;
+          const pct = Math.round((occupied / info.total) * 100);
+          return (
+            <div key={zone} className="border border-gray-100 rounded-2xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-3 h-3 rounded-full ${info.color}`} />
+                <span className="text-sm font-semibold text-gray-800">{info.label}</span>
+              </div>
+              {/* 주차 슬롯 시각화 */}
+              <div className="grid grid-cols-5 gap-1 mb-2">
+                {Array.from({ length: info.total }, (_, i) => {
+                  const spotId = `${zone}-${String(i + 1).padStart(2, '0')}`;
+                  const car = parked.find(r => r.spot === spotId);
+                  return (
+                    <div
+                      key={spotId}
+                      className={`aspect-[3/2] rounded text-[8px] flex items-center justify-center font-mono ${
+                        car
+                          ? `${info.color} text-white font-bold cursor-pointer hover:opacity-80`
+                          : 'bg-gray-100 text-gray-300'
+                      }`}
+                      title={car ? `${car.plateNumber} — ${car.driverName}` : `${spotId} (빈자리)`}
+                    >
+                      {car ? <Car size={10} /> : i + 1}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 통계 바 */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full ${info.color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-xs text-gray-500 font-medium">{occupied}/{info.total}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── 4면 사진 뷰어 ── */
+function PhotoGrid({ photos, label }: { photos: VehiclePhoto[]; label: string }) {
+  if (photos.length === 0) return (
+    <div className="text-center py-4 text-xs text-gray-400">
+      <Camera size={20} className="mx-auto mb-1 opacity-30" />
+      {label} 사진 없음
+    </div>
+  );
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 mb-2">{label} (4면)</p>
+      <div className="grid grid-cols-4 gap-2">
+        {photos.map(p => (
+          <div key={p.direction} className="relative">
+            <div className="aspect-[4/3] bg-gray-100 rounded-xl flex items-center justify-center">
+              <div className="text-center">
+                <Camera size={20} className="mx-auto text-gray-300 mb-1" />
+                <p className="text-[10px] text-gray-400">{p.direction}</p>
+              </div>
+            </div>
+            <span className="absolute bottom-1 right-1 text-[8px] bg-black/50 text-white px-1 rounded">
+              {new Date(p.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── 차량 상세 모달 ── */
+function VehicleDetailModal({
+  record,
+  onClose,
+  onDeparture,
+}: {
+  record: ParkingRecord;
+  onClose: () => void;
+  onDeparture: (id: string, data: Partial<ParkingRecord>) => void;
+}) {
+  const [showDepartureForm, setShowDepartureForm] = useState(false);
+  const [destination, setDestination] = useState(record.destination || '');
+  const [recipientName, setRecipientName] = useState(record.recipientName || '');
+  const [recipientEmail, setRecipientEmail] = useState(record.recipientEmail || '');
+  const [recipientPhone, setRecipientPhone] = useState(record.recipientPhone || '');
+  const [sending, setSending] = useState(false);
+
+  const formatDt = (d: string) => new Date(d).toLocaleString('ko-KR', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+
+  const duration = () => {
+    const start = new Date(record.entryTime).getTime();
+    const end = record.exitTime ? new Date(record.exitTime).getTime() : Date.now();
+    const mins = Math.round((end - start) / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  };
+
+  const handleDeparture = async () => {
+    setSending(true);
+    await new Promise(r => setTimeout(r, 1000));
+    onDeparture(record.id, {
+      status: 'departed',
+      exitTime: new Date().toISOString(),
+      destination,
+      recipientName,
+      recipientEmail,
+      recipientPhone,
+      exitPhotos: [
+        { direction: '전면', url: '', timestamp: new Date().toISOString() },
+        { direction: '후면', url: '', timestamp: new Date().toISOString() },
+        { direction: '좌측', url: '', timestamp: new Date().toISOString() },
+        { direction: '우측', url: '', timestamp: new Date().toISOString() },
+      ],
+      notificationSent: true,
+    });
+    setSending(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-3xl z-10">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm ${
+              record.status === 'parked' ? 'bg-primary-500' : 'bg-gray-400'
+            }`}>
+              <Car size={18} />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800 text-lg">{record.plateNumber}</h3>
+              <p className="text-xs text-gray-400">{record.zone}구역 {record.spot}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+              record.status === 'parked' ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {record.status === 'parked' ? '주차중' : '출차완료'}
+            </span>
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 space-y-5">
+          {/* 기본 정보 */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">운전자</p>
+                <p className="text-sm font-medium">{record.driverName}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">연락처</p>
+                <p className="text-sm">{record.driverPhone}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">소속</p>
+                <p className="text-sm">{record.driverCompany}</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">목적</p>
+                <p className="text-sm">{record.purpose}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">입차 시간</p>
+                <p className="text-sm">{formatDt(record.entryTime)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-semibold">
+                  {record.exitTime ? '출차 시간' : '주차 시간'}
+                </p>
+                <p className="text-sm">
+                  {record.exitTime ? formatDt(record.exitTime) : duration()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 입차 사진 */}
+          <PhotoGrid photos={record.entryPhotos} label="입차" />
+
+          {/* 출차 사진 */}
+          {record.exitPhotos.length > 0 && (
+            <PhotoGrid photos={record.exitPhotos} label="출차" />
+          )}
+
+          {/* 알림 상태 */}
+          {record.notificationSent && record.recipientName && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-xl text-sm text-green-700">
+              <Check size={16} />
+              <span>{record.recipientName}님에게 출고 알림 전송 완료 ({record.recipientEmail})</span>
+            </div>
+          )}
+
+          {/* 출차 처리 폼 */}
+          {record.status === 'parked' && !showDepartureForm && (
+            <button
+              onClick={() => setShowDepartureForm(true)}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <ArrowRightLeft size={16} /> 출차 처리
+            </button>
+          )}
+
+          {showDepartureForm && (
+            <div className="border-t pt-4 space-y-3">
+              <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                <Send size={14} /> 출차 처리 및 담당자 알림
+              </h4>
+              <div className="bg-blue-50 rounded-xl px-3 py-2 text-xs text-blue-700 flex items-start gap-2">
+                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>출차 시 차량 4면 사진이 자동 촬영됩니다. 도착지 담당자에게 출고 정보가 메일/문자로 전송됩니다.</span>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">도착지</label>
+                <input className="input-field" placeholder="예: 부산 공장" value={destination} onChange={e => setDestination(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">담당자 이름</label>
+                  <input className="input-field" placeholder="홍담당" value={recipientName} onChange={e => setRecipientName(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">담당자 이메일</label>
+                  <input className="input-field" placeholder="hong@kscorp.kr" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">담당자 연락처</label>
+                  <input className="input-field" placeholder="010-0000-0000" value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowDepartureForm(false)} className="btn-secondary flex-1">취소</button>
+                <button
+                  onClick={handleDeparture}
+                  disabled={sending || !destination || !recipientName}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  {sending ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                  {sending ? '처리 중...' : '출차 처리 + 알림 발송'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 입차 등록 모달 ── */
+function EntryModal({
+  onClose,
+  onRegister,
+}: {
+  onClose: () => void;
+  onRegister: (record: ParkingRecord) => void;
+}) {
+  const [plate, setPlate] = useState('');
+  const [zone, setZone] = useState<Zone>('A');
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [driverCompany, setDriverCompany] = useState('');
+  const [purpose, setPurpose] = useState('');
+  const [recognizing, setRecognizing] = useState(false);
+
+  const handleRecognize = async () => {
+    setRecognizing(true);
+    await new Promise(r => setTimeout(r, 1200));
+    // 시뮬레이션: 자동 인식된 번호판
+    setPlate(`${Math.floor(Math.random() * 90 + 10)}${['가','나','다','라','마'][Math.floor(Math.random()*5)]} ${Math.floor(Math.random() * 9000 + 1000)}`);
+    setRecognizing(false);
+  };
+
+  // 빈 자리 찾기
+  const getNextSpot = (z: Zone): string => {
+    const total = ZONE_INFO[z].total;
+    for (let i = 1; i <= total; i++) {
+      const spot = `${z}-${String(i).padStart(2, '0')}`;
+      // 실제에서는 서버에서 확인
+      return spot;
+    }
+    return `${z}-01`;
+  };
+
+  const handleSubmit = () => {
+    if (!plate || !driverName) return;
+    const spot = getNextSpot(zone);
+    const now = new Date().toISOString();
+    const record: ParkingRecord = {
+      id: `p-${Date.now()}`,
+      plateNumber: plate,
+      zone,
+      spot,
+      status: 'parked',
+      entryTime: now,
+      driverName,
+      driverPhone,
+      driverCompany,
+      purpose,
+      entryPhotos: [
+        { direction: '전면', url: '', timestamp: now },
+        { direction: '후면', url: '', timestamp: now },
+        { direction: '좌측', url: '', timestamp: now },
+        { direction: '우측', url: '', timestamp: now },
+      ],
+      exitPhotos: [],
+      notificationSent: false,
+    };
+    onRegister(record);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold text-gray-800 text-lg">입차 등록</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-4">
+          {/* 번호판 인식 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">차량번호</label>
+            <div className="flex gap-2">
+              <input className="input-field flex-1 text-lg font-bold tracking-wider" placeholder="12가 3456" value={plate} onChange={e => setPlate(e.target.value)} />
+              <button onClick={handleRecognize} disabled={recognizing} className="btn-secondary flex items-center gap-1 px-3">
+                {recognizing ? <RefreshCw size={14} className="animate-spin" /> : <Camera size={14} />}
+                {recognizing ? '인식중' : '자동인식'}
+              </button>
+            </div>
+          </div>
+
+          {/* 구역 선택 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">주차 구역</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(ZONE_INFO) as Zone[]).map(z => (
+                <button
+                  key={z}
+                  onClick={() => setZone(z)}
+                  className={`p-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                    zone === z
+                      ? 'border-primary-500 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  {ZONE_INFO[z].label.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 운전자 정보 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">운전자 이름 *</label>
+              <input className="input-field" placeholder="이름" value={driverName} onChange={e => setDriverName(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">연락처</label>
+              <input className="input-field" placeholder="010-0000-0000" value={driverPhone} onChange={e => setDriverPhone(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">소속</label>
+            <input className="input-field" placeholder="회사/부서명" value={driverCompany} onChange={e => setDriverCompany(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">방문 목적</label>
+            <input className="input-field" placeholder="자재 입고, 미팅 등" value={purpose} onChange={e => setPurpose(e.target.value)} />
+          </div>
+
+          {/* 사진 안내 */}
+          <div className="flex items-start gap-2 px-3 py-2.5 bg-primary-50 rounded-xl text-xs text-primary-700">
+            <Camera size={14} className="flex-shrink-0 mt-0.5" />
+            <span>등록 시 차량 4면 (전면/후면/좌측/우측) 사진이 자동으로 촬영 및 저장됩니다.</span>
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={!plate || !driverName}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
+            <Car size={16} /> 입차 등록
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 메인 Parking 페이지 ── */
+export default function ParkingPage() {
+  const [records, setRecords] = useState<ParkingRecord[]>(DEMO_RECORDS);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'parked' | 'departed'>('all');
+  const [selectedRecord, setSelectedRecord] = useState<ParkingRecord | null>(null);
+  const [showEntry, setShowEntry] = useState(false);
+
+  const filtered = records.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return r.plateNumber.includes(q) || r.driverName.toLowerCase().includes(q) ||
+             r.driverCompany.toLowerCase().includes(q);
+    }
+    return true;
+  }).sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime());
+
+  const parkedCount = records.filter(r => r.status === 'parked').length;
+  const todayDeparted = records.filter(r => r.status === 'departed' && r.exitTime &&
+    new Date(r.exitTime).toDateString() === new Date().toDateString()).length;
+
+  const handleRegister = (record: ParkingRecord) => {
+    setRecords(prev => [record, ...prev]);
+  };
+
+  const handleDeparture = (id: string, data: Partial<ParkingRecord>) => {
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+  };
+
+  const formatTime = (d: string) => new Date(d).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+        <Car size={24} /> 주차관리
+      </h1>
+
+      {/* 통계 카드 */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="card py-4 flex items-center gap-4">
+          <Car size={28} className="text-primary-600" />
+          <div>
+            <p className="text-xs text-gray-500">현재 주차</p>
+            <p className="text-2xl font-bold">{parkedCount}대</p>
+          </div>
+        </div>
+        {(Object.keys(ZONE_INFO) as Zone[]).map(z => {
+          const occupied = records.filter(r => r.status === 'parked' && r.zone === z).length;
+          return (
+            <div key={z} className="card py-4 flex items-center gap-4">
+              <MapPin size={28} className={z === 'A' ? 'text-blue-500' : z === 'B' ? 'text-primary-500' : 'text-yellow-500'} />
+              <div>
+                <p className="text-xs text-gray-500">{ZONE_INFO[z].label.split(' ')[0]}</p>
+                <p className="text-2xl font-bold">{occupied}<span className="text-sm text-gray-400">/{ZONE_INFO[z].total}</span></p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 주차장 맵 */}
+      <ParkingMap records={records} />
+
+      {/* 툴바 */}
+      <div className="flex items-center justify-between mt-6 mb-4">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+            <Search size={16} className="text-gray-400" />
+            <input
+              type="text"
+              className="bg-transparent text-sm outline-none w-48"
+              placeholder="차량번호, 운전자, 소속 검색..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+            {(['all', 'parked', 'departed'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filterStatus === s ? 'bg-primary-500 text-white' : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {s === 'all' ? '전체' : s === 'parked' ? '주차중' : '출차'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button onClick={() => setShowEntry(true)} className="btn-primary flex items-center gap-2">
+          <Car size={16} /> 입차 등록
+        </button>
+      </div>
+
+      {/* 차량 목록 */}
+      <div className="card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-gray-500">
+              <th className="pb-3 font-medium">차량번호</th>
+              <th className="pb-3 font-medium w-20">구역</th>
+              <th className="pb-3 font-medium w-24">운전자</th>
+              <th className="pb-3 font-medium w-28">소속</th>
+              <th className="pb-3 font-medium w-24">입차</th>
+              <th className="pb-3 font-medium w-24">출차</th>
+              <th className="pb-3 font-medium w-20 text-center">상태</th>
+              <th className="pb-3 font-medium w-16 text-center">사진</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="py-12 text-center text-gray-400">
+                  차량 기록이 없습니다
+                </td>
+              </tr>
+            ) : (
+              filtered.map(r => (
+                <tr
+                  key={r.id}
+                  onClick={() => setSelectedRecord(r)}
+                  className="border-b last:border-0 hover:bg-primary-50/50 cursor-pointer"
+                >
+                  <td className="py-3">
+                    <span className="font-bold text-gray-800 tracking-wider">{r.plateNumber}</span>
+                  </td>
+                  <td className="py-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      r.zone === 'A' ? 'bg-blue-100 text-blue-700' :
+                      r.zone === 'B' ? 'bg-primary-100 text-primary-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      <MapPin size={10} /> {r.spot}
+                    </span>
+                  </td>
+                  <td className="py-3 text-gray-700">{r.driverName}</td>
+                  <td className="py-3 text-gray-500 text-xs">{r.driverCompany}</td>
+                  <td className="py-3 text-gray-500 font-mono text-xs">
+                    {formatDate(r.entryTime)} {formatTime(r.entryTime)}
+                  </td>
+                  <td className="py-3 text-gray-500 font-mono text-xs">
+                    {r.exitTime ? `${formatDate(r.exitTime)} ${formatTime(r.exitTime)}` : '—'}
+                  </td>
+                  <td className="py-3 text-center">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      r.status === 'parked' ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {r.status === 'parked' ? '주차중' : '출차'}
+                    </span>
+                  </td>
+                  <td className="py-3 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <Image size={14} className="text-gray-400" />
+                      <span className="text-xs text-gray-400">
+                        {r.entryPhotos.length + r.exitPhotos.length}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 모달 */}
+      {selectedRecord && (
+        <VehicleDetailModal
+          record={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
+          onDeparture={handleDeparture}
+        />
+      )}
+      {showEntry && (
+        <EntryModal
+          onClose={() => setShowEntry(false)}
+          onRegister={handleRegister}
+        />
+      )}
+    </div>
+  );
+}
