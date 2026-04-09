@@ -336,4 +336,92 @@ router.get('/stats/summary', authenticate, async (_req, res: Response) => {
   }
 });
 
+// 월별 재고 추이 (선 그래프용)
+router.get('/stats/stock-trend', authenticate, async (req: Request, res: Response) => {
+  try {
+    const months = Math.min(parseInt(req.query.months as string) || 6, 12);
+    const now = new Date();
+
+    // 월 라벨 생성 (최근 N개월)
+    const labels: string[] = [];
+    const monthBounds: Date[] = []; // 각 월의 마지막 날 23:59:59
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      labels.push(`${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`);
+      // 해당 월의 마지막 시점 (다음 달 1일 00:00:00)
+      const endOfMonth = i === 0 ? now : new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+      monthBounds.push(endOfMonth);
+    }
+
+    // 활성 자재 + 현재 재고
+    const items = await prisma.inventoryItem.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, code: true, currentStock: true, unit: true },
+      orderBy: { name: 'asc' },
+    });
+
+    // 기간 내 트랜잭션 (최신순)
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+    const transactions = await prisma.inventoryTransaction.findMany({
+      where: { processedAt: { gte: startDate } },
+      select: { itemId: true, type: true, quantity: true, processedAt: true },
+      orderBy: { processedAt: 'desc' },
+    });
+
+    // 아이템별 트랜잭션 그룹화
+    const txByItem: Record<string, typeof transactions> = {};
+    for (const tx of transactions) {
+      (txByItem[tx.itemId] ??= []).push(tx);
+    }
+
+    // 각 아이템의 월별 재고 계산 (현재→과거 역산)
+    const series: { id: string; name: string; code: string; unit: string; data: number[] }[] = [];
+
+    for (const item of items) {
+      const itemTxs = txByItem[item.id] || [];
+      const data = new Array(months).fill(0);
+      let stock = item.currentStock;
+
+      // 가장 최근 월부터 역순으로 채움
+      let txIdx = 0;
+      for (let m = months - 1; m >= 0; m--) {
+        // 이 월의 경계보다 이후 트랜잭션을 역산
+        while (txIdx < itemTxs.length && itemTxs[txIdx].processedAt > monthBounds[m]) {
+          const tx = itemTxs[txIdx];
+          // 트랜잭션을 되돌림: 입고/반품이었으면 빼고, 출고였으면 더함
+          if (tx.type === 'in_stock' || tx.type === 'return_stock') {
+            stock -= tx.quantity;
+          } else if (tx.type === 'out_stock') {
+            stock += tx.quantity;
+          } else if (tx.type === 'adjust') {
+            // adjust는 정확한 역산 불가, 무시
+          }
+          txIdx++;
+        }
+        data[m] = Math.max(0, stock);
+      }
+
+      // 변동이 있었거나 현재 재고가 0이 아닌 경우만 포함
+      const hasActivity = itemTxs.length > 0 || item.currentStock > 0;
+      if (hasActivity) {
+        series.push({ id: item.id, name: item.name, code: item.code, unit: item.unit, data });
+      }
+    }
+
+    // 재고가 많은 상위 10개
+    series.sort((a, b) => {
+      const aMax = Math.max(...a.data);
+      const bMax = Math.max(...b.data);
+      return bMax - aMax;
+    });
+
+    res.json({
+      success: true,
+      data: { labels, series: series.slice(0, 10) },
+    });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
 export default router;

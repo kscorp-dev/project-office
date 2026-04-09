@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Package, Plus, Search, X, ArrowDownCircle, ArrowUpCircle, RotateCcw, Settings2,
-  AlertTriangle, ChevronLeft,
+  AlertTriangle, ChevronLeft, TrendingUp,
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -54,6 +54,163 @@ const txTypeLabel: Record<string, { text: string; color: string; icon: any }> = 
   return_stock: { text: '반품', color: 'text-primary-600 bg-primary-50', icon: RotateCcw },
   adjust: { text: '조정', color: 'text-orange-600 bg-orange-50', icon: Settings2 },
 };
+
+/* ── 월별 재고 추이 선 그래프 ── */
+const CHART_COLORS = [
+  '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4',
+  '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b',
+];
+
+interface StockTrendData {
+  labels: string[];
+  series: { id: string; name: string; code: string; unit: string; data: number[] }[];
+}
+
+function InventoryChart() {
+  const [months, setMonths] = useState(6);
+  const [chartData, setChartData] = useState<StockTrendData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [hoveredPoint, setHoveredPoint] = useState<{ sIdx: number; pIdx: number } | null>(null);
+
+  useEffect(() => {
+    const fetchChart = async () => {
+      setLoading(true);
+      try {
+        const res = await api.get(`/inventory/stats/stock-trend?months=${months}`);
+        setChartData(res.data.data);
+      } catch (err) { console.error(err); }
+      finally { setLoading(false); }
+    };
+    fetchChart();
+  }, [months]);
+
+  // 차트 영역 상수
+  const W = 600, H = 240, PAD = { top: 20, right: 20, bottom: 35, left: 50 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const maxVal = useMemo(() => {
+    if (!chartData) return 1;
+    let max = 0;
+    for (const s of chartData.series) for (const v of s.data) max = Math.max(max, v);
+    return max || 1;
+  }, [chartData]);
+
+  const toX = (i: number, count: number) => PAD.left + (count > 1 ? (i / (count - 1)) * plotW : plotW / 2);
+  const toY = (v: number) => PAD.top + plotH - (v / maxVal) * plotH;
+
+  return (
+    <div className="card p-4 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <TrendingUp size={16} className="text-primary-500" /> 월별 재고 추이
+        </h3>
+        <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+          {([6, 12] as const).map(m => (
+            <button key={m} onClick={() => setMonths(m)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                months === m ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'
+              }`}>
+              {m}개월
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-52 flex items-center justify-center text-gray-400 text-sm">로딩중...</div>
+      ) : !chartData || chartData.series.length === 0 ? (
+        <div className="h-52 flex items-center justify-center text-gray-400 text-sm">
+          <div className="text-center">
+            <TrendingUp size={32} className="mx-auto mb-2 opacity-30" />
+            <p>재고 데이터가 없습니다</p>
+            <p className="text-xs mt-1">자재를 등록하면 재고 추이가 표시됩니다</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 400 }}>
+              {/* Y축 그리드 + 라벨 */}
+              {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
+                const y = toY(maxVal * ratio);
+                return (
+                  <g key={ratio}>
+                    <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#e5e7eb" strokeDasharray={ratio === 0 ? '' : '4 4'} />
+                    <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#9ca3af">{Math.round(maxVal * ratio)}</text>
+                  </g>
+                );
+              })}
+
+              {/* X축 라벨 */}
+              {chartData.labels.map((label, i) => (
+                <g key={i}>
+                  <line x1={toX(i, chartData.labels.length)} y1={PAD.top} x2={toX(i, chartData.labels.length)} y2={PAD.top + plotH} stroke="#f3f4f6" />
+                  <text x={toX(i, chartData.labels.length)} y={H - 8} textAnchor="middle" fontSize="10" fill="#6b7280">{label}</text>
+                </g>
+              ))}
+
+              {/* 각 부품의 선 */}
+              {chartData.series.map((s, sIdx) => {
+                const color = CHART_COLORS[sIdx % CHART_COLORS.length];
+                const n = chartData.labels.length;
+                const points = s.data.map((v, i) => `${toX(i, n)},${toY(v)}`).join(' ');
+                // 영역 채우기 path
+                const areaPath = `M${toX(0, n)},${toY(s.data[0])} ` +
+                  s.data.map((v, i) => `L${toX(i, n)},${toY(v)}`).join(' ') +
+                  ` L${toX(n - 1, n)},${PAD.top + plotH} L${toX(0, n)},${PAD.top + plotH} Z`;
+
+                return (
+                  <g key={s.id}>
+                    {/* 영역 그라데이션 */}
+                    <path d={areaPath} fill={color} opacity={0.06} />
+                    {/* 선 */}
+                    <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                    {/* 점 */}
+                    {s.data.map((v, i) => {
+                      const isHovered = hoveredPoint?.sIdx === sIdx && hoveredPoint?.pIdx === i;
+                      return (
+                        <g key={i}
+                          onMouseEnter={() => setHoveredPoint({ sIdx, pIdx: i })}
+                          onMouseLeave={() => setHoveredPoint(null)}
+                        >
+                          <circle cx={toX(i, n)} cy={toY(v)} r={isHovered ? 5 : 3} fill="white" stroke={color} strokeWidth={2} className="cursor-pointer" />
+                          {isHovered && (
+                            <>
+                              <rect x={toX(i, n) - 40} y={toY(v) - 28} width={80} height={22} rx={6} fill="#1f2937" opacity={0.9} />
+                              <text x={toX(i, n)} y={toY(v) - 14} textAnchor="middle" fontSize="10" fill="white" fontWeight="600">
+                                {s.name}: {v} {s.unit}
+                              </text>
+                            </>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {/* 범례 */}
+          <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t">
+            {chartData.series.map((s, idx) => {
+              const color = CHART_COLORS[idx % CHART_COLORS.length];
+              const current = s.data[s.data.length - 1];
+              return (
+                <div key={s.id} className="flex items-center gap-1.5 text-xs">
+                  <div className="w-5 h-0.5 rounded" style={{ background: color }} />
+                  <span className="text-gray-700 font-medium">{s.name}</span>
+                  <span className="text-gray-400">({current} {s.unit})</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function InventoryPage() {
   const { user } = useAuthStore();
@@ -276,6 +433,9 @@ export default function InventoryPage() {
           ))}
         </div>
       )}
+
+      {/* 입출고 추이 차트 */}
+      <InventoryChart />
 
       {/* Tabs */}
       <div className="flex items-center gap-4 mb-4">

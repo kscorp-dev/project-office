@@ -10,14 +10,15 @@ async function main() {
     { name: 'approval', displayName: '전자결재', sortOrder: 2 },
     { name: 'messenger', displayName: '메신저', sortOrder: 3 },
     { name: 'cctv', displayName: 'CCTV 모니터링', sortOrder: 4 },
-    { name: 'attendance', displayName: '근태관리', sortOrder: 5 },
+    { name: 'attendance', displayName: '근무관리', sortOrder: 5 },
     { name: 'calendar', displayName: '캘린더', sortOrder: 6 },
     { name: 'board', displayName: '게시판', sortOrder: 7 },
     { name: 'task_order', displayName: '작업지시서', sortOrder: 8 },
     { name: 'inventory', displayName: '재고관리', sortOrder: 9 },
     { name: 'meeting', displayName: '화상회의', sortOrder: 10 },
     { name: 'document', displayName: '문서관리', sortOrder: 11 },
-    { name: 'admin', displayName: '관리자콘솔', sortOrder: 12 },
+    { name: 'parking', displayName: 'AI 주차 추적', sortOrder: 12 },
+    { name: 'admin', displayName: '관리자콘솔', sortOrder: 13 },
   ];
 
   for (const mod of modules) {

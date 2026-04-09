@@ -1,5 +1,6 @@
 """
-YOLOv8 Nano 기반 차량 감지 엔진
+YOLOv8 Small 기반 차량 감지 엔진
+Apple Silicon MPS 가속 지원
 """
 import time
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import torch
 from PIL import Image
 from ultralytics import YOLO
 
@@ -17,27 +19,37 @@ from config import (
 from zone_mapper import ZoneMapper
 
 
+def _get_device() -> str:
+    """사용 가능한 최적 디바이스 반환"""
+    if torch.backends.mps.is_available():
+        return "mps"  # Apple Silicon GPU
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
 class ParkingDetector:
     """주차장 차량 감지 + 구역 매핑"""
 
     def __init__(self, zone_config_path: Optional[str] = None):
         self.model: Optional[YOLO] = None
+        self.device = _get_device()
         self.mapper = ZoneMapper(config_path=zone_config_path)
         self._load_model()
 
     def _load_model(self):
-        """YOLOv8n 모델 로드 (없으면 자동 다운로드)"""
+        """YOLO 모델 로드 (없으면 자동 다운로드) + GPU 설정"""
         if MODEL_PATH.exists():
             self.model = YOLO(str(MODEL_PATH))
         else:
             MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
             self.model = YOLO(MODEL_NAME)
-            # 다운로드된 모델을 프로젝트 내로 복사
             import shutil
             default_path = Path(MODEL_NAME + ".pt")
             if default_path.exists():
                 shutil.move(str(default_path), str(MODEL_PATH))
-        print(f"[ParkingDetector] Model loaded: {MODEL_NAME}")
+        self.model.to(self.device)
+        print(f"[ParkingDetector] Model loaded: {MODEL_NAME} on {self.device}")
 
     def detect(
         self,
@@ -84,12 +96,13 @@ class ParkingDetector:
 
         h, w = img.shape[:2]
 
-        # YOLO 추론
+        # YOLO 추론 (GPU 가속)
         results = self.model(
             img,
             conf=conf,
             iou=IOU_THRESHOLD,
             classes=list(VEHICLE_CLASSES.keys()),
+            device=self.device,
             verbose=False,
         )
 
@@ -177,6 +190,79 @@ class ParkingDetector:
         result_path = RESULT_DIR / fname
         cv2.imwrite(str(result_path), overlay)
         return result_path
+
+    def track(
+        self,
+        frame: np.ndarray,
+        conf: float = CONFIDENCE_THRESHOLD,
+        tracker: str = "bytetrack.yaml",
+    ) -> dict:
+        """
+        프레임에서 차량 추적 (ByteTrack) — 트랙 ID 포함 결과 반환
+
+        Returns:
+            {
+                "success": True,
+                "elapsed_ms": 45.2,
+                "image_size": [w, h],
+                "total_detected": 3,
+                "zone_summary": {...},
+                "vehicles": [{ ..., "track_id": 5 }, ...],
+                "spots": [...]
+            }
+        """
+        start = time.time()
+        h, w = frame.shape[:2]
+
+        results = self.model.track(
+            frame,
+            conf=conf,
+            iou=IOU_THRESHOLD,
+            classes=list(VEHICLE_CLASSES.keys()),
+            device=self.device,
+            tracker=tracker,
+            persist=True,
+            verbose=False,
+        )
+
+        detections = []
+        boxes = results[0].boxes
+
+        for box in boxes:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            cls_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            track_id = int(box.id[0]) if box.id is not None else -1
+
+            cx = ((x1 + x2) / 2) / w
+            cy = ((y1 + y2) / 2) / h
+            bw = (x2 - x1) / w
+            bh = (y2 - y1) / h
+
+            detections.append({
+                "cx": round(cx, 4),
+                "cy": round(cy, 4),
+                "w": round(bw, 4),
+                "h": round(bh, 4),
+                "conf": round(confidence, 3),
+                "class": VEHICLE_CLASSES.get(cls_id, "unknown"),
+                "bbox_px": [int(x1), int(y1), int(x2), int(y2)],
+                "track_id": track_id,
+            })
+
+        mapping = self.mapper.map_detections(detections)
+        # track_id를 vehicles에 전파
+        for i, v in enumerate(mapping.get("vehicles", [])):
+            v["track_id"] = detections[i]["track_id"]
+
+        elapsed = round((time.time() - start) * 1000, 1)
+
+        return {
+            "success": True,
+            "elapsed_ms": elapsed,
+            "image_size": [w, h],
+            **mapping,
+        }
 
     def detect_from_bytes(self, image_bytes: bytes, **kwargs) -> dict:
         """바이트 데이터에서 감지"""

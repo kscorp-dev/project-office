@@ -18,6 +18,7 @@ import {
 /* ── localStorage 키 ── */
 const LAYOUT_KEY = 'po-dashboard-layouts';
 const HIDDEN_KEY = 'po-dashboard-hidden';
+const MINIMIZED_KEY = 'po-dashboard-minimized';
 
 /* ── 위젯 정의 ── */
 interface WidgetDef {
@@ -68,7 +69,7 @@ const quickModules = [
   { icon: Users, label: '조직도', to: '/organization', color: 'bg-teal-500' },
   { icon: Calendar, label: '캘린더', to: '/calendar', color: 'bg-lime-600' },
   { icon: Camera, label: 'CCTV', to: '/cctv', color: 'bg-slate-500' },
-  { icon: Clock, label: '근태관리', to: '/attendance', color: 'bg-amber-500' },
+  { icon: Clock, label: '근무관리', to: '/attendance', color: 'bg-amber-500' },
   { icon: Newspaper, label: '게시판', to: '/board', color: 'bg-rose-400' },
   { icon: ClipboardList, label: '작업지시서', to: '/task-orders', color: 'bg-orange-500' },
   { icon: Package, label: '자재관리', to: '/inventory', color: 'bg-cyan-600' },
@@ -300,6 +301,9 @@ export default function DashboardPage() {
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); } catch { return []; }
   });
+  const [minimizedWidgets, setMinimizedWidgets] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(MINIMIZED_KEY) || '[]'); } catch { return []; }
+  });
   const [layouts, setLayouts] = useState<Layouts>(() => {
     try {
       const saved = localStorage.getItem(LAYOUT_KEY);
@@ -323,12 +327,22 @@ export default function DashboardPage() {
     const defaults = getDefaultLayouts();
     saveLayouts(defaults);
     saveHidden([]);
+    setMinimizedWidgets([]);
+    localStorage.removeItem(MINIMIZED_KEY);
     setShowAddPanel(false);
   };
 
   const hideWidget = (id: string) => {
     saveHidden([...hiddenWidgets, id]);
   };
+
+  const toggleMinimize = useCallback((id: string) => {
+    setMinimizedWidgets(prev => {
+      const next = prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id];
+      localStorage.setItem(MINIMIZED_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const showWidget = (id: string) => {
     const newHidden = hiddenWidgets.filter(h => h !== id);
@@ -445,18 +459,38 @@ export default function DashboardPage() {
       >
         {visibleWidgets.map(w => {
           const isMemo = w.id === 'memo';
+          const isMin = minimizedWidgets.includes(w.id);
           return (
             <div
               key={w.id}
               data-grid={{
                 minW: w.minW,
-                minH: w.minH,
+                minH: isMin ? 2 : w.minH,
               }}
-              className={`${isMemo ? 'bg-primary-100/60 border-primary-200/50' : 'bg-white border-gray-100/80'} rounded-3xl shadow-sm border overflow-hidden flex flex-col ${editing ? 'ring-2 ring-primary-200/50' : ''}`}
+              className={`${isMemo ? 'bg-primary-100/60 border-primary-200/50' : 'bg-white border-gray-100/80'} rounded-3xl shadow-sm border overflow-hidden flex flex-col group/widget ${editing ? 'ring-2 ring-primary-200/50' : ''}`}
             >
               {/* 위젯 헤더 */}
               <div className={`flex items-center justify-between px-4 pt-3 pb-1 ${editing ? 'widget-drag-handle cursor-grab active:cursor-grabbing' : ''}`}>
                 <div className="flex items-center gap-2">
+                  {/* 트래픽 라이트 버튼 */}
+                  <div className="flex items-center gap-1.5 opacity-0 group-hover/widget:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => hideWidget(w.id)}
+                      className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-500 transition-colors flex items-center justify-center group/btn"
+                      title="닫기"
+                    >
+                      <X size={7} className="text-red-800 opacity-0 group-hover/btn:opacity-100" />
+                    </button>
+                    <button
+                      onClick={() => toggleMinimize(w.id)}
+                      className={`w-3 h-3 rounded-full ${isMin ? 'bg-green-400 hover:bg-green-500' : 'bg-yellow-400 hover:bg-yellow-500'} transition-colors flex items-center justify-center group/btn`}
+                      title={isMin ? '펼치기' : '접기'}
+                    >
+                      <span className={`text-[7px] font-bold opacity-0 group-hover/btn:opacity-100 ${isMin ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {isMin ? '＋' : '−'}
+                      </span>
+                    </button>
+                  </div>
                   {editing && <GripVertical size={14} className="text-gray-300" />}
                   <w.icon size={14} className={w.iconColor} />
                   <h3 className="font-semibold text-sm text-gray-800">{w.title}</h3>
@@ -467,26 +501,23 @@ export default function DashboardPage() {
                       더보기 <ArrowRight size={12} />
                     </button>
                   )}
-                  {editing && (
-                    <button onClick={() => hideWidget(w.id)} className="p-1 hover:bg-red-50 rounded-lg transition-colors" title="위젯 숨기기">
-                      <X size={14} className="text-gray-400 hover:text-red-500" />
-                    </button>
-                  )}
                 </div>
               </div>
               {/* 위젯 콘텐츠 */}
-              <div className={`flex-1 overflow-auto px-4 pb-4 ${isMemo ? 'pt-1' : 'pt-2'}`}>
-                <WidgetContent
-                  id={w.id}
-                  navigate={navigate}
-                  user={user}
-                  now={now}
-                  memo={memo}
-                  setMemo={setMemo}
-                  checkedIn={checkedIn}
-                  setCheckedIn={setCheckedIn}
-                />
-              </div>
+              {!isMin && (
+                <div className={`flex-1 overflow-auto px-4 pb-4 ${isMemo ? 'pt-1' : 'pt-2'}`}>
+                  <WidgetContent
+                    id={w.id}
+                    navigate={navigate}
+                    user={user}
+                    now={now}
+                    memo={memo}
+                    setMemo={setMemo}
+                    checkedIn={checkedIn}
+                    setCheckedIn={setCheckedIn}
+                  />
+                </div>
+              )}
             </div>
           );
         })}

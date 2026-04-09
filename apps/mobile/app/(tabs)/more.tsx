@@ -8,7 +8,7 @@ const MENU_SECTIONS = [
     title: '업무 관리',
     items: [
       { key: 'organization', label: '조직도',       emoji: '👥' },
-      { key: 'attendance',   label: '근태관리',     emoji: '⏰' },
+      { key: 'attendance',   label: '근무관리',     emoji: '⏰' },
       { key: 'calendar',     label: '캘린더',       emoji: '📅' },
       { key: 'board',        label: '게시판',       emoji: '📰' },
     ],

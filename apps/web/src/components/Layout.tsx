@@ -6,8 +6,9 @@ import {
   Camera, Clock, Calendar, Newspaper, ClipboardList, Package, Car,
   Video, FolderOpen, Settings, Leaf, ChevronDown, ChevronRight,
   PanelLeft, PanelRight, PanelTop, PanelBottom, RotateCcw, Cog, Mail,
+  GripVertical, Eye, EyeOff,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 /* ── 네비게이션 아이템 정의 ── */
 const NAV_ITEMS: Record<string, { to: string; icon: any; label: string }> = {
@@ -17,7 +18,7 @@ const NAV_ITEMS: Record<string, { to: string; icon: any; label: string }> = {
   messenger:    { to: '/messenger',     icon: MessageSquare,   label: '메신저' },
   organization: { to: '/organization',  icon: Users,           label: '조직도' },
   cctv:         { to: '/cctv',          icon: Camera,          label: 'CCTV' },
-  attendance:   { to: '/attendance',    icon: Clock,           label: '근태관리' },
+  attendance:   { to: '/attendance',    icon: Clock,           label: '근무관리' },
   calendar:     { to: '/calendar',      icon: Calendar,        label: '캘린더' },
   board:        { to: '/board',         icon: Newspaper,       label: '게시판' },
   'task-orders':{ to: '/task-orders',   icon: ClipboardList,   label: '작업지시서' },
@@ -37,12 +38,15 @@ const POSITION_OPTIONS: { value: SidebarPosition; icon: any; label: string }[] =
 
 /* ── 사이드바 네비게이션 (세로 모드) ── */
 function VerticalNav({ compact }: { compact: boolean }) {
-  const { navGroups, toggleGroup } = useLayoutStore();
+  const { navGroups, hiddenItems, toggleGroup } = useLayoutStore();
 
   return (
     <nav className="flex-1 py-2 overflow-y-auto">
       {navGroups.map(group => {
-        const items = group.children.map(key => NAV_ITEMS[key]).filter(Boolean);
+        const items = group.children
+          .filter(key => !hiddenItems.includes(key))
+          .map(key => NAV_ITEMS[key])
+          .filter(Boolean);
         if (items.length === 0) return null;
         return (
           <div key={group.id} className="mb-1">
@@ -80,12 +84,15 @@ function VerticalNav({ compact }: { compact: boolean }) {
 
 /* ── 상/하단 바 네비게이션 (가로 모드) ── */
 function HorizontalNav() {
-  const { navGroups, toggleGroup } = useLayoutStore();
+  const { navGroups, hiddenItems, toggleGroup } = useLayoutStore();
 
   return (
     <nav className="flex items-center gap-1 px-4 py-1 overflow-x-auto flex-1">
       {navGroups.map(group => {
-        const items = group.children.map(key => NAV_ITEMS[key]).filter(Boolean);
+        const items = group.children
+          .filter(key => !hiddenItems.includes(key))
+          .map(key => NAV_ITEMS[key])
+          .filter(Boolean);
         if (items.length === 0) return null;
         return (
           <div key={group.id} className="flex items-center gap-0.5 relative group/g">
@@ -120,43 +127,166 @@ function HorizontalNav() {
   );
 }
 
+/* ── 드래그 가능한 메뉴 아이템 ── */
+function DraggableMenuItem({
+  itemKey, groupId, index, isHidden, onToggleVisibility,
+}: {
+  itemKey: string; groupId: string; index: number; isHidden: boolean;
+  onToggleVisibility: (key: string) => void;
+}) {
+  const { moveItem, moveItemBetweenGroups } = useLayoutStore();
+  const navItem = NAV_ITEMS[itemKey];
+  if (!navItem) return null;
+
+  const Icon = navItem.icon;
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ key: itemKey, groupId, index }));
+    e.dataTransfer.effectAllowed = 'move';
+    (e.currentTarget as HTMLElement).style.opacity = '0.4';
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).style.opacity = '1';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    (e.currentTarget as HTMLElement).classList.add('border-t-2', 'border-primary-400');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).classList.remove('border-t-2', 'border-primary-400');
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).classList.remove('border-t-2', 'border-primary-400');
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data.groupId === groupId) {
+        moveItem(groupId, data.index, index);
+      } else {
+        moveItemBetweenGroups(data.groupId, groupId, data.key, index);
+      }
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
+        isHidden ? 'opacity-40' : 'hover:bg-gray-50'
+      }`}
+    >
+      <GripVertical size={12} className="text-gray-300 flex-shrink-0" />
+      <Icon size={14} className="text-gray-500 flex-shrink-0" />
+      <span className={`text-xs flex-1 truncate ${isHidden ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+        {navItem.label}
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleVisibility(itemKey); }}
+        className={`p-0.5 rounded transition-colors flex-shrink-0 ${
+          isHidden ? 'text-gray-300 hover:text-gray-500' : 'text-gray-400 hover:text-primary-500'
+        }`}
+        title={isHidden ? '메뉴 표시' : '메뉴 숨김'}
+      >
+        {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+      </button>
+    </div>
+  );
+}
+
 /* ── 설정 패널 ── */
 function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { sidebarPosition, setSidebarPosition, resetLayout } = useLayoutStore();
+  const { sidebarPosition, setSidebarPosition, navGroups, hiddenItems, toggleItemVisibility, resetLayout } = useLayoutStore();
+  const [tab, setTab] = useState<'position' | 'menu'>('menu');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl p-6 w-80" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-white rounded-3xl shadow-2xl p-6 w-96 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-gray-800">레이아웃 설정</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
         </div>
 
-        {/* 메뉴 위치 */}
-        <div className="mb-5">
-          <p className="text-xs font-medium text-gray-500 mb-2">메뉴 위치</p>
-          <div className="grid grid-cols-4 gap-2">
-            {POSITION_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setSidebarPosition(opt.value)}
-                className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition-all text-xs ${
-                  sidebarPosition === opt.value
-                    ? 'border-primary-500 bg-primary-50 text-primary-700'
-                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                <opt.icon size={18} />
-                <span>{opt.label}</span>
-              </button>
+        {/* 탭 */}
+        <div className="flex gap-1 mb-4 bg-gray-100 p-0.5 rounded-lg">
+          <button
+            onClick={() => setTab('menu')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              tab === 'menu' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'
+            }`}
+          >
+            메뉴 관리
+          </button>
+          <button
+            onClick={() => setTab('position')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              tab === 'position' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'
+            }`}
+          >
+            메뉴 위치
+          </button>
+        </div>
+
+        {/* 메뉴 관리 탭 */}
+        {tab === 'menu' && (
+          <div className="flex-1 overflow-y-auto min-h-0 -mx-1 px-1">
+            <p className="text-[10px] text-gray-400 mb-3">드래그하여 순서 변경, 눈 아이콘으로 표시/숨김</p>
+            {navGroups.map(group => (
+              <div key={group.id} className="mb-3">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1 px-1">{group.label}</p>
+                <div className="space-y-0.5 bg-gray-50/50 rounded-xl p-1.5">
+                  {group.children.map((key, idx) => (
+                    <DraggableMenuItem
+                      key={key}
+                      itemKey={key}
+                      groupId={group.id}
+                      index={idx}
+                      isHidden={hiddenItems.includes(key)}
+                      onToggleVisibility={toggleItemVisibility}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-        </div>
+        )}
+
+        {/* 메뉴 위치 탭 */}
+        {tab === 'position' && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2">메뉴 위치</p>
+            <div className="grid grid-cols-4 gap-2">
+              {POSITION_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSidebarPosition(opt.value)}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 transition-all text-xs ${
+                    sidebarPosition === opt.value
+                      ? 'border-primary-500 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <opt.icon size={18} />
+                  <span>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 초기화 */}
         <button
           onClick={() => { resetLayout(); onClose(); }}
-          className="flex items-center justify-center gap-2 w-full py-2.5 text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+          className="flex items-center justify-center gap-2 w-full py-2.5 mt-4 text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors flex-shrink-0"
         >
           <RotateCcw size={14} />
           기본 설정으로 초기화

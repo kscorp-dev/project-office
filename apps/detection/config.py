@@ -7,10 +7,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 
 # YOLO 모델 설정
-MODEL_PATH = BASE_DIR / "models" / "yolov8n.pt"
-MODEL_NAME = "yolov8n"  # YOLOv8 Nano
-CONFIDENCE_THRESHOLD = 0.35
-IOU_THRESHOLD = 0.45
+MODEL_PATH = BASE_DIR / "models" / "yolov8s.pt"
+MODEL_NAME = "yolov8s"  # YOLOv8 Small (더 높은 정확도)
+CONFIDENCE_THRESHOLD = 0.15  # 낮춰서 원거리/고속 차량도 감지
+IOU_THRESHOLD = 0.5
 
 # 차량 클래스 (COCO dataset)
 VEHICLE_CLASSES = {
@@ -18,6 +18,7 @@ VEHICLE_CLASSES = {
     3: "motorcycle",
     5: "bus",
     7: "truck",
+    1: "bicycle",
 }
 
 # 서버 설정

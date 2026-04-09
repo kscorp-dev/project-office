@@ -13,12 +13,16 @@ interface LayoutState {
   sidebarPosition: SidebarPosition;
   sidebarOpen: boolean;
   navGroups: NavGroup[];
+  hiddenItems: string[];   // 숨김 처리된 메뉴 키
 
   setSidebarPosition: (pos: SidebarPosition) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setNavGroups: (groups: NavGroup[]) => void;
   toggleGroup: (id: string) => void;
+  toggleItemVisibility: (key: string) => void;
+  moveItem: (groupId: string, fromIdx: number, toIdx: number) => void;
+  moveItemBetweenGroups: (fromGroupId: string, toGroupId: string, itemKey: string, toIdx: number) => void;
   resetLayout: () => void;
 }
 
@@ -39,11 +43,12 @@ function loadSettings() {
   return null;
 }
 
-function saveSettings(state: Pick<LayoutState, 'sidebarPosition' | 'sidebarOpen' | 'navGroups'>) {
+function saveSettings(state: Pick<LayoutState, 'sidebarPosition' | 'sidebarOpen' | 'navGroups' | 'hiddenItems'>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     sidebarPosition: state.sidebarPosition,
     sidebarOpen: state.sidebarOpen,
     navGroups: state.navGroups,
+    hiddenItems: state.hiddenItems,
   }));
 }
 
@@ -53,6 +58,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
     sidebarPosition: saved?.sidebarPosition ?? 'left',
     sidebarOpen: saved?.sidebarOpen ?? true,
     navGroups: saved?.navGroups ?? DEFAULT_GROUPS,
+    hiddenItems: saved?.hiddenItems ?? [],
 
     setSidebarPosition: (pos) => {
       set({ sidebarPosition: pos });
@@ -83,8 +89,43 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       saveSettings({ ...get(), navGroups: groups });
     },
 
+    toggleItemVisibility: (key) => {
+      const hidden = get().hiddenItems;
+      const next = hidden.includes(key) ? hidden.filter(k => k !== key) : [...hidden, key];
+      set({ hiddenItems: next });
+      saveSettings({ ...get(), hiddenItems: next });
+    },
+
+    moveItem: (groupId, fromIdx, toIdx) => {
+      const groups = get().navGroups.map(g => {
+        if (g.id !== groupId) return g;
+        const children = [...g.children];
+        const [item] = children.splice(fromIdx, 1);
+        children.splice(toIdx, 0, item);
+        return { ...g, children };
+      });
+      set({ navGroups: groups });
+      saveSettings({ ...get(), navGroups: groups });
+    },
+
+    moveItemBetweenGroups: (fromGroupId, toGroupId, itemKey, toIdx) => {
+      const groups = get().navGroups.map(g => {
+        if (g.id === fromGroupId) {
+          return { ...g, children: g.children.filter(k => k !== itemKey) };
+        }
+        if (g.id === toGroupId) {
+          const children = [...g.children];
+          children.splice(toIdx, 0, itemKey);
+          return { ...g, children };
+        }
+        return g;
+      });
+      set({ navGroups: groups });
+      saveSettings({ ...get(), navGroups: groups });
+    },
+
     resetLayout: () => {
-      set({ sidebarPosition: 'left', sidebarOpen: true, navGroups: DEFAULT_GROUPS });
+      set({ sidebarPosition: 'left', sidebarOpen: true, navGroups: DEFAULT_GROUPS, hiddenItems: [] });
       localStorage.removeItem(STORAGE_KEY);
     },
   };

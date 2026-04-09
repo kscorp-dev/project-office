@@ -20,6 +20,7 @@ import taskOrderRoutes from './routes/task-orders.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import meetingRoutes from './routes/meeting.routes';
 import documentRoutes from './routes/document.routes';
+import parkingRoutes from './routes/parking.routes';
 import adminRoutes from './routes/admin.routes';
 
 // WebSocket handlers
@@ -75,6 +76,7 @@ app.use('/api/task-orders', taskOrderRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/meeting', meetingRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/parking', parkingRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 Handler

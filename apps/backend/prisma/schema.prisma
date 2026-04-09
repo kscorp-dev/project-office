@@ -1192,3 +1192,68 @@ model AuditLog {
   @@index([riskLevel])
   @@map("audit_logs")
 }
+
+
+// ===== 주차 추적 =====
+
+enum ParkingEventType {
+  entry
+  exit
+}
+
+model ParkingZone {
+  id         String   @id @default(uuid())
+  name       String                         // e.g. "A구역"
+  label      String                         // e.g. "A"
+  x1         Float                          // normalized 0-1
+  y1         Float
+  x2         Float
+  y2         Float
+  totalSpots Int      @default(0) @map("total_spots")
+  cameraId   String?  @map("camera_id")     // detection 서버 카메라 ID
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  lines  ParkingLine[]
+  events ParkingEvent[]
+
+  @@map("parking_zones")
+}
+
+model ParkingLine {
+  id        String   @id @default(uuid())
+  zoneId    String   @map("zone_id")
+  name      String                           // e.g. "입구 라인"
+  type      String                           // "entry" | "exit" | "both"
+  x1        Float                            // normalized 0-1
+  y1        Float
+  x2        Float
+  y2        Float
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  zone ParkingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@map("parking_lines")
+}
+
+model ParkingEvent {
+  id          String           @id @default(uuid())
+  zoneId      String?          @map("zone_id")
+  type        ParkingEventType
+  plateNumber String?          @map("plate_number")  // 4자리
+  trackId     Int?             @map("track_id")
+  cameraId    String?          @map("camera_id")
+  lineId      String?          @map("line_id")
+  direction   String?                                  // "up", "down", "left", "right"
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  zone ParkingZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([type])
+  @@index([plateNumber])
+  @@index([zoneId])
+  @@map("parking_events")
+}
