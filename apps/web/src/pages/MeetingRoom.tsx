@@ -1,24 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { useWebRTC, ChatMessage } from '../hooks/useWebRTC';
+import { useTTS } from '../hooks/useTTS';
 import {
   Mic, MicOff, Video, VideoOff, Monitor, Phone,
-  MessageSquare, Users, FileText, ChevronRight, ChevronLeft,
-  Download, Trash2, Circle, Square, Settings,
+  MessageSquare, Users, FileText, ChevronRight,
+  Download, Trash2, Circle, Square, Send,
+  Volume2, VolumeX, Wifi, WifiOff,
 } from 'lucide-react';
 
 /* ── 타입 ── */
-interface Participant {
-  id: string;
-  name: string;
-  position?: string;
-  isHost: boolean;
-  isMuted: boolean;
-  isVideoOff: boolean;
-  isSpeaking: boolean;
-  stream?: MediaStream;
-}
-
 interface TranscriptEntry {
   id: string;
   speaker: string;
@@ -49,20 +41,36 @@ interface SpeechRecognitionResultList {
 }
 
 /* ── 참가자 비디오 카드 ── */
-function ParticipantVideo({ participant, isLocal }: { participant: Participant; isLocal: boolean }) {
+function ParticipantVideo({
+  stream,
+  name,
+  isLocal,
+  isHost,
+  isMuted,
+  isVideoOff,
+  isSpeaking,
+}: {
+  stream?: MediaStream;
+  name: string;
+  isLocal: boolean;
+  isHost: boolean;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  isSpeaking?: boolean;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && participant.stream) {
-      videoRef.current.srcObject = participant.stream;
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
     }
-  }, [participant.stream]);
+  }, [stream]);
 
   return (
     <div className={`relative bg-gray-900 rounded-2xl overflow-hidden flex items-center justify-center aspect-video ${
-      participant.isSpeaking ? 'ring-2 ring-primary-400 ring-offset-2 ring-offset-gray-900' : ''
+      isSpeaking ? 'ring-2 ring-primary-400 ring-offset-2 ring-offset-gray-900' : 'ring-0'
     }`}>
-      {participant.stream && !participant.isVideoOff ? (
+      {stream && !isVideoOff ? (
         <video
           ref={videoRef}
           autoPlay
@@ -73,25 +81,25 @@ function ParticipantVideo({ participant, isLocal }: { participant: Participant; 
       ) : (
         <div className="flex flex-col items-center gap-2">
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-2xl font-bold text-white">
-            {participant.name[0]}
+            {name[0]}
           </div>
-          {participant.isVideoOff && (
-            <p className="text-xs text-gray-400">카메라 꺼짐</p>
-          )}
+          <p className="text-xs text-gray-400">
+            {isVideoOff ? '카메라 꺼짐' : '연결 중...'}
+          </p>
         </div>
       )}
 
       {/* 이름 태그 */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
-        {participant.isMuted ? (
+        {isMuted ? (
           <MicOff size={12} className="text-red-400" />
         ) : (
-          <Mic size={12} className={participant.isSpeaking ? 'text-primary-400' : 'text-white'} />
+          <Mic size={12} className={isSpeaking ? 'text-primary-400' : 'text-white'} />
         )}
         <span className="text-xs text-white font-medium">
-          {participant.name}{isLocal ? ' (나)' : ''}
+          {name}{isLocal ? ' (나)' : ''}
         </span>
-        {participant.isHost && (
+        {isHost && (
           <span className="text-[10px] bg-yellow-500/80 text-white px-1 rounded">주최</span>
         )}
       </div>
@@ -126,7 +134,6 @@ function TranscriptPanel({
 
   return (
     <div className="flex flex-col h-full">
-      {/* 헤더 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
         <div className="flex items-center gap-2">
           <FileText size={16} className="text-primary-400" />
@@ -167,7 +174,6 @@ function TranscriptPanel({
         </div>
       </div>
 
-      {/* 회의록 내용 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
@@ -194,7 +200,93 @@ function TranscriptPanel({
   );
 }
 
-/* ── 메인 MeetingRoom ── */
+/* ── 채팅 패널 ── */
+function ChatPanel({
+  messages,
+  onSend,
+  currentUserId,
+}: {
+  messages: ChatMessage[];
+  onSend: (msg: string) => void;
+  currentUserId: string;
+}) {
+  const [input, setInput] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    onSend(input.trim());
+    setInput('');
+  };
+
+  const formatTime = (ts: string) =>
+    new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
+        <MessageSquare size={16} className="text-primary-400" />
+        <h3 className="text-sm font-semibold text-white">채팅</h3>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-500">
+            <MessageSquare size={32} className="mb-2 opacity-50" />
+            <p className="text-sm">회의 중 채팅을 시작하세요</p>
+          </div>
+        ) : (
+          messages.map(msg => {
+            const isMe = msg.userId === currentUserId;
+            return (
+              <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                {!isMe && (
+                  <span className="text-[10px] text-gray-400 mb-0.5">{msg.name}</span>
+                )}
+                <div className={`max-w-[85%] px-3 py-1.5 rounded-2xl text-sm ${
+                  isMe
+                    ? 'bg-primary-500 text-white rounded-br-md'
+                    : 'bg-gray-700 text-gray-200 rounded-bl-md'
+                }`}>
+                  {msg.message}
+                </div>
+                <span className="text-[10px] text-gray-500 mt-0.5">{formatTime(msg.timestamp)}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-3 border-t border-gray-700 flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="메시지 입력..."
+          className="flex-1 bg-gray-700 text-white text-sm rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-primary-400 placeholder-gray-400"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim()}
+          className="p-2 rounded-xl bg-primary-500 text-white disabled:opacity-40 hover:bg-primary-600 transition-colors"
+        >
+          <Send size={16} />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   ██  메인 MeetingRoom 컴포넌트  ██
+   ═══════════════════════════════════════ */
 export default function MeetingRoom() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
@@ -207,8 +299,7 @@ export default function MeetingRoom() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
   // UI 상태
-  const [showTranscript, setShowTranscript] = useState(true);
-  const [showParticipants, setShowParticipants] = useState(false);
+  const [sidePanel, setSidePanel] = useState<'transcript' | 'chat' | 'participants' | null>(null);
 
   // 회의록
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
@@ -216,10 +307,56 @@ export default function MeetingRoom() {
   const recognitionRef = useRef<any>(null);
   const interimIdRef = useRef<string>('');
 
-  // 참가자 (데모용 — 실제에서는 WebRTC signaling으로 관리)
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  // 채팅
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [unreadChat, setUnreadChat] = useState(0);
 
   const userName = user?.name || '사용자';
+  const userId = user?.id || '';
+
+  // ── TTS (참가자 입/퇴장 안내) ──
+  const tts = useTTS({ lang: 'ko-KR', rate: 1.1, volume: 0.7 });
+
+  // ── WebRTC 연결 ──
+  const {
+    connected,
+    remotePeers,
+    sendMediaToggle,
+    sendScreenShare,
+    sendChat,
+    sendTranscript,
+    leave: leaveWebRTC,
+  } = useWebRTC({
+    meetingId: roomId || '',
+    localStream,
+    onPeerJoined: (peer) => {
+      tts.speak(`${peer.name}님이 입장했습니다`);
+    },
+    onPeerLeft: (peer) => {
+      tts.speak(`${peer.name}님이 퇴장했습니다`);
+    },
+    onChat: (msg) => {
+      setChatMessages(prev => [...prev, msg]);
+      if (sidePanel !== 'chat') {
+        setUnreadChat(prev => prev + 1);
+        // TTS로 채팅 읽기 (짧은 메시지만)
+        if (msg.userId !== userId && msg.message.length <= 50) {
+          tts.speak(`${msg.name}: ${msg.message}`);
+        }
+      }
+    },
+    onTranscript: (entry) => {
+      if (entry.isFinal) {
+        setTranscript(prev => [...prev, {
+          id: entry.id,
+          speaker: entry.speaker,
+          text: entry.text,
+          timestamp: new Date(entry.timestamp),
+          isFinal: true,
+        }]);
+      }
+    },
+  });
 
   /* ── 카메라/마이크 초기화 ── */
   useEffect(() => {
@@ -231,7 +368,14 @@ export default function MeetingRoom() {
         setLocalStream(stream);
       } catch (err) {
         console.warn('미디어 접근 실패:', err);
-        // 카메라/마이크 없어도 참가 가능
+        // 카메라/마이크 없이도 참가 가능
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setLocalStream(stream);
+          setIsVideoOff(true);
+        } catch {
+          // 오디오도 없으면 빈 상태
+        }
       }
     };
 
@@ -242,64 +386,58 @@ export default function MeetingRoom() {
     };
   }, []);
 
-  /* ── 참가자 목록 (데모) ── */
-  useEffect(() => {
-    const me: Participant = {
-      id: user?.id || 'me',
-      name: userName,
-      position: user?.position || '',
-      isHost: true,
-      isMuted,
-      isVideoOff,
-      isSpeaking: false,
-      stream: localStream || undefined,
-    };
-
-    const demoParticipants: Participant[] = [
-      me,
-      { id: 'd1', name: '김부장', position: '부장', isHost: false, isMuted: false, isVideoOff: false, isSpeaking: false },
-      { id: 'd2', name: '이대리', position: '대리', isHost: false, isMuted: true, isVideoOff: false, isSpeaking: false },
-      { id: 'd3', name: '박과장', position: '과장', isHost: false, isMuted: false, isVideoOff: true, isSpeaking: false },
-    ];
-
-    setParticipants(demoParticipants);
-  }, [localStream, isMuted, isVideoOff, userName, user?.id, user?.position]);
+  /* ── 사이드 패널 토글 ── */
+  const togglePanel = useCallback((panel: 'transcript' | 'chat' | 'participants') => {
+    setSidePanel(prev => {
+      if (prev === panel) return null;
+      if (panel === 'chat') setUnreadChat(0);
+      return panel;
+    });
+  }, []);
 
   /* ── 마이크 토글 ── */
   const toggleMute = useCallback(() => {
     if (localStream) {
       localStream.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
     }
-    setIsMuted(prev => !prev);
-  }, [localStream]);
+    setIsMuted(prev => {
+      const next = !prev;
+      sendMediaToggle(next, isVideoOff);
+      return next;
+    });
+  }, [localStream, isVideoOff, sendMediaToggle]);
 
   /* ── 카메라 토글 ── */
   const toggleVideo = useCallback(() => {
     if (localStream) {
       localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
     }
-    setIsVideoOff(prev => !prev);
-  }, [localStream]);
+    setIsVideoOff(prev => {
+      const next = !prev;
+      sendMediaToggle(isMuted, next);
+      return next;
+    });
+  }, [localStream, isMuted, sendMediaToggle]);
 
   /* ── 화면 공유 ── */
   const toggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
-      // 화면 공유 중지 → 카메라로 복귀
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-      }
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setLocalStream(stream);
       } catch { /* ignore */ }
       setIsScreenSharing(false);
+      sendScreenShare(false);
     } else {
       try {
         const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
         setLocalStream(screen);
         setIsScreenSharing(true);
+        sendScreenShare(true);
         screen.getVideoTracks()[0].onended = () => {
           setIsScreenSharing(false);
+          sendScreenShare(false);
           navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(s => setLocalStream(s))
             .catch(() => {});
@@ -308,7 +446,7 @@ export default function MeetingRoom() {
         console.warn('화면 공유 실패:', err);
       }
     }
-  }, [isScreenSharing, localStream]);
+  }, [isScreenSharing, localStream, sendScreenShare]);
 
   /* ── 음성 인식 (Web Speech API) ── */
   const startRecognition = useCallback(() => {
@@ -330,10 +468,8 @@ export default function MeetingRoom() {
         const text = result[0].transcript;
 
         if (result.isFinal) {
-          // 확정된 텍스트
           const entryId = `t-${Date.now()}-${i}`;
           setTranscript(prev => {
-            // interim 항목 제거 후 final 추가
             const filtered = prev.filter(e => e.id !== interimIdRef.current);
             return [...filtered, {
               id: entryId,
@@ -343,9 +479,10 @@ export default function MeetingRoom() {
               isFinal: true,
             }];
           });
+          // 다른 참가자에게 회의록 전송
+          sendTranscript(text.trim(), true);
           interimIdRef.current = '';
         } else {
-          // 중간 결과
           if (!interimIdRef.current) {
             interimIdRef.current = `interim-${Date.now()}`;
           }
@@ -378,7 +515,6 @@ export default function MeetingRoom() {
     };
 
     recognition.onend = () => {
-      // 자동 재시작 (녹음 중일 때)
       if (recognitionRef.current) {
         try { recognition.start(); } catch { /* ignore */ }
       }
@@ -387,7 +523,7 @@ export default function MeetingRoom() {
     recognition.start();
     recognitionRef.current = recognition;
     setIsRecording(true);
-  }, [userName]);
+  }, [userName, sendTranscript]);
 
   const stopRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -398,11 +534,8 @@ export default function MeetingRoom() {
   }, []);
 
   const toggleRecording = useCallback(() => {
-    if (isRecording) {
-      stopRecognition();
-    } else {
-      startRecognition();
-    }
+    if (isRecording) stopRecognition();
+    else startRecognition();
   }, [isRecording, startRecognition, stopRecognition]);
 
   /* ── 회의록 다운로드 ── */
@@ -432,17 +565,52 @@ export default function MeetingRoom() {
     }
   }, [transcript]);
 
+  /* ── 채팅 전송 ── */
+  const handleSendChat = useCallback((message: string) => {
+    sendChat(message);
+    // 자신의 메시지도 로컬에 추가 (서버에서 브로드캐스트로 돌아옴)
+  }, [sendChat]);
+
   /* ── 통화 종료 ── */
   const handleLeave = useCallback(() => {
     if (recognitionRef.current) stopRecognition();
+    tts.stop();
+    leaveWebRTC();
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     navigate('/meeting');
-  }, [localStream, navigate, stopRecognition]);
+  }, [localStream, navigate, stopRecognition, leaveWebRTC, tts]);
+
+  /* ── 모든 참가자 (로컬 + 원격) ── */
+  const allParticipants = [
+    {
+      socketId: 'local',
+      name: userName,
+      position: user?.position || '',
+      isHost: true,
+      isMuted,
+      isVideoOff,
+      stream: localStream || undefined,
+      isLocal: true,
+    },
+    ...remotePeers.map(p => ({
+      socketId: p.socketId,
+      name: p.name,
+      position: p.position,
+      isHost: p.isHost,
+      isMuted: p.isMuted,
+      isVideoOff: p.isVideoOff,
+      stream: p.stream,
+      isLocal: false,
+    })),
+  ];
+
+  const totalParticipants = allParticipants.length;
 
   /* ── 비디오 그리드 레이아웃 ── */
-  const gridCols = participants.length <= 1 ? 'grid-cols-1' :
-                   participants.length <= 4 ? 'grid-cols-2' :
-                   participants.length <= 9 ? 'grid-cols-3' : 'grid-cols-4';
+  const gridCols = totalParticipants <= 1 ? 'grid-cols-1'
+    : totalParticipants <= 4 ? 'grid-cols-2'
+    : totalParticipants <= 9 ? 'grid-cols-3'
+    : 'grid-cols-4';
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col">
@@ -454,27 +622,64 @@ export default function MeetingRoom() {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-white">화상 회의</h1>
-            <p className="text-[10px] text-gray-400">Room: {roomId || 'demo'}</p>
+            <p className="text-[10px] text-gray-400">Room: {roomId || 'N/A'}</p>
+          </div>
+          {/* 연결 상태 표시 */}
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${
+            connected ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+          }`}>
+            {connected ? <Wifi size={10} /> : <WifiOff size={10} />}
+            {connected ? '연결됨' : '연결 중...'}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* TTS 토글 */}
+          <button
+            onClick={() => tts.setEnabled(!tts.enabled)}
+            className={`p-2 rounded-lg transition-colors ${
+              tts.enabled ? 'text-primary-400 bg-primary-500/20' : 'text-gray-500 hover:bg-gray-700'
+            }`}
+            title={tts.enabled ? 'TTS 끄기' : 'TTS 켜기'}
+          >
+            {tts.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
+
           <span className="flex items-center gap-1.5 text-xs text-gray-400">
             <Users size={14} />
-            {participants.length}명 참석
+            {totalParticipants}명
           </span>
+
+          {/* 참가자 패널 */}
           <button
-            onClick={() => setShowParticipants(!showParticipants)}
+            onClick={() => togglePanel('participants')}
             className={`p-2 rounded-lg transition-colors ${
-              showParticipants ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:bg-gray-700'
+              sidePanel === 'participants' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:bg-gray-700'
             }`}
           >
             <Users size={16} />
           </button>
+
+          {/* 채팅 패널 */}
           <button
-            onClick={() => setShowTranscript(!showTranscript)}
+            onClick={() => togglePanel('chat')}
+            className={`relative p-2 rounded-lg transition-colors ${
+              sidePanel === 'chat' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            <MessageSquare size={16} />
+            {unreadChat > 0 && sidePanel !== 'chat' && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center">
+                {unreadChat > 9 ? '9+' : unreadChat}
+              </span>
+            )}
+          </button>
+
+          {/* 회의록 패널 */}
+          <button
+            onClick={() => togglePanel('transcript')}
             className={`p-2 rounded-lg transition-colors ${
-              showTranscript ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:bg-gray-700'
+              sidePanel === 'transcript' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:bg-gray-700'
             }`}
           >
             <FileText size={16} />
@@ -487,59 +692,74 @@ export default function MeetingRoom() {
         {/* 비디오 그리드 */}
         <div className="flex-1 p-4">
           <div className={`grid ${gridCols} gap-3 h-full auto-rows-fr`}>
-            {participants.map((p, i) => (
+            {allParticipants.map(p => (
               <ParticipantVideo
-                key={p.id}
-                participant={{
-                  ...p,
-                  stream: i === 0 ? localStream || undefined : undefined,
-                }}
-                isLocal={i === 0}
+                key={p.socketId}
+                stream={p.stream}
+                name={p.name}
+                isLocal={p.isLocal}
+                isHost={p.isHost}
+                isMuted={p.isMuted}
+                isVideoOff={p.isVideoOff}
               />
             ))}
           </div>
         </div>
 
-        {/* 참가자 목록 사이드 패널 */}
-        {showParticipants && (
-          <div className="w-64 bg-gray-800/50 border-l border-gray-700/50 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-              <h3 className="text-sm font-semibold text-white">참가자 ({participants.length})</h3>
-              <button onClick={() => setShowParticipants(false)} className="text-gray-400 hover:text-white">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
-              {participants.map(p => (
-                <div key={p.id} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-700/50">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-xs font-bold text-white">
-                    {p.name[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-white truncate">{p.name}</p>
-                    {p.position && <p className="text-[10px] text-gray-400">{p.position}</p>}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {p.isMuted && <MicOff size={12} className="text-red-400" />}
-                    {p.isVideoOff && <VideoOff size={12} className="text-red-400" />}
-                    {p.isHost && <span className="text-[10px] text-yellow-400">주최</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 회의록 사이드 패널 */}
-        {showTranscript && (
+        {/* 사이드 패널 */}
+        {sidePanel && (
           <div className="w-80 bg-gray-800/50 border-l border-gray-700/50 flex flex-col">
-            <TranscriptPanel
-              entries={transcript}
-              isRecording={isRecording}
-              onToggleRecording={toggleRecording}
-              onClear={clearTranscript}
-              onDownload={downloadTranscript}
-            />
+            {/* 참가자 목록 */}
+            {sidePanel === 'participants' && (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+                  <h3 className="text-sm font-semibold text-white">참가자 ({totalParticipants})</h3>
+                  <button onClick={() => setSidePanel(null)} className="text-gray-400 hover:text-white">
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+                  {allParticipants.map(p => (
+                    <div key={p.socketId} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-700/50">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-xs font-bold text-white">
+                        {p.name[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white truncate">
+                          {p.name}{p.isLocal ? ' (나)' : ''}
+                        </p>
+                        {p.position && <p className="text-[10px] text-gray-400">{p.position}</p>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {p.isMuted && <MicOff size={12} className="text-red-400" />}
+                        {p.isVideoOff && <VideoOff size={12} className="text-red-400" />}
+                        {p.isHost && <span className="text-[10px] text-yellow-400">주최</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 채팅 */}
+            {sidePanel === 'chat' && (
+              <ChatPanel
+                messages={chatMessages}
+                onSend={handleSendChat}
+                currentUserId={userId}
+              />
+            )}
+
+            {/* 회의록 */}
+            {sidePanel === 'transcript' && (
+              <TranscriptPanel
+                entries={transcript}
+                isRecording={isRecording}
+                onToggleRecording={toggleRecording}
+                onClear={clearTranscript}
+                onDownload={downloadTranscript}
+              />
+            )}
           </div>
         )}
       </div>
@@ -550,9 +770,7 @@ export default function MeetingRoom() {
         <button
           onClick={toggleMute}
           className={`p-3 rounded-2xl transition-all ${
-            isMuted
-              ? 'bg-red-500 text-white hover:bg-red-600'
-              : 'bg-gray-700 text-white hover:bg-gray-600'
+            isMuted ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-700 text-white hover:bg-gray-600'
           }`}
           title={isMuted ? '마이크 켜기' : '마이크 끄기'}
         >
@@ -563,9 +781,7 @@ export default function MeetingRoom() {
         <button
           onClick={toggleVideo}
           className={`p-3 rounded-2xl transition-all ${
-            isVideoOff
-              ? 'bg-red-500 text-white hover:bg-red-600'
-              : 'bg-gray-700 text-white hover:bg-gray-600'
+            isVideoOff ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-700 text-white hover:bg-gray-600'
           }`}
           title={isVideoOff ? '카메라 켜기' : '카메라 끄기'}
         >
@@ -576,9 +792,7 @@ export default function MeetingRoom() {
         <button
           onClick={toggleScreenShare}
           className={`p-3 rounded-2xl transition-all ${
-            isScreenSharing
-              ? 'bg-primary-500 text-white hover:bg-primary-600'
-              : 'bg-gray-700 text-white hover:bg-gray-600'
+            isScreenSharing ? 'bg-primary-500 text-white hover:bg-primary-600' : 'bg-gray-700 text-white hover:bg-gray-600'
           }`}
           title={isScreenSharing ? '공유 중지' : '화면 공유'}
         >
@@ -589,13 +803,22 @@ export default function MeetingRoom() {
         <button
           onClick={toggleRecording}
           className={`p-3 rounded-2xl transition-all ${
-            isRecording
-              ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse'
-              : 'bg-gray-700 text-white hover:bg-gray-600'
+            isRecording ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse' : 'bg-gray-700 text-white hover:bg-gray-600'
           }`}
           title={isRecording ? '회의록 중지' : '회의록 시작 (음성인식)'}
         >
           <FileText size={20} />
+        </button>
+
+        {/* TTS */}
+        <button
+          onClick={() => tts.setEnabled(!tts.enabled)}
+          className={`p-3 rounded-2xl transition-all ${
+            tts.enabled ? 'bg-primary-500/80 text-white hover:bg-primary-600' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+          }`}
+          title={tts.enabled ? 'TTS 끄기 (음성 안내 비활성화)' : 'TTS 켜기 (음성 안내 활성화)'}
+        >
+          {tts.enabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
         </button>
 
         {/* 구분선 */}

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Project Office — Parking Detection API",
     description="YOLOv8 Nano 기반 주차장 차량 감지 + 구역 매핑 서비스",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 

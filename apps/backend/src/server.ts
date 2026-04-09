@@ -25,6 +25,7 @@ import adminRoutes from './routes/admin.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
+import { setupMeetingSocket } from './websocket/meeting';
 
 const app = express();
 const httpServer = createServer(app);
@@ -92,6 +93,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 // WebSocket
 setupMessengerSocket(io);
+setupMeetingSocket(io);
 
 httpServer.listen(config.port, () => {
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);

@@ -160,11 +160,19 @@ export default function MeetingPage() {
 
   const handleJoin = async (meeting: Meeting) => {
     try {
-      await api.post(`/meeting/${meeting.id}/join`);
-      navigate(`/meeting/room/${meeting.id}`);
+      const res = await api.get(`/meeting/${meeting.id}/join`);
+      if (res.data.success) {
+        navigate(`/meeting/room/${meeting.id}`);
+      }
     } catch (err: any) {
-      // API 실패 시에도 데모 모드로 입장
-      navigate(`/meeting/room/${meeting.id}`);
+      // 권한 없음 시 안내
+      const code = err.response?.data?.error?.code;
+      if (code === 'NOT_INVITED') {
+        alert('초대받지 않은 회의입니다');
+      } else {
+        // 기타 오류 시에도 입장 시도
+        navigate(`/meeting/room/${meeting.id}`);
+      }
     }
   };
 
