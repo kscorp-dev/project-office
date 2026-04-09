@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+models/*.pt
+uploads/*
+results/*
+!uploads/.gitkeep
+!results/.gitkeep
+*.egg-info/
+dist/
+build/
+.env

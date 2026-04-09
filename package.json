@@ -10,6 +10,8 @@
     "dev:backend": "npm run dev --workspace=apps/backend",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:mobile": "npm run start --workspace=apps/mobile",
+    "dev:detection": "cd apps/detection && source venv/bin/activate && python app.py",
+    "setup:detection": "cd apps/detection && bash setup.sh",
     "build:backend": "npm run build --workspace=apps/backend",
     "build:web": "npm run build --workspace=apps/web",
     "lint": "turbo run lint",

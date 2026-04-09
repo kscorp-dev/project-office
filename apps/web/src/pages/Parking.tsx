@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   Car, Search, Camera, MapPin, Clock, Phone, Mail,
   ChevronRight, X, Image, AlertCircle, Check, RefreshCw,
-  ArrowRightLeft, User, FileText, Send,
+  ArrowRightLeft, User, FileText, Send, Cpu, Upload, Zap, Eye,
 } from 'lucide-react';
 
 /* ── 타입 ── */
@@ -521,6 +521,244 @@ function EntryModal({
   );
 }
 
+/* ── YOLO 감지 패널 ── */
+const DETECTION_API = 'http://localhost:8200';
+
+interface DetectionResult {
+  success: boolean;
+  elapsed_ms: number;
+  image_size: [number, number];
+  total_detected: number;
+  zone_summary: Record<string, {
+    name: string; occupied: number; total: number;
+    available: number; occupancy_rate: number; color: string;
+  }>;
+  vehicles: {
+    cx: number; cy: number; confidence: number;
+    class: string; zone: string | null; spot_label: string | null;
+  }[];
+  result_image_base64?: string;
+}
+
+function YoloDetectionPanel() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [result, setResult] = useState<DetectionResult | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [confidence, setConfidence] = useState(0.35);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+
+  const checkApi = useCallback(async () => {
+    try {
+      const res = await fetch(`${DETECTION_API}/health`);
+      const data = await res.json();
+      setApiOnline(data.model_loaded === true);
+    } catch {
+      setApiOnline(false);
+    }
+  }, []);
+
+  const handleFile = async (file: File) => {
+    setError('');
+    setResult(null);
+
+    // 미리보기
+    const reader = new FileReader();
+    reader.onload = (e) => setPreviewSrc(e.target?.result as string);
+    reader.readAsDataURL(file);
+
+    // 감지 요청
+    setDetecting(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const res = await fetch(
+        `${DETECTION_API}/api/detect/visual?confidence=${confidence}`,
+        { method: 'POST', body: form },
+      );
+      if (!res.ok) throw new Error(`API 오류: ${res.status}`);
+      const data: DetectionResult = await res.json();
+      setResult(data);
+      if (data.result_image_base64) setPreviewSrc(data.result_image_base64);
+    } catch (e: any) {
+      setError(e.message || '감지 서버에 연결할 수 없습니다.');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file?.type.startsWith('image/')) handleFile(file);
+  }, [confidence]);
+
+  const zoneColors: Record<string, string> = {
+    A: 'bg-blue-500', B: 'bg-primary-500', C: 'bg-yellow-500',
+  };
+
+  return (
+    <div className="card p-4 mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          <Cpu size={16} className="text-primary-500" /> AI 주차 감지 (YOLOv8 Nano)
+        </h3>
+        <div className="flex items-center gap-2">
+          <button onClick={checkApi} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+            <RefreshCw size={12} /> 상태 확인
+          </button>
+          {apiOnline !== null && (
+            <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+              apiOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${apiOnline ? 'bg-green-500' : 'bg-red-500'}`} />
+              {apiOnline ? '연결됨' : '오프라인'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* 좌측: 업로드 + 설정 */}
+        <div className="space-y-3">
+          {/* 드롭존 */}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50/30 transition-colors"
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+            />
+            {previewSrc ? (
+              <img src={previewSrc} alt="주차장 이미지" className="w-full rounded-xl max-h-64 object-contain" />
+            ) : (
+              <div className="py-6">
+                <Upload size={32} className="mx-auto text-gray-300 mb-2" />
+                <p className="text-sm text-gray-500">주차장 이미지를 드래그하거나 클릭하여 업로드</p>
+                <p className="text-xs text-gray-400 mt-1">JPEG, PNG 지원</p>
+              </div>
+            )}
+          </div>
+
+          {/* 신뢰도 조절 */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-gray-500 whitespace-nowrap">감지 신뢰도</label>
+            <input
+              type="range" min="0.1" max="0.9" step="0.05"
+              value={confidence}
+              onChange={(e) => setConfidence(Number(e.target.value))}
+              className="flex-1 accent-primary-500"
+            />
+            <span className="text-xs font-mono font-semibold text-primary-600 w-10 text-right">
+              {(confidence * 100).toFixed(0)}%
+            </span>
+          </div>
+
+          {detecting && (
+            <div className="flex items-center gap-2 text-sm text-primary-600 bg-primary-50 rounded-xl px-4 py-3">
+              <RefreshCw size={14} className="animate-spin" /> YOLOv8 Nano 추론 중...
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">
+              <AlertCircle size={14} /> {error}
+            </div>
+          )}
+        </div>
+
+        {/* 우측: 감지 결과 */}
+        <div className="space-y-3">
+          {result ? (
+            <>
+              {/* 결과 요약 */}
+              <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye size={16} className="text-primary-500" />
+                    <span className="text-sm font-semibold text-gray-800">감지 결과</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <Zap size={12} /> {result.elapsed_ms}ms
+                    <span className="mx-1">|</span>
+                    {result.image_size[0]}x{result.image_size[1]}
+                  </div>
+                </div>
+
+                <div className="text-center py-2">
+                  <p className="text-3xl font-bold text-primary-600">{result.total_detected}</p>
+                  <p className="text-xs text-gray-500">차량 감지됨</p>
+                </div>
+
+                {/* 구역별 현황 */}
+                <div className="space-y-2">
+                  {Object.entries(result.zone_summary).map(([zoneId, info]) => (
+                    <div key={zoneId} className="flex items-center gap-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${zoneColors[zoneId] || 'bg-gray-400'}`} />
+                      <span className="text-xs font-medium text-gray-600 w-28">{info.name}</span>
+                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${zoneColors[zoneId] || 'bg-gray-400'}`}
+                          style={{ width: `${info.occupancy_rate}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-mono text-gray-500 w-12 text-right">
+                        {info.occupied}/{info.total}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 감지 차량 목록 */}
+              {result.vehicles.length > 0 && (
+                <div className="bg-gray-50 rounded-2xl p-4 max-h-48 overflow-y-auto">
+                  <p className="text-xs font-semibold text-gray-500 mb-2">감지 차량 상세</p>
+                  <div className="space-y-1.5">
+                    {result.vehicles.map((v, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs bg-white rounded-lg px-3 py-2">
+                        <Car size={12} className="text-gray-400" />
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          v.zone === 'A' ? 'bg-blue-100 text-blue-700' :
+                          v.zone === 'B' ? 'bg-primary-100 text-primary-700' :
+                          v.zone === 'C' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {v.spot_label || '구역외'}
+                        </span>
+                        <span className="text-gray-500">{v.class}</span>
+                        <span className="ml-auto font-mono text-gray-400">
+                          {(v.confidence * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="h-full flex items-center justify-center text-gray-300 py-12">
+              <div className="text-center">
+                <Cpu size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm">주차장 이미지를 업로드하면</p>
+                <p className="text-sm">AI가 차량을 자동 감지합니다</p>
+                <p className="text-xs text-gray-400 mt-2">YOLOv8 Nano | COCO 사전학습</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 메인 Parking 페이지 ── */
 export default function ParkingPage() {
   const [records, setRecords] = useState<ParkingRecord[]>(DEMO_RECORDS);
@@ -585,6 +823,9 @@ export default function ParkingPage() {
 
       {/* 주차장 맵 */}
       <ParkingMap records={records} />
+
+      {/* AI 감지 패널 */}
+      <YoloDetectionPanel />
 
       {/* 툴바 */}
       <div className="flex items-center justify-between mt-6 mb-4">
