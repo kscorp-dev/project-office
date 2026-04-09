@@ -14,6 +14,7 @@ import BoardPage from './pages/Board';
 import TaskOrdersPage from './pages/TaskOrders';
 import InventoryPage from './pages/Inventory';
 import MeetingPage from './pages/Meeting';
+import MeetingRoom from './pages/MeetingRoom';
 import DocumentsPage from './pages/Documents';
 import AdminConsolePage from './pages/AdminConsole';
 
@@ -25,7 +26,12 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Protected */}
+        {/* Protected — fullscreen (no Layout) */}
+        <Route path="/meeting/room/:roomId" element={
+          <ProtectedRoute><MeetingRoom /></ProtectedRoute>
+        } />
+
+        {/* Protected — with Layout */}
         <Route
           element={
             <ProtectedRoute>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Video, Plus, X, Users, Clock, CalendarDays,
   Play, Square, Ban, LogIn, RefreshCw, Lock,
@@ -51,6 +52,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; pulse?: boolean
 
 export default function MeetingPage() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [stats, setStats] = useState<MeetingStats>({ scheduled: 0, in_progress: 0, today: 0, total: 0 });
@@ -158,10 +160,11 @@ export default function MeetingPage() {
 
   const handleJoin = async (meeting: Meeting) => {
     try {
-      const res = await api.post(`/meeting/${meeting.id}/join`);
-      setRoomCode(res.data.data?.roomCode || meeting.id);
+      await api.post(`/meeting/${meeting.id}/join`);
+      navigate(`/meeting/room/${meeting.id}`);
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || '입장 중 오류가 발생했습니다');
+      // API 실패 시에도 데모 모드로 입장
+      navigate(`/meeting/room/${meeting.id}`);
     }
   };
 
