@@ -5,13 +5,14 @@ import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X,
   Camera, Clock, Calendar, Newspaper, ClipboardList, Package,
   Video, FolderOpen, Settings, Leaf, ChevronDown, ChevronRight,
-  PanelLeft, PanelRight, PanelTop, PanelBottom, RotateCcw, Cog,
+  PanelLeft, PanelRight, PanelTop, PanelBottom, RotateCcw, Cog, Mail,
 } from 'lucide-react';
 import { useState } from 'react';
 
 /* ── 네비게이션 아이템 정의 ── */
 const NAV_ITEMS: Record<string, { to: string; icon: any; label: string }> = {
   dashboard:    { to: '/dashboard',     icon: LayoutDashboard, label: '대시보드' },
+  mail:         { to: '/mail',          icon: Mail,            label: '메일' },
   approval:     { to: '/approval',      icon: FileCheck,       label: '전자결재' },
   messenger:    { to: '/messenger',     icon: MessageSquare,   label: '메신저' },
   organization: { to: '/organization',  icon: Users,           label: '조직도' },

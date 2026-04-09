@@ -25,7 +25,7 @@ interface LayoutState {
 const STORAGE_KEY = 'po-layout-settings';
 
 const DEFAULT_GROUPS: NavGroup[] = [
-  { id: 'main',   label: '주요 기능', children: ['dashboard', 'approval', 'messenger'], collapsed: false },
+  { id: 'main',   label: '주요 기능', children: ['dashboard', 'mail', 'approval', 'messenger'], collapsed: false },
   { id: 'work',   label: '업무 관리', children: ['organization', 'attendance', 'calendar', 'board'], collapsed: false },
   { id: 'ops',    label: '운영 관리', children: ['task-orders', 'inventory', 'cctv'], collapsed: true },
   { id: 'system', label: '시스템',    children: ['meeting', 'documents', 'admin'], collapsed: true },

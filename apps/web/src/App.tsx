@@ -15,6 +15,7 @@ import TaskOrdersPage from './pages/TaskOrders';
 import InventoryPage from './pages/Inventory';
 import MeetingPage from './pages/Meeting';
 import MeetingRoom from './pages/MeetingRoom';
+import MailPage from './pages/Mail';
 import DocumentsPage from './pages/Documents';
 import AdminConsolePage from './pages/AdminConsole';
 
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/board" element={<BoardPage />} />
           <Route path="/task-orders" element={<TaskOrdersPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/mail" element={<MailPage />} />
           <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/admin" element={<AdminConsolePage />} />
