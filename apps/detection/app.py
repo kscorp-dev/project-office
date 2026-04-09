@@ -1,35 +1,42 @@
 """
 주차장 YOLO 감지 API 서버
 FastAPI 기반, YOLOv8 Nano 모델 사용
+실시간 카메라 스트리밍 + WebSocket 지원
 """
 import io
 import time
+import asyncio
 import base64
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from config import HOST, PORT, UPLOAD_DIR, RESULT_DIR
 from detector import ParkingDetector
+from camera_stream import CameraManager
 
 
-# --- 전역 감지기 ---
+# --- 전역 ---
 detector: ParkingDetector = None
+cam_manager: CameraManager = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """서버 시작 시 모델 로드"""
-    global detector
+    global detector, cam_manager
     print("[Detection API] Loading YOLOv8n model...")
     detector = ParkingDetector()
+    cam_manager = CameraManager(detector)
     print("[Detection API] Ready!")
     yield
-    print("[Detection API] Shutting down.")
+    print("[Detection API] Shutting down cameras...")
+    cam_manager.disconnect_all()
+    print("[Detection API] Done.")
 
 
 app = FastAPI(
@@ -178,6 +185,136 @@ async def get_result_image(filename: str):
     if not path.exists():
         raise HTTPException(404, "결과 이미지를 찾을 수 없습니다.")
     return FileResponse(path, media_type="image/jpeg")
+
+
+# ==================================================================
+# 실시간 카메라 스트리밍 API
+# ==================================================================
+
+class CameraConnect(BaseModel):
+    ip: str
+    port: int
+    name: str = ""
+    path: str = ""
+    protocol: str = "rtsp"        # rtsp | http
+    username: str = ""
+    password: str = ""
+    detect_interval: float = 1.0  # 감지 주기 (초)
+    confidence: float = 0.35
+
+
+@app.post("/api/cameras")
+async def add_and_connect_camera(req: CameraConnect):
+    """
+    카메라 추가 + 연결
+
+    - **ip**: 카메라 IP 주소
+    - **port**: 포트 번호 (RTSP 기본 554, HTTP 기본 80)
+    - **protocol**: rtsp 또는 http
+    - **path**: 스트림 경로 (예: /stream, /video, /live)
+    - **detect_interval**: YOLO 감지 주기 (초, 기본 1.0)
+    """
+    stream = cam_manager.add_camera(
+        ip=req.ip, port=req.port, name=req.name,
+        path=req.path, protocol=req.protocol,
+        username=req.username, password=req.password,
+    )
+    ok = stream.connect(
+        detect_interval=req.detect_interval,
+        confidence=req.confidence,
+    )
+    return {
+        "success": ok,
+        "camera_id": stream.info.camera_id,
+        "status": stream.info.status.value,
+        "url": stream.info.url,
+        "error": stream.info.last_error or None,
+    }
+
+
+@app.get("/api/cameras")
+async def list_cameras():
+    """연결된 카메라 목록"""
+    return {"cameras": cam_manager.get_all_status()}
+
+
+@app.get("/api/cameras/{camera_id}")
+async def get_camera_frame(camera_id: str):
+    """특정 카메라의 최신 프레임 + 감지 결과 (폴링용)"""
+    data = cam_manager.get_latest(camera_id)
+    if data is None:
+        raise HTTPException(404, "카메라를 찾을 수 없습니다.")
+    return data
+
+
+@app.delete("/api/cameras/{camera_id}")
+async def disconnect_camera(camera_id: str):
+    """카메라 연결 해제 및 삭제"""
+    cam_manager.remove_camera(camera_id)
+    return {"success": True, "camera_id": camera_id}
+
+
+class CameraUpdateSettings(BaseModel):
+    detect_interval: float | None = None
+    confidence: float | None = None
+
+
+@app.patch("/api/cameras/{camera_id}")
+async def update_camera_settings(camera_id: str, settings: CameraUpdateSettings):
+    """카메라 감지 설정 변경 (연결 유지)"""
+    stream = cam_manager.cameras.get(camera_id)
+    if not stream:
+        raise HTTPException(404, "카메라를 찾을 수 없습니다.")
+    if settings.detect_interval is not None:
+        stream._detect_interval = settings.detect_interval
+    if settings.confidence is not None:
+        stream._confidence = settings.confidence
+    return {"success": True, "camera_id": camera_id}
+
+
+# ------------------------------------------------------------------
+# WebSocket — 실시간 스트리밍
+# ------------------------------------------------------------------
+@app.websocket("/ws/stream/{camera_id}")
+async def websocket_stream(websocket: WebSocket, camera_id: str):
+    """
+    WebSocket을 통해 실시간 프레임 + 감지 결과 스트리밍
+
+    클라이언트에 전송하는 JSON:
+    {
+      "camera": {...},
+      "frame": "data:image/jpeg;base64,...",
+      "detection": { "total_detected", "zone_summary", "vehicles", ... }
+    }
+    """
+    await websocket.accept()
+
+    stream = cam_manager.cameras.get(camera_id)
+    if not stream:
+        await websocket.send_json({"error": f"카메라 {camera_id}를 찾을 수 없습니다."})
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            data = stream.get_latest()
+            if data and data.get("frame"):
+                await websocket.send_json({
+                    "camera": data["camera"],
+                    "frame": data["frame"],
+                    "detection": data.get("detection"),
+                })
+            # 클라이언트에서 메시지 수신 확인 (ping/pong 대용)
+            try:
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
+                if msg == "close":
+                    break
+            except asyncio.TimeoutError:
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
 
 
 # ------------------------------------------------------------------

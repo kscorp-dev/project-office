@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Car, Search, Camera, MapPin, Clock, Phone, Mail,
   ChevronRight, X, Image, AlertCircle, Check, RefreshCw,
   ArrowRightLeft, User, FileText, Send, Cpu, Upload, Zap, Eye,
+  Radio, Wifi, WifiOff, Settings2, Play, Square, Video,
 } from 'lucide-react';
 
 /* ── 타입 ── */
@@ -521,8 +522,433 @@ function EntryModal({
   );
 }
 
-/* ── YOLO 감지 패널 ── */
+/* ── 실시간 카메라 트래킹 패널 ── */
 const DETECTION_API = 'http://localhost:8200';
+const WS_BASE = 'ws://localhost:8200';
+
+interface CameraState {
+  camera_id: string;
+  name: string;
+  url: string;
+  status: string;
+  fps: number;
+  frame_count: number;
+  last_error: string;
+  resolution: [number, number];
+}
+
+interface LiveFrame {
+  camera: CameraState;
+  frame: string;   // base64
+  detection: {
+    total_detected: number;
+    zone_summary: Record<string, {
+      name: string; occupied: number; total: number;
+      available: number; occupancy_rate: number;
+    }>;
+    vehicles: { zone: string | null; spot_label: string | null; confidence: number; class: string }[];
+  } | null;
+}
+
+function LiveTrackingPanel() {
+  // 연결 폼
+  const [ip, setIp] = useState('');
+  const [port, setPort] = useState('554');
+  const [protocol, setProtocol] = useState<'rtsp' | 'http'>('rtsp');
+  const [streamPath, setStreamPath] = useState('');
+  const [cameraName, setCameraName] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [detectInterval, setDetectInterval] = useState(1.0);
+  const [confidence, setConfidence] = useState(0.35);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // 상태
+  const [cameras, setCameras] = useState<CameraState[]>([]);
+  const [activeCameraId, setActiveCameraId] = useState<string | null>(null);
+  const [liveFrame, setLiveFrame] = useState<LiveFrame | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollingRef = useRef<number | null>(null);
+
+  // 카메라 목록 조회
+  const fetchCameras = useCallback(async () => {
+    try {
+      const res = await fetch(`${DETECTION_API}/api/cameras`);
+      const data = await res.json();
+      setCameras(data.cameras || []);
+    } catch { /* 서버 오프라인 */ }
+  }, []);
+
+  useEffect(() => {
+    fetchCameras();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
+
+  // 카메라 연결
+  const handleConnect = async () => {
+    if (!ip || !port) return;
+    setError('');
+    setConnecting(true);
+
+    try {
+      const res = await fetch(`${DETECTION_API}/api/cameras`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip, port: Number(port), protocol, name: cameraName || `${ip}:${port}`,
+          path: streamPath, username, password,
+          detect_interval: detectInterval, confidence,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setActiveCameraId(data.camera_id);
+        startPolling(data.camera_id);
+        await fetchCameras();
+        setIp(''); setPort(protocol === 'rtsp' ? '554' : '80');
+        setCameraName(''); setStreamPath('');
+      } else {
+        setError(data.error || '카메라 연결에 실패했습니다.');
+      }
+    } catch (e: any) {
+      setError('감지 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  // WebSocket 스트리밍 시작
+  const startWebSocket = (cameraId: string) => {
+    if (wsRef.current) wsRef.current.close();
+
+    const ws = new WebSocket(`${WS_BASE}/ws/stream/${cameraId}`);
+    ws.onmessage = (e) => {
+      try {
+        const data: LiveFrame = JSON.parse(e.data);
+        setLiveFrame(data);
+      } catch { /* ignore parse errors */ }
+    };
+    ws.onerror = () => {
+      // WebSocket 실패 시 폴링으로 전환
+      startPolling(cameraId);
+    };
+    ws.onclose = () => { wsRef.current = null; };
+    wsRef.current = ws;
+  };
+
+  // 폴링 (WebSocket 대안)
+  const startPolling = (cameraId: string) => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    // WebSocket 먼저 시도
+    try {
+      startWebSocket(cameraId);
+    } catch {
+      // 폴링 폴백
+    }
+
+    pollingRef.current = window.setInterval(async () => {
+      // WebSocket이 작동 중이면 폴링 불필요
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+      try {
+        const res = await fetch(`${DETECTION_API}/api/cameras/${cameraId}`);
+        const data: LiveFrame = await res.json();
+        setLiveFrame(data);
+      } catch { /* ignore */ }
+    }, 1500);
+  };
+
+  // 카메라 선택
+  const selectCamera = (camId: string) => {
+    setActiveCameraId(camId);
+    startPolling(camId);
+  };
+
+  // 카메라 연결 해제
+  const handleDisconnect = async (camId: string) => {
+    if (wsRef.current) wsRef.current.close();
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    try {
+      await fetch(`${DETECTION_API}/api/cameras/${camId}`, { method: 'DELETE' });
+    } catch { /* ignore */ }
+    if (activeCameraId === camId) {
+      setActiveCameraId(null);
+      setLiveFrame(null);
+    }
+    await fetchCameras();
+  };
+
+  const zoneColors: Record<string, string> = {
+    A: 'bg-blue-500', B: 'bg-primary-500', C: 'bg-yellow-500',
+  };
+
+  return (
+    <div className="card p-4 mt-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <Video size={16} className="text-primary-500" /> 실시간 카메라 트래킹
+      </h3>
+
+      <div className="grid grid-cols-3 gap-4">
+        {/* 좌측: 카메라 연결 + 목록 */}
+        <div className="space-y-3">
+          {/* 연결 폼 */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+              <Wifi size={12} /> 카메라 연결
+            </p>
+
+            {/* 프로토콜 선택 */}
+            <div className="flex gap-1">
+              {(['rtsp', 'http'] as const).map(p => (
+                <button
+                  key={p}
+                  onClick={() => { setProtocol(p); setPort(p === 'rtsp' ? '554' : '80'); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    protocol === p ? 'bg-primary-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  {p.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            {/* IP + Port */}
+            <div className="flex gap-2">
+              <input
+                className="input-field flex-1 text-sm"
+                placeholder="카메라 IP (예: 192.168.1.100)"
+                value={ip} onChange={e => setIp(e.target.value)}
+              />
+              <input
+                className="input-field w-20 text-sm text-center"
+                placeholder="포트"
+                value={port} onChange={e => setPort(e.target.value)}
+              />
+            </div>
+
+            {/* 카메라 이름 */}
+            <input
+              className="input-field text-sm"
+              placeholder="카메라 이름 (선택)"
+              value={cameraName} onChange={e => setCameraName(e.target.value)}
+            />
+
+            {/* 고급 설정 토글 */}
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+            >
+              <Settings2 size={11} />
+              {showAdvanced ? '고급 설정 접기' : '고급 설정'}
+            </button>
+
+            {showAdvanced && (
+              <div className="space-y-2 border-t border-gray-200 pt-2">
+                <input
+                  className="input-field text-xs"
+                  placeholder="스트림 경로 (예: /stream, /live)"
+                  value={streamPath} onChange={e => setStreamPath(e.target.value)}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    className="input-field text-xs"
+                    placeholder="사용자명"
+                    value={username} onChange={e => setUsername(e.target.value)}
+                  />
+                  <input
+                    className="input-field text-xs"
+                    type="password"
+                    placeholder="비밀번호"
+                    value={password} onChange={e => setPassword(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-gray-500 whitespace-nowrap">감지주기</label>
+                  <input
+                    type="range" min="0.5" max="5" step="0.5"
+                    value={detectInterval}
+                    onChange={e => setDetectInterval(Number(e.target.value))}
+                    className="flex-1 accent-primary-500"
+                  />
+                  <span className="text-[10px] font-mono text-gray-500 w-8">{detectInterval}s</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-gray-500 whitespace-nowrap">신뢰도</label>
+                  <input
+                    type="range" min="0.1" max="0.9" step="0.05"
+                    value={confidence}
+                    onChange={e => setConfidence(Number(e.target.value))}
+                    className="flex-1 accent-primary-500"
+                  />
+                  <span className="text-[10px] font-mono text-gray-500 w-8">{(confidence * 100).toFixed(0)}%</span>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                <AlertCircle size={12} className="flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleConnect}
+              disabled={connecting || !ip}
+              className="btn-primary w-full text-sm flex items-center justify-center gap-2"
+            >
+              {connecting ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+              {connecting ? '연결 중...' : '연결 및 트래킹 시작'}
+            </button>
+          </div>
+
+          {/* 연결된 카메라 목록 */}
+          {cameras.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500">연결된 카메라</p>
+              {cameras.map(cam => (
+                <div
+                  key={cam.camera_id}
+                  onClick={() => selectCamera(cam.camera_id)}
+                  className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition-colors ${
+                    activeCameraId === cam.camera_id
+                      ? 'bg-primary-50 border border-primary-200'
+                      : 'bg-white border border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full ${
+                    cam.status === 'connected' ? 'bg-green-500 animate-pulse' :
+                    cam.status === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                    cam.status === 'error' ? 'bg-red-500' : 'bg-gray-300'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-700 truncate">{cam.name}</p>
+                    <p className="text-[10px] text-gray-400">{cam.fps} FPS | {cam.resolution?.[0]}x{cam.resolution?.[1]}</p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDisconnect(cam.camera_id); }}
+                    className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
+                  >
+                    <Square size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 우측: 실시간 영상 + 감지 결과 */}
+        <div className="col-span-2 space-y-3">
+          {liveFrame && liveFrame.frame ? (
+            <>
+              {/* 라이브 영상 */}
+              <div className="relative rounded-2xl overflow-hidden bg-black">
+                <img
+                  src={liveFrame.frame}
+                  alt="실시간 주차장"
+                  className="w-full"
+                />
+                {/* 상태 오버레이 */}
+                <div className="absolute top-3 left-3 flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                    <Radio size={10} className="animate-pulse" /> LIVE
+                  </span>
+                  <span className="bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">
+                    {liveFrame.camera.name}
+                  </span>
+                </div>
+                <div className="absolute top-3 right-3 flex items-center gap-2">
+                  <span className="bg-black/60 text-green-400 text-[10px] font-mono px-2 py-1 rounded-full">
+                    {liveFrame.camera.fps} FPS
+                  </span>
+                  {liveFrame.detection && (
+                    <span className="bg-primary-600 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                      {liveFrame.detection.total_detected} 대 감지
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 구역별 실시간 현황 */}
+              {liveFrame.detection?.zone_summary && (
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(liveFrame.detection.zone_summary).map(([zoneId, info]) => (
+                    <div key={zoneId} className="bg-gray-50 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className={`w-2.5 h-2.5 rounded-full ${zoneColors[zoneId] || 'bg-gray-400'}`} />
+                        <span className="text-xs font-semibold text-gray-700">{info.name}</span>
+                      </div>
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <span className="text-2xl font-bold text-gray-800">{info.occupied}</span>
+                          <span className="text-xs text-gray-400">/{info.total}</span>
+                        </div>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                          info.available > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                        }`}>
+                          {info.available > 0 ? `${info.available}자리` : '만차'}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${zoneColors[zoneId] || 'bg-gray-400'}`}
+                          style={{ width: `${info.occupancy_rate}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 감지 차량 */}
+              {liveFrame.detection && liveFrame.detection.vehicles.length > 0 && (
+                <div className="bg-gray-50 rounded-xl p-3 max-h-40 overflow-y-auto">
+                  <p className="text-[10px] font-semibold text-gray-500 mb-2">
+                    실시간 감지 차량 ({liveFrame.detection.vehicles.length})
+                  </p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {liveFrame.detection.vehicles.map((v, i) => (
+                      <div key={i} className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1.5 text-[10px]">
+                        <Car size={10} className="text-gray-400" />
+                        <span className={`px-1 py-0.5 rounded font-medium ${
+                          v.zone === 'A' ? 'bg-blue-100 text-blue-700' :
+                          v.zone === 'B' ? 'bg-primary-100 text-primary-700' :
+                          v.zone === 'C' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {v.spot_label || '?'}
+                        </span>
+                        <span className="text-gray-400 ml-auto font-mono">{(v.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="h-80 flex items-center justify-center bg-gray-50 rounded-2xl">
+              <div className="text-center text-gray-300">
+                <Video size={48} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-medium text-gray-400">카메라를 연결하면</p>
+                <p className="text-sm font-medium text-gray-400">실시간 주차 트래킹이 시작됩니다</p>
+                <div className="mt-4 text-xs text-gray-300 space-y-1">
+                  <p>RTSP: rtsp://IP:554/stream</p>
+                  <p>HTTP: http://IP:80/video</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── YOLO 감지 패널 (이미지 업로드) ── */
 
 interface DetectionResult {
   success: boolean;
@@ -824,7 +1250,10 @@ export default function ParkingPage() {
       {/* 주차장 맵 */}
       <ParkingMap records={records} />
 
-      {/* AI 감지 패널 */}
+      {/* 실시간 카메라 트래킹 */}
+      <LiveTrackingPanel />
+
+      {/* AI 감지 패널 (이미지 업로드) */}
       <YoloDetectionPanel />
 
       {/* 툴바 */}
