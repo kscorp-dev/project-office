@@ -251,13 +251,13 @@ export default function BoardPage() {
       </h1>
 
       {/* Board Tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+      <div className="flex gap-1 mb-4 bg-primary-50/50 p-1.5 rounded-2xl overflow-x-auto">
         {boards.map((board) => (
           <button
             key={board.id}
             onClick={() => { setSelectedBoard(board); setPagination(p => ({ ...p, page: 1 })); }}
             className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-              selectedBoard?.id === board.id ? 'bg-white shadow text-primary-700' : 'text-gray-500 hover:text-gray-700'
+              selectedBoard?.id === board.id ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             {board.name}
@@ -303,7 +303,7 @@ export default function BoardPage() {
                 <tr
                   key={post.id}
                   onClick={() => fetchPostDetail(post.id)}
-                  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                  className="border-b last:border-0 hover:bg-primary-50/50 cursor-pointer"
                 >
                   <td className="py-3 text-center text-gray-400">
                     {post.isPinned ? <Pin size={14} className="mx-auto text-primary-600" /> : pagination.total - ((pagination.page - 1) * pagination.limit + i)}
@@ -349,7 +349,7 @@ export default function BoardPage() {
       {/* Create Post Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">글쓰기 - {selectedBoard?.name}</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>

@@ -32,21 +32,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-dark-900 via-dark-800 to-primary-900">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-100 via-primary-50 to-white">
       <div className="w-full max-w-md p-8">
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="bg-white rounded-4xl shadow-xl shadow-primary-100/50 p-8">
           {/* Logo */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-primary-400 to-primary-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-200">
               <Building2 className="text-white" size={32} />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Project Office</h1>
-            <p className="text-gray-500 mt-1 text-sm">사내 업무 통합 플랫폼</p>
+            <p className="text-gray-400 mt-1 text-sm">사내 업무 통합 플랫폼</p>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm" onClick={clearError}>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-sm" onClick={clearError}>
               {error}
             </div>
           )}

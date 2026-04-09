@@ -66,8 +66,8 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-dark-900 via-dark-800 to-primary-900">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-100 via-primary-50 to-white">
+        <div className="bg-white rounded-4xl shadow-xl shadow-primary-100/50 p-8 max-w-md w-full text-center">
           <CheckCircle className="text-green-500 mx-auto mb-4" size={64} />
           <h2 className="text-xl font-bold text-gray-900 mb-2">회원가입 완료</h2>
           <p className="text-gray-500 mb-6">관리자 승인 후 로그인할 수 있습니다.</p>
@@ -78,18 +78,18 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-dark-900 via-dark-800 to-primary-900 py-12">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-100 via-primary-50 to-white py-12">
       <div className="w-full max-w-lg p-8">
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="bg-white rounded-4xl shadow-xl shadow-primary-100/50 p-8">
           <div className="text-center mb-6">
-            <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-primary-200">
               <Building2 className="text-white" size={24} />
             </div>
             <h1 className="text-xl font-bold text-gray-900">회원가입</h1>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm" onClick={clearError}>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-sm" onClick={clearError}>
               {error}
             </div>
           )}

@@ -93,13 +93,13 @@ export default function ApprovalPage() {
       </div>
 
       {/* Box Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-6 bg-primary-50/50 p-1.5 rounded-2xl w-fit">
         {BOX_TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveBox(key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeBox === key ? 'bg-white shadow text-primary-600' : 'text-gray-500 hover:text-gray-700'
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              activeBox === key ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             <Icon size={16} />
@@ -138,7 +138,7 @@ export default function ApprovalPage() {
                 <tr
                   key={doc.id}
                   onClick={() => openDetail(doc.id)}
-                  className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="border-b hover:bg-primary-50/50 cursor-pointer transition-colors"
                 >
                   <td className="py-3 px-2 text-sm text-gray-500 font-mono">{doc.docNumber}</td>
                   <td className="py-3 px-2 text-sm">{doc.template.name}</td>
@@ -216,7 +216,7 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b">
           <div className="flex items-center justify-between">
             <div>
@@ -244,7 +244,7 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
           <div className="flex items-center gap-2">
             {doc.lines.map((line: any, i: number) => (
               <div key={i} className="flex items-center gap-2">
-                <div className={`text-center px-3 py-2 rounded-lg border ${
+                <div className={`text-center px-3 py-2 rounded-2xl border ${
                   line.status === 'approved' ? 'border-green-300 bg-green-50' :
                   line.status === 'rejected' ? 'border-red-300 bg-red-50' :
                   line.step === doc.currentStep ? 'border-primary-300 bg-primary-50' :
@@ -265,7 +265,7 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
         <div className="p-6 border-t flex justify-end gap-3">
           {isMyTurn && !showRejectInput && (
             <>
-              <button onClick={() => setShowRejectInput(true)} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100">반려</button>
+              <button onClick={() => setShowRejectInput(true)} className="px-4 py-2 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100">반려</button>
               <button onClick={() => onApprove(doc.id)} className="btn-primary">승인</button>
             </>
           )}
@@ -279,7 +279,7 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
                 autoFocus
               />
               <button onClick={() => setShowRejectInput(false)} className="btn-secondary">취소</button>
-              <button onClick={() => onReject(doc.id, rejectComment)} className="px-4 py-2 bg-red-600 text-white rounded-lg" disabled={!rejectComment}>반려 확인</button>
+              <button onClick={() => onReject(doc.id, rejectComment)} className="px-4 py-2 bg-red-600 text-white rounded-2xl" disabled={!rejectComment}>반려 확인</button>
             </div>
           )}
           {isMyDraft && doc.status === 'pending' && (
@@ -323,7 +323,7 @@ function CreateDocModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-auto m-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-auto m-4" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b">
           <h2 className="text-xl font-bold">새 결재 문서</h2>
         </div>
@@ -359,7 +359,7 @@ function CreateDocModal({ onClose, onCreated }: { onClose: () => void; onCreated
             <label className="block text-sm font-medium text-gray-700 mb-1">
               결재선 * <span className="text-xs text-gray-400">(클릭 순서대로 결재 진행)</span>
             </label>
-            <div className="flex flex-wrap gap-2 p-3 border rounded-lg min-h-[40px]">
+            <div className="flex flex-wrap gap-2 p-3 border rounded-2xl min-h-[40px]">
               {form.approverIds.length === 0 && <span className="text-sm text-gray-400">결재자를 선택하세요</span>}
               {form.approverIds.map((id, i) => {
                 const u = users.find(u => u.id === id);

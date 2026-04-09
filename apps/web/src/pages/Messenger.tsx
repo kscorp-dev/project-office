@@ -128,7 +128,7 @@ export default function MessengerPage() {
       <div className="w-80 border-r bg-white flex flex-col">
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">메신저</h2>
-          <button onClick={() => setShowNewChat(true)} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={() => setShowNewChat(true)} className="p-2 hover:bg-primary-50/50 rounded-2xl">
             <Plus size={18} />
           </button>
         </div>
@@ -144,7 +144,7 @@ export default function MessengerPage() {
               <button
                 key={room.id}
                 onClick={() => selectRoom(room.id)}
-                className={`w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors border-b ${
+                className={`w-full flex items-center gap-3 p-3 hover:bg-primary-50/50 transition-colors border-b ${
                   selectedRoom === room.id ? 'bg-primary-50' : ''
                 }`}
               >
@@ -178,7 +178,7 @@ export default function MessengerPage() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-gray-50">
+      <div className="flex-1 flex flex-col bg-primary-50/50">
         {selectedRoom ? (
           <>
             {/* Chat Header */}
@@ -268,7 +268,7 @@ function NewChatModal({ onClose, onSelect, currentUserId }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md m-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-3xl w-full max-w-md m-4" onClick={e => e.stopPropagation()}>
         <div className="p-4 border-b">
           <h3 className="font-bold text-lg">새 대화</h3>
           <div className="relative mt-3">
@@ -287,7 +287,7 @@ function NewChatModal({ onClose, onSelect, currentUserId }: {
             <button
               key={u.id}
               onClick={() => onSelect(u.id)}
-              className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center gap-3 p-3 hover:bg-primary-50/50 transition-colors"
             >
               <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-bold text-sm">
                 {u.name[0]}

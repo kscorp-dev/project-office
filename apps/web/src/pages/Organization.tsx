@@ -138,8 +138,8 @@ function TreeNode({ node, selectedId, onSelect, depth }: {
     <div>
       <button
         onClick={() => { onSelect(node.id); if (hasChildren) setExpanded(!expanded); }}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
-          isSelected ? 'bg-primary-50 text-primary-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-2xl text-sm transition-colors ${
+          isSelected ? 'bg-primary-50 text-primary-700 font-medium' : 'hover:bg-primary-50/50 text-gray-700'
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >

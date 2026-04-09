@@ -17,7 +17,7 @@ interface CalendarEvent {
   attendees: { user: { id: string; name: string } }[];
 }
 
-const COLORS = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4'];
+const COLORS = ['#10B981', '#EF4444', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4'];
 const scopeLabel: Record<string, string> = { personal: '개인', department: '부서', company: '전사' };
 
 export default function CalendarPage() {
@@ -100,7 +100,7 @@ export default function CalendarPage() {
         endDate: new Date(form.get('endDate') as string).toISOString(),
         allDay: form.get('allDay') === 'on',
         location: form.get('location') || undefined,
-        color: form.get('color') || '#3B82F6',
+        color: form.get('color') || '#10B981',
         scope: form.get('scope') || 'personal',
       });
       setShowCreateModal(false);
@@ -136,11 +136,11 @@ export default function CalendarPage() {
       <div className="card">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg"><ChevronLeft size={20} /></button>
+            <button onClick={prevMonth} className="p-2 hover:bg-primary-50/50 rounded-2xl"><ChevronLeft size={20} /></button>
             <h2 className="text-xl font-bold">
               {year}년 {month + 1}월
             </h2>
-            <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg"><ChevronRight size={20} /></button>
+            <button onClick={nextMonth} className="p-2 hover:bg-primary-50/50 rounded-2xl"><ChevronRight size={20} /></button>
           </div>
           <button onClick={goToday} className="btn-secondary text-sm">오늘</button>
         </div>
@@ -162,7 +162,7 @@ export default function CalendarPage() {
               <div
                 key={idx}
                 onClick={() => setSelectedDate(day.fullDate)}
-                className={`min-h-[100px] border-r border-b p-1 cursor-pointer hover:bg-gray-50 ${
+                className={`min-h-[100px] border-r border-b p-1 cursor-pointer hover:bg-primary-50/50 ${
                   day.month !== 'current' ? 'bg-gray-50' : ''
                 } ${isToday(day.fullDate) ? 'bg-primary-50' : ''}`}
               >
@@ -180,7 +180,7 @@ export default function CalendarPage() {
                       key={ev.id}
                       onClick={(e) => { e.stopPropagation(); setSelectedEvent(ev); }}
                       className="text-xs px-1 py-0.5 rounded truncate text-white cursor-pointer"
-                      style={{ backgroundColor: ev.color || '#3B82F6' }}
+                      style={{ backgroundColor: ev.color || '#10B981' }}
                     >
                       {ev.title}
                     </div>
@@ -198,10 +198,10 @@ export default function CalendarPage() {
       {/* Event Detail Modal */}
       {selectedEvent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedEvent.color || '#3B82F6' }} />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedEvent.color || '#10B981' }} />
                 <h3 className="text-lg font-bold">{selectedEvent.title}</h3>
               </div>
               <button onClick={() => setSelectedEvent(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -219,7 +219,7 @@ export default function CalendarPage() {
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-1 rounded text-xs font-medium ${
                   selectedEvent.scope === 'company' ? 'bg-purple-100 text-purple-700' :
-                  selectedEvent.scope === 'department' ? 'bg-blue-100 text-blue-700' :
+                  selectedEvent.scope === 'department' ? 'bg-teal-100 text-teal-700' :
                   'bg-gray-100 text-gray-700'
                 }`}>{scopeLabel[selectedEvent.scope]}</span>
                 <span className="text-gray-400">| 작성: {selectedEvent.creator.name}</span>
@@ -249,7 +249,7 @@ export default function CalendarPage() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">일정 추가</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -290,7 +290,7 @@ export default function CalendarPage() {
                 <div className="flex gap-2">
                   {COLORS.map((c) => (
                     <label key={c} className="cursor-pointer">
-                      <input type="radio" name="color" value={c} className="sr-only" defaultChecked={c === '#3B82F6'} />
+                      <input type="radio" name="color" value={c} className="sr-only" defaultChecked={c === '#10B981'} />
                       <div className="w-8 h-8 rounded-full border-2 border-transparent hover:border-gray-300" style={{ backgroundColor: c }} />
                     </label>
                   ))}

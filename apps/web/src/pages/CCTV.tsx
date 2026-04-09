@@ -71,7 +71,7 @@ export default function CCTVPage() {
                 <button
                   key={cam.id}
                   onClick={() => setSelectedCamera(cam)}
-                  className={`w-full text-left px-3 py-2 pl-8 text-sm rounded hover:bg-gray-100 ${
+                  className={`w-full text-left px-3 py-2 pl-8 text-sm rounded-xl hover:bg-primary-50/50 ${
                     selectedCamera?.id === cam.id ? 'bg-primary-50 text-primary-700' : ''
                   }`}
                 >
@@ -95,7 +95,7 @@ export default function CCTVPage() {
                 <button
                   key={cam.id}
                   onClick={() => setSelectedCamera(cam)}
-                  className={`w-full text-left px-3 py-2 pl-8 text-sm rounded hover:bg-gray-100 ${
+                  className={`w-full text-left px-3 py-2 pl-8 text-sm rounded-xl hover:bg-primary-50/50 ${
                     selectedCamera?.id === cam.id ? 'bg-primary-50 text-primary-700' : ''
                   }`}
                 >
@@ -122,7 +122,7 @@ export default function CCTVPage() {
               <button
                 key={n}
                 onClick={() => setLayout(n as 4 | 9 | 16)}
-                className={`p-2 rounded text-sm ${layout === n ? 'bg-primary-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                className={`p-2 rounded-xl text-sm ${layout === n ? 'bg-primary-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
               >
                 <Grid3X3 size={16} />
                 <span className="ml-1 text-xs">{n}</span>
@@ -133,7 +133,7 @@ export default function CCTVPage() {
 
         {/* Camera Grid */}
         {selectedCamera ? (
-          <div className="h-[calc(100%-48px)] bg-black rounded-lg flex items-center justify-center relative">
+          <div className="h-[calc(100%-48px)] bg-black rounded-2xl flex items-center justify-center relative">
             <MonitorPlay size={64} className="text-gray-600" />
             <p className="absolute bottom-4 left-4 text-gray-400 text-sm">
               {selectedCamera.name} - {selectedCamera.location || 'N/A'}
@@ -154,7 +154,7 @@ export default function CCTVPage() {
               <div
                 key={cam.id}
                 onClick={() => setSelectedCamera(cam)}
-                className="bg-black rounded cursor-pointer hover:ring-2 hover:ring-primary-500 flex flex-col items-center justify-center relative"
+                className="bg-black rounded-2xl cursor-pointer hover:ring-2 hover:ring-primary-500 flex flex-col items-center justify-center relative"
               >
                 <MonitorPlay size={32} className="text-gray-700" />
                 <p className="absolute bottom-2 left-2 text-gray-400 text-xs">{cam.name}</p>
@@ -162,7 +162,7 @@ export default function CCTVPage() {
               </div>
             ))}
             {Array.from({ length: Math.max(0, layout - cameras.length) }).map((_, i) => (
-              <div key={`empty-${i}`} className="bg-gray-800 rounded flex items-center justify-center">
+              <div key={`empty-${i}`} className="bg-gray-800 rounded-2xl flex items-center justify-center">
                 <p className="text-gray-600 text-sm">빈 채널</p>
               </div>
             ))}
