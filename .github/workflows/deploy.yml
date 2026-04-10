@@ -16,6 +16,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 15m
           script: |
             cd /opt/project-office
             git pull origin main
