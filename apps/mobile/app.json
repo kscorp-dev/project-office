@@ -2,7 +2,7 @@
   "expo": {
     "name": "Project Office",
     "slug": "project-office",
-    "version": "0.4.0",
+    "version": "0.7.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -42,6 +42,12 @@
       "expo-location",
       "expo-notifications"
     ],
-    "scheme": "projectoffice"
+    "scheme": "projectoffice",
+    "extra": {
+      "eas": {
+        "projectId": "project-office"
+      }
+    },
+    "owner": "kscorp"
   }
 }
