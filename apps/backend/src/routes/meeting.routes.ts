@@ -1,10 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { config } from '../config';
 
 const router = Router();
 router.use(checkModule('meeting'));
@@ -15,7 +20,7 @@ const meetingSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   scheduledAt: z.string().datetime(),
-  maxParticipants: z.number().int().min(2).optional(),
+  maxParticipants: z.number().int().min(2).max(16).optional(),
   password: z.string().max(50).optional(),
   participantIds: z.array(z.string().uuid()).optional(),
 });
@@ -310,6 +315,171 @@ router.get('/:id/join', authenticate, async (req: Request, res: Response) => {
         requiresPassword: !!meeting.password,
       },
     });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// ===== 회의 문서 공유 =====
+
+/** 공유 문서 메타 타입 */
+interface SharedDocMeta {
+  id: string;
+  fileName: string;
+  storedName: string;
+  fileSize: number;
+  mimeType: string;
+  sharedBy: string;
+  sharedById: string;
+  sharedAt: string;
+}
+
+/** multer 저장소 설정 — uploads/meetings/{meetingId}/ */
+const meetingStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const meetingId = req.params.id;
+    const dir = path.resolve(config.upload.dir, 'meetings', meetingId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const meetingUpload = multer({
+  storage: meetingStorage,
+  limits: { fileSize: config.upload.maxFileSize },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
+      '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+      '.txt', '.hwp', '.csv',
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('지원하지 않는 파일 형식입니다'));
+  },
+});
+
+/** 메타데이터 JSON 읽기/쓰기 헬퍼 */
+function metaPath(meetingId: string) {
+  return path.resolve(config.upload.dir, 'meetings', meetingId, '_metadata.json');
+}
+function readMeta(meetingId: string): SharedDocMeta[] {
+  const p = metaPath(meetingId);
+  if (!fs.existsSync(p)) return [];
+  try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; }
+}
+function writeMeta(meetingId: string, data: SharedDocMeta[]) {
+  const dir = path.resolve(config.upload.dir, 'meetings', meetingId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(metaPath(meetingId), JSON.stringify(data, null, 2));
+}
+
+// POST /meeting/:id/documents — 문서 업로드
+router.post('/:id/documents', authenticate, meetingUpload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const meetingId = req.params.id;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 첨부되지 않았습니다' } });
+      return;
+    }
+
+    // 사용자 정보
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { id: true, name: true },
+    });
+
+    const doc: SharedDocMeta = {
+      id: crypto.randomUUID(),
+      fileName: Buffer.from(file.originalname, 'latin1').toString('utf8'),
+      storedName: file.filename,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      sharedBy: user?.name || '알 수 없음',
+      sharedById: req.user!.id,
+      sharedAt: new Date().toISOString(),
+    };
+
+    // 메타데이터 저장
+    const meta = readMeta(meetingId);
+    meta.push(doc);
+    writeMeta(meetingId, meta);
+
+    res.status(201).json({ success: true, data: doc });
+  } catch (err: any) {
+    console.error('[Meeting Document] Upload error:', err);
+    res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: err.message || '업로드 실패' } });
+  }
+});
+
+// GET /meeting/:id/documents — 공유 문서 목록
+router.get('/:id/documents', authenticate, async (req: Request, res: Response) => {
+  try {
+    const docs = readMeta(req.params.id);
+    res.json({ success: true, data: docs });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /meeting/:id/documents/:docId/file — 파일 스트림
+router.get('/:id/documents/:docId/file', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id: meetingId, docId } = req.params;
+    const meta = readMeta(meetingId);
+    const doc = meta.find((d) => d.id === docId);
+
+    if (!doc) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '문서를 찾을 수 없습니다' } });
+      return;
+    }
+
+    const filePath = path.resolve(config.upload.dir, 'meetings', meetingId, doc.storedName);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ success: false, error: { code: 'FILE_MISSING', message: '파일이 존재하지 않습니다' } });
+      return;
+    }
+
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// DELETE /meeting/:id/documents/:docId — 문서 삭제
+router.delete('/:id/documents/:docId', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id: meetingId, docId } = req.params;
+    const meta = readMeta(meetingId);
+    const idx = meta.findIndex((d) => d.id === docId);
+
+    if (idx < 0) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '문서를 찾을 수 없습니다' } });
+      return;
+    }
+
+    const doc = meta[idx];
+    // 본인 또는 관리자만 삭제 가능
+    if (doc.sharedById !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '삭제 권한이 없습니다' } });
+      return;
+    }
+
+    // 파일 삭제
+    const filePath = path.resolve(config.upload.dir, 'meetings', meetingId, doc.storedName);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    meta.splice(idx, 1);
+    writeMeta(meetingId, meta);
+
+    res.json({ success: true, data: { message: '삭제되었습니다', documentId: docId } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

@@ -354,7 +354,7 @@ export default function MeetingPage() {
               </div>
               <div>
                 <p className="text-gray-500 text-xs mb-0.5">최대 참석자</p>
-                <p className="font-medium">{selectedMeeting.maxParticipants || '제한없음'}</p>
+                <p className="font-medium">{selectedMeeting.maxParticipants || 16}명 (최대 16명)</p>
               </div>
             </div>
 
@@ -450,7 +450,7 @@ export default function MeetingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">최대 참석자 수</label>
-                <input type="number" name="maxParticipants" min={2} max={100} className="input-field" placeholder="제한없음" />
+                <input type="number" name="maxParticipants" min={2} max={16} defaultValue={16} className="input-field" placeholder="최대 16명" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">비밀번호 (선택)</label>

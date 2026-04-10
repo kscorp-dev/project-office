@@ -1033,7 +1033,7 @@ model Meeting {
   scheduledAt  DateTime?     @map("scheduled_at")
   startedAt    DateTime?     @map("started_at")
   endedAt      DateTime?     @map("ended_at")
-  maxParticipants Int        @default(20) @map("max_participants")
+  maxParticipants Int        @default(16) @map("max_participants")
   isRecording  Boolean       @default(false) @map("is_recording")
   password     String?
   createdAt    DateTime      @default(now()) @map("created_at")

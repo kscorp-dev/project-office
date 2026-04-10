@@ -10,7 +10,7 @@ import {
   Clock, Newspaper, Package, Video, FolderOpen, Settings,
   ChevronLeft, ChevronRight, Bell, Mail, Shield,
   CheckCircle2, AlertCircle, Timer, ArrowRight,
-  GripVertical, Pencil, RotateCcw, Plus, X, Eye, EyeOff,
+  GripVertical, Pencil, RotateCcw, Plus, X, Eye, EyeOff, Move,
 } from 'lucide-react';
 
 // useContainerWidth 훅으로 컨테이너 너비 감지
@@ -34,7 +34,7 @@ interface WidgetDef {
 
 const WIDGET_DEFS: WidgetDef[] = [
   { id: 'profile',    title: '프로필',      icon: Users,         iconColor: 'text-primary-600', minW: 2, minH: 3, defaultW: 4, defaultH: 4 },
-  { id: 'shortcuts',  title: '바로가기',    icon: Settings,      iconColor: 'text-gray-600',    minW: 2, minH: 3, defaultW: 4, defaultH: 5 },
+  { id: 'shortcuts',  title: '바로가기',    icon: Settings,      iconColor: 'text-gray-600 dark:text-gray-400',    minW: 2, minH: 3, defaultW: 4, defaultH: 5 },
   { id: 'calendar',   title: '캘린더',      icon: Calendar,      iconColor: 'text-primary-500', minW: 2, minH: 4, defaultW: 4, defaultH: 6 },
   { id: 'approval',   title: '전자결재',    icon: FileCheck,     iconColor: 'text-primary-600', minW: 3, minH: 3, defaultW: 5, defaultH: 5 },
   { id: 'taskorders', title: '작업지시서',  icon: ClipboardList, iconColor: 'text-amber-500',   minW: 3, minH: 3, defaultW: 5, defaultH: 5 },
@@ -113,19 +113,19 @@ function MiniCalendar() {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <button onClick={prev} className="p-1 hover:bg-gray-100 rounded-lg"><ChevronLeft size={16} /></button>
-        <span className="font-semibold text-sm text-gray-800">{year}년 {month + 1}월</span>
+        <button onClick={prev} className="p-1 hover:bg-gray-100 dark:bg-slate-700 dark:hover:bg-slate-700 rounded-lg"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-500" /></button>
+        <span className="font-semibold text-sm text-gray-800 dark:text-gray-200 dark:text-gray-200">{year}년 {month + 1}월</span>
         <div className="flex items-center gap-1">
-          <button onClick={goToday} className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-600">오늘</button>
-          <button onClick={next} className="p-1 hover:bg-gray-100 rounded-lg"><ChevronRight size={16} /></button>
+          <button onClick={goToday} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-slate-700 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 dark:hover:bg-slate-600 rounded-md text-gray-600 dark:text-gray-400 dark:text-gray-300 dark:text-gray-600">오늘</button>
+          <button onClick={next} className="p-1 hover:bg-gray-100 dark:bg-slate-700 dark:hover:bg-slate-700 rounded-lg"><ChevronRight size={16} className="text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-500" /></button>
         </div>
       </div>
       <div className="grid grid-cols-7 text-center text-xs">
         {DAY_NAMES.map((d, i) => (
-          <div key={d} className={`py-1.5 font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{d}</div>
+          <div key={d} className={`py-1.5 font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{d}</div>
         ))}
         {cells.map((c, i) => (
-          <div key={i} className={`py-1.5 text-xs rounded-lg ${c.isToday ? 'bg-primary-500 text-white font-bold' : ''} ${!c.current ? 'text-gray-300' : c.isToday ? '' : 'text-gray-700'} ${i % 7 === 0 && c.current && !c.isToday ? 'text-red-400' : ''} ${i % 7 === 6 && c.current && !c.isToday ? 'text-blue-400' : ''}`}>
+          <div key={i} className={`py-1.5 text-xs rounded-lg ${c.isToday ? 'bg-primary-500 text-white font-bold' : ''} ${!c.current ? 'text-gray-300 dark:text-gray-600 dark:text-gray-600 dark:text-gray-400' : c.isToday ? '' : 'text-gray-700 dark:text-gray-300 dark:text-gray-600 dark:text-gray-300 dark:text-gray-600'} ${i % 7 === 0 && c.current && !c.isToday ? 'text-red-400' : ''} ${i % 7 === 6 && c.current && !c.isToday ? 'text-blue-400' : ''}`}>
             {c.day}
           </div>
         ))}
@@ -150,8 +150,8 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
               {user?.name?.[0] || 'U'}
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">{user?.name || '사용자'}</h2>
-              <p className="text-xs text-gray-500">{user?.department?.name || '(주)KS코퍼레이션'}</p>
+              <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">{user?.name || '사용자'}</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">{user?.department?.name || '(주)KS코퍼레이션'}</p>
             </div>
           </div>
           <div className="grid grid-cols-4 gap-2">
@@ -165,8 +165,8 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
                 <div className={`${s.bg} w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1`}>
                   <s.icon size={14} className={s.color} />
                 </div>
-                <p className="text-sm font-bold text-gray-900">{s.count}<span className="text-[10px] font-normal text-gray-400">건</span></p>
-                <p className="text-[9px] text-gray-400">{s.label}</p>
+                <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{s.count}<span className="text-[10px] font-normal text-gray-400 dark:text-gray-500">건</span></p>
+                <p className="text-[9px] text-gray-400 dark:text-gray-500">{s.label}</p>
               </div>
             ))}
           </div>
@@ -181,7 +181,7 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
               <div className={`${m.color} w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 group-hover:shadow-md transition-all`}>
                 <m.icon size={18} className="text-white" />
               </div>
-              <span className="text-[10px] text-gray-600 group-hover:text-gray-900 font-medium">{m.label}</span>
+              <span className="text-[10px] text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:text-gray-100 font-medium">{m.label}</span>
             </button>
           ))}
         </div>
@@ -195,14 +195,14 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
         <>
           <div className="flex gap-2 mb-4 flex-wrap">
             {[{ label: '전체', count: 0, active: true }, { label: '대기', count: 0 }, { label: '확인', count: 0 }, { label: '예정', count: 0 }, { label: '진행', count: 0 }].map(t => (
-              <span key={t.label} className={`text-xs px-3 py-1.5 rounded-full font-medium ${t.active ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'} cursor-pointer transition-colors`}>
+              <span key={t.label} className={`text-xs px-3 py-1.5 rounded-full font-medium ${t.active ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-slate-600'} cursor-pointer transition-colors`}>
                 {t.label} {t.count}
               </span>
             ))}
           </div>
-          <div className="text-center py-6 text-gray-300">
+          <div className="text-center py-6 text-gray-300 dark:text-gray-600">
             <FileCheck size={28} className="mx-auto mb-2" />
-            <p className="text-sm text-gray-400">기안된 문서가 없습니다</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">기안된 문서가 없습니다</p>
           </div>
         </>
       );
@@ -218,22 +218,22 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
             ].map(s => (
               <div key={s.label} className={`${s.bg} flex-1 rounded-2xl p-3 text-center`}>
                 <s.icon size={16} className={`${s.color} mx-auto mb-1`} />
-                <p className="text-lg font-bold text-gray-800">{s.count}</p>
-                <p className="text-[10px] text-gray-500">{s.label}</p>
+                <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{s.count}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 dark:text-gray-500">{s.label}</p>
               </div>
             ))}
           </div>
-          <div className="text-center py-3 text-gray-300">
-            <p className="text-sm text-gray-400">작업지시서가 없습니다</p>
+          <div className="text-center py-3 text-gray-300 dark:text-gray-600">
+            <p className="text-sm text-gray-400 dark:text-gray-500">작업지시서가 없습니다</p>
           </div>
         </>
       );
 
     case 'board':
       return (
-        <div className="text-center py-6 text-gray-300">
+        <div className="text-center py-6 text-gray-300 dark:text-gray-600">
           <Newspaper size={28} className="mx-auto mb-2" />
-          <p className="text-sm text-gray-400">게시글이 없습니다</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">게시글이 없습니다</p>
         </div>
       );
 
@@ -241,15 +241,15 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
       return (
         <>
           <div className="text-center mb-3">
-            <span className={`inline-block text-xs px-3 py-1 rounded-full font-medium mb-2 ${checkedIn ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
+            <span className={`inline-block text-xs px-3 py-1 rounded-full font-medium mb-2 ${checkedIn ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 dark:text-gray-500'}`}>
               {checkedIn ? '출근중' : '미출근'}
             </span>
-            <p className="text-2xl font-mono font-bold text-gray-900 tracking-wider">{timeStr}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">{dateStr}</p>
+            <p className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100 tracking-wider">{timeStr}</p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{dateStr}</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setCheckedIn(true)} disabled={checkedIn} className={`py-2 rounded-2xl text-sm font-medium transition-all ${checkedIn ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'}`}>출근</button>
-            <button onClick={() => setCheckedIn(false)} disabled={!checkedIn} className={`py-2 rounded-2xl text-sm font-medium transition-all ${!checkedIn ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600 shadow-sm'}`}>퇴근</button>
+            <button onClick={() => setCheckedIn(true)} disabled={checkedIn} className={`py-2 rounded-2xl text-sm font-medium transition-all ${checkedIn ? 'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'}`}>출근</button>
+            <button onClick={() => setCheckedIn(false)} disabled={!checkedIn} className={`py-2 rounded-2xl text-sm font-medium transition-all ${!checkedIn ? 'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600 shadow-sm'}`}>퇴근</button>
           </div>
         </>
       );
@@ -260,7 +260,7 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
           value={memo}
           onChange={e => setMemo(e.target.value)}
           placeholder="메모를 입력하세요..."
-          className="w-full h-full bg-transparent text-sm text-gray-700 placeholder:text-gray-400 resize-none focus:outline-none"
+          className="w-full h-full bg-transparent text-sm text-gray-700 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-600 resize-none focus:outline-none"
         />
       );
 
@@ -269,7 +269,7 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
         <div className="grid grid-cols-2 gap-1.5 h-full">
           {[1, 2, 3, 4].map(ch => (
             <div key={ch} className="bg-gray-800 rounded-xl flex items-center justify-center min-h-[60px]">
-              <p className="text-[10px] text-gray-500">빈 채널</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 dark:text-gray-500">빈 채널</p>
             </div>
           ))}
         </div>
@@ -277,9 +277,9 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
 
     case 'alerts':
       return (
-        <div className="text-center py-4 text-gray-300">
+        <div className="text-center py-4 text-gray-300 dark:text-gray-600">
           <Bell size={24} className="mx-auto mb-1.5" />
-          <p className="text-xs text-gray-400">새로운 알림이 없습니다</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">새로운 알림이 없습니다</p>
         </div>
       );
 
@@ -385,19 +385,19 @@ export default function DashboardPage() {
     <div className="p-4 lg:p-6">
       {/* ── 상단 툴바 ── */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-gray-800">대시보드</h1>
+        <h1 className="text-lg font-bold text-gray-800 dark:text-gray-200">대시보드</h1>
         <div className="flex items-center gap-2">
           {editing && (
             <>
               <button
                 onClick={() => setShowAddPanel(!showAddPanel)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-gray-300 dark:text-gray-600"
               >
                 <Plus size={14} /> 위젯 추가
               </button>
               <button
                 onClick={resetLayout}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-gray-300 dark:text-gray-600"
               >
                 <RotateCcw size={14} /> 초기화
               </button>
@@ -408,7 +408,7 @@ export default function DashboardPage() {
             className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-xl transition-all ${
               editing
                 ? 'bg-primary-500 text-white shadow-sm'
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 dark:text-gray-300 dark:text-gray-600 hover:bg-gray-50 dark:hover:bg-slate-700'
             }`}
           >
             {editing ? <><CheckCircle2 size={14} /> 완료</> : <><Pencil size={14} /> 편집</>}
@@ -418,8 +418,8 @@ export default function DashboardPage() {
 
       {/* ── 위젯 추가 패널 ── */}
       {editing && showAddPanel && hiddenDefs.length > 0 && (
-        <div className="mb-4 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
-          <p className="text-xs font-medium text-gray-500 mb-3">숨겨진 위젯 — 클릭하여 추가</p>
+        <div className="mb-4 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">숨겨진 위젯 — 클릭하여 추가</p>
           <div className="flex flex-wrap gap-2">
             {hiddenDefs.map(w => (
               <button
@@ -428,16 +428,16 @@ export default function DashboardPage() {
                 className="flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-primary-50 border border-gray-200 hover:border-primary-300 rounded-xl text-sm transition-colors"
               >
                 <w.icon size={14} className={w.iconColor} />
-                <span className="text-gray-700">{w.title}</span>
-                <Plus size={12} className="text-gray-400" />
+                <span className="text-gray-700 dark:text-gray-300 dark:text-gray-600">{w.title}</span>
+                <Plus size={12} className="text-gray-400 dark:text-gray-500" />
               </button>
             ))}
           </div>
         </div>
       )}
       {editing && showAddPanel && hiddenDefs.length === 0 && (
-        <div className="mb-4 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
-          <p className="text-xs text-gray-400 text-center">모든 위젯이 표시 중입니다</p>
+        <div className="mb-4 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">모든 위젯이 표시 중입니다</p>
         </div>
       )}
 
@@ -467,7 +467,7 @@ export default function DashboardPage() {
                 minW: w.minW,
                 minH: isMin ? 2 : w.minH,
               }}
-              className={`${isMemo ? 'bg-primary-100/60 border-primary-200/50' : 'bg-white border-gray-100/80'} rounded-3xl shadow-sm border overflow-hidden flex flex-col group/widget ${editing ? 'ring-2 ring-primary-200/50' : ''}`}
+              className={`${isMemo ? 'bg-primary-100/60 dark:bg-primary-900/30 border-primary-200/50 dark:border-primary-800/50' : 'bg-white dark:bg-slate-800 border-gray-100/80 dark:border-slate-700/80'} rounded-3xl shadow-sm border overflow-hidden flex flex-col group/widget relative ${editing ? 'ring-2 ring-primary-200/50 dark:ring-primary-500/30' : ''}`}
             >
               {/* 위젯 헤더 */}
               <div className={`flex items-center justify-between px-4 pt-3 pb-1 ${editing ? 'widget-drag-handle cursor-grab active:cursor-grabbing' : ''}`}>
@@ -491,13 +491,13 @@ export default function DashboardPage() {
                       </span>
                     </button>
                   </div>
-                  {editing && <GripVertical size={14} className="text-gray-300" />}
+                  {editing && <GripVertical size={14} className="text-gray-300 dark:text-gray-600 dark:text-gray-600 dark:text-gray-400" />}
                   <w.icon size={14} className={w.iconColor} />
-                  <h3 className="font-semibold text-sm text-gray-800">{w.title}</h3>
+                  <h3 className="font-semibold text-sm text-gray-800 dark:text-gray-200">{w.title}</h3>
                 </div>
                 <div className="flex items-center gap-1">
                   {!editing && widgetLinks[w.id] && (
-                    <button onClick={() => navigate(widgetLinks[w.id])} className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-0.5">
+                    <button onClick={() => navigate(widgetLinks[w.id])} className="text-xs text-gray-400 dark:text-gray-500 hover:text-primary-500 flex items-center gap-0.5">
                       더보기 <ArrowRight size={12} />
                     </button>
                   )}
@@ -516,6 +516,16 @@ export default function DashboardPage() {
                     checkedIn={checkedIn}
                     setCheckedIn={setCheckedIn}
                   />
+                </div>
+              )}
+
+              {/* ── 리사이즈 인디케이터 (편집 모드) ── */}
+              {editing && (
+                <div className="absolute bottom-1 right-1 flex items-center gap-0.5 opacity-0 group-hover/widget:opacity-100 transition-opacity pointer-events-none z-10">
+                  <div className="flex items-center gap-1 bg-primary-500/90 dark:bg-primary-600/90 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-md shadow-sm">
+                    <Move size={9} />
+                    크기 조절
+                  </div>
                 </div>
               )}
             </div>

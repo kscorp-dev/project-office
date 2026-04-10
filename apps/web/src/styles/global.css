@@ -2,9 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── 기본 라이트 모드 ── */
 body {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: #f8fdf9;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ── 다크 모드 바디 ── */
+.dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
 }
 
 @layer components {
@@ -22,6 +30,17 @@ body {
   }
   .card {
     @apply bg-white rounded-3xl shadow-sm border border-gray-100/80 p-6;
+  }
+
+  /* 다크 모드 컴포넌트 오버라이드 */
+  .dark .btn-secondary {
+    @apply bg-slate-800 text-gray-200 border-slate-700 hover:bg-slate-700;
+  }
+  .dark .input-field {
+    @apply bg-slate-800/50 border-slate-700 text-gray-200 placeholder-gray-500 focus:ring-primary-500/50 focus:border-primary-500;
+  }
+  .dark .card {
+    @apply bg-slate-800 border-slate-700/80;
   }
 }
 
@@ -48,4 +67,88 @@ body {
 
 .react-grid-item > .react-resizable-handle {
   z-index: 10;
+}
+
+/* ── 다크 모드 react-grid-layout ── */
+.dark .react-grid-item.react-grid-placeholder {
+  background: rgb(34 197 94 / 0.1) !important;
+  border-color: rgb(34 197 94 / 0.3) !important;
+}
+
+/* ── 위젯 리사이즈 인디케이터 ── */
+.widget-resize-indicator {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.editing-mode .widget-resize-indicator {
+  opacity: 1;
+}
+
+.widget-resize-indicator::before {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 2px,
+    rgba(34, 197, 94, 0.5) 2px,
+    rgba(34, 197, 94, 0.5) 3px
+  );
+  border-radius: 2px;
+}
+
+.dark .widget-resize-indicator::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 2px,
+    rgba(74, 222, 128, 0.4) 2px,
+    rgba(74, 222, 128, 0.4) 3px
+  );
+}
+
+/* ── 위젯 편집모드 리사이즈 힌트 툴팁 ── */
+.resize-hint-tooltip {
+  position: absolute;
+  bottom: 28px;
+  right: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.widget-resize-indicator:hover ~ .resize-hint-tooltip,
+.react-resizable-handle:hover ~ .resize-hint-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── 다크모드 전환 애니메이션 ── */
+.dark-transition,
+.dark-transition *,
+.dark-transition *::before,
+.dark-transition *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease !important;
 }

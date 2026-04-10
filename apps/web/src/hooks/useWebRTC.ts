@@ -30,6 +30,17 @@ export interface TranscriptMessage {
   timestamp: string;
 }
 
+export interface SharedDocument {
+  id: string;
+  fileName: string;
+  storedName: string;
+  fileSize: number;
+  mimeType: string;
+  sharedBy: string;
+  sharedById: string;
+  sharedAt: string;
+}
+
 interface UseWebRTCOptions {
   meetingId: string;
   localStream: MediaStream | null;
@@ -37,6 +48,8 @@ interface UseWebRTCOptions {
   onPeerLeft?: (peer: { socketId: string; userId: string; name: string }) => void;
   onChat?: (msg: ChatMessage) => void;
   onTranscript?: (entry: TranscriptMessage) => void;
+  onDocumentShared?: (doc: SharedDocument) => void;
+  onDocumentRemoved?: (docId: string) => void;
 }
 
 const SOCKET_URL = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
@@ -55,6 +68,8 @@ export function useWebRTC({
   onPeerLeft,
   onChat,
   onTranscript,
+  onDocumentShared,
+  onDocumentRemoved,
 }: UseWebRTCOptions) {
   const accessToken = useAuthStore(s => s.accessToken);
   const socketRef = useRef<Socket | null>(null);
@@ -68,12 +83,16 @@ export function useWebRTC({
   const cbLeft = useRef(onPeerLeft);
   const cbChat = useRef(onChat);
   const cbTranscript = useRef(onTranscript);
+  const cbDocShared = useRef(onDocumentShared);
+  const cbDocRemoved = useRef(onDocumentRemoved);
 
   localStreamRef.current = localStream;
   cbJoined.current = onPeerJoined;
   cbLeft.current = onPeerLeft;
   cbChat.current = onChat;
   cbTranscript.current = onTranscript;
+  cbDocShared.current = onDocumentShared;
+  cbDocRemoved.current = onDocumentRemoved;
 
   /* ── 헬퍼: PeerConnection 생성 ── */
   function makePc(socket: Socket, targetId: string, peerInfo: Omit<RemotePeer, 'stream'>) {
@@ -239,6 +258,10 @@ export function useWebRTC({
     // 회의록
     socket.on('meeting:transcript', (entry: TranscriptMessage) => cbTranscript.current?.(entry));
 
+    // 문서 공유
+    socket.on('meeting:document-shared', (doc: SharedDocument) => cbDocShared.current?.(doc));
+    socket.on('meeting:document-removed', (data: { documentId: string }) => cbDocRemoved.current?.(data.documentId));
+
     // 에러
     socket.on('meeting:error', (err: { code: string; message: string }) => {
       console.error(`[Meeting Socket] Error: ${err.code} — ${err.message}`);
@@ -291,6 +314,14 @@ export function useWebRTC({
     socketRef.current?.emit('meeting:transcript', { meetingId, text, isFinal });
   }, [meetingId]);
 
+  const shareDocument = useCallback((doc: SharedDocument) => {
+    socketRef.current?.emit('meeting:share-document', { meetingId, document: doc });
+  }, [meetingId]);
+
+  const removeDocument = useCallback((documentId: string) => {
+    socketRef.current?.emit('meeting:remove-document', { meetingId, documentId });
+  }, [meetingId]);
+
   const leave = useCallback(() => {
     socketRef.current?.emit('meeting:leave');
     socketRef.current?.disconnect();
@@ -307,6 +338,8 @@ export function useWebRTC({
     sendScreenShare,
     sendChat,
     sendTranscript,
+    shareDocument,
+    removeDocument,
     leave,
   };
 }

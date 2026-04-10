@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
+export type ThemeMode = 'light' | 'dark' | 'system';
 
 export interface NavGroup {
   id: string;
@@ -14,6 +15,7 @@ interface LayoutState {
   sidebarOpen: boolean;
   navGroups: NavGroup[];
   hiddenItems: string[];   // 숨김 처리된 메뉴 키
+  theme: ThemeMode;
 
   setSidebarPosition: (pos: SidebarPosition) => void;
   toggleSidebar: () => void;
@@ -23,6 +25,7 @@ interface LayoutState {
   toggleItemVisibility: (key: string) => void;
   moveItem: (groupId: string, fromIdx: number, toIdx: number) => void;
   moveItemBetweenGroups: (fromGroupId: string, toGroupId: string, itemKey: string, toIdx: number) => void;
+  setTheme: (mode: ThemeMode) => void;
   resetLayout: () => void;
 }
 
@@ -43,22 +46,35 @@ function loadSettings() {
   return null;
 }
 
-function saveSettings(state: Pick<LayoutState, 'sidebarPosition' | 'sidebarOpen' | 'navGroups' | 'hiddenItems'>) {
+function saveSettings(state: Pick<LayoutState, 'sidebarPosition' | 'sidebarOpen' | 'navGroups' | 'hiddenItems' | 'theme'>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     sidebarPosition: state.sidebarPosition,
     sidebarOpen: state.sidebarOpen,
     navGroups: state.navGroups,
     hiddenItems: state.hiddenItems,
+    theme: state.theme,
   }));
+}
+
+/** 실제 다크모드를 DOM에 적용 */
+function applyTheme(mode: ThemeMode) {
+  const isDark =
+    mode === 'dark' ||
+    (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', isDark);
 }
 
 export const useLayoutStore = create<LayoutState>((set, get) => {
   const saved = loadSettings();
+  const initialTheme: ThemeMode = (saved?.theme as ThemeMode) ?? 'light';
+  // 스토어 초기화 시 DOM에 테마 즉시 적용 (index.html 스크립트와 동기화)
+  applyTheme(initialTheme);
   return {
     sidebarPosition: saved?.sidebarPosition ?? 'left',
     sidebarOpen: saved?.sidebarOpen ?? true,
     navGroups: saved?.navGroups ?? DEFAULT_GROUPS,
     hiddenItems: saved?.hiddenItems ?? [],
+    theme: (saved?.theme as ThemeMode) ?? 'light',
 
     setSidebarPosition: (pos) => {
       set({ sidebarPosition: pos });
@@ -124,8 +140,15 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       saveSettings({ ...get(), navGroups: groups });
     },
 
+    setTheme: (mode) => {
+      set({ theme: mode });
+      applyTheme(mode);
+      saveSettings({ ...get(), theme: mode });
+    },
+
     resetLayout: () => {
-      set({ sidebarPosition: 'left', sidebarOpen: true, navGroups: DEFAULT_GROUPS, hiddenItems: [] });
+      set({ sidebarPosition: 'left', sidebarOpen: true, navGroups: DEFAULT_GROUPS, hiddenItems: [], theme: 'light' });
+      applyTheme('light');
       localStorage.removeItem(STORAGE_KEY);
     },
   };

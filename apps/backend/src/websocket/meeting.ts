@@ -75,9 +75,13 @@ export function setupMeetingSocket(io: SocketIOServer) {
         }
         const room = rooms.get(meetingId)!;
 
-        // 최대 인원 확인
-        if (mtg.maxParticipants && room.size >= mtg.maxParticipants) {
-          socket.emit('meeting:error', { code: 'ROOM_FULL', message: '회의실이 가득 찼습니다' });
+        // 최대 인원 확인 (2~16명)
+        const maxCap = Math.min(mtg.maxParticipants || 16, 16);
+        if (room.size >= maxCap) {
+          socket.emit('meeting:error', {
+            code: 'ROOM_FULL',
+            message: `회의실이 가득 찼습니다 (최대 ${maxCap}명)`,
+          });
           return;
         }
 
@@ -221,6 +225,16 @@ export function setupMeetingSocket(io: SocketIOServer) {
         isFinal: data.isFinal,
         timestamp: new Date().toISOString(),
       });
+    });
+
+    // ────── 문서 공유 알림 (REST 업로드 후 호출) ──────
+    socket.on('meeting:share-document', (data: { meetingId: string; document: unknown }) => {
+      socket.to(data.meetingId).emit('meeting:document-shared', data.document);
+    });
+
+    // ────── 문서 삭제 알림 ──────
+    socket.on('meeting:remove-document', (data: { meetingId: string; documentId: string }) => {
+      socket.to(data.meetingId).emit('meeting:document-removed', { documentId: data.documentId });
     });
 
     // ────── 퇴장 ──────
