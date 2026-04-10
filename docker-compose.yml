@@ -12,7 +12,7 @@ services:
     ports:
       - "${PG_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-po_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-po_user} -d ${POSTGRES_DB:-project_office}"]
       interval: 5s
       timeout: 5s
       retries: 5

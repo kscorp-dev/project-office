@@ -37,6 +37,9 @@ const io = new SocketIOServer(httpServer, {
   },
 });
 
+// Trust proxy (behind Nginx reverse proxy)
+app.set('trust proxy', 1);
+
 // Security Middleware
 app.use(helmet());
 app.use(cors({
