@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.claude
+*.log
+.env
+apps/*/node_modules
+apps/*/dist
+apps/detection/venv
+apps/mobile

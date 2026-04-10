@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { config } from '../config';
 
 const router = Router();
 
@@ -82,6 +84,80 @@ router.put('/settings/:key', async (req: Request, res: Response) => {
 });
 
 // ===== 사용자 관리 =====
+
+// POST /admin/users - 관리자가 직접 직원 등록
+const createUserSchema = z.object({
+  employeeId: z.string().min(2).max(20),
+  name: z.string().min(2).max(50),
+  email: z.string().email(),
+  password: z.string().min(8).max(100),
+  role: z.enum(['super_admin', 'admin', 'dept_admin', 'user']).default('user'),
+  departmentId: z.string().optional(),
+  position: z.string().optional(),
+  phone: z.string().optional(),
+});
+
+router.post('/users', async (req: Request, res: Response) => {
+  try {
+    const data = createUserSchema.parse(req.body);
+
+    // super_admin 역할 부여는 super_admin만 가능
+    if (data.role === 'super_admin' && req.user!.role !== 'super_admin') {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'super_admin 역할 부여 권한이 없습니다' } });
+      return;
+    }
+
+    // 중복 확인
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ employeeId: data.employeeId }, { email: data.email }] },
+    });
+    if (existing) {
+      const field = existing.employeeId === data.employeeId ? '사번' : '이메일';
+      res.status(409).json({ success: false, error: { code: 'DUPLICATE', message: `이미 사용 중인 ${field}입니다` } });
+      return;
+    }
+
+    // 부서 존재 확인
+    if (data.departmentId) {
+      const dept = await prisma.department.findUnique({ where: { id: data.departmentId } });
+      if (!dept) {
+        res.status(400).json({ success: false, error: { code: 'INVALID_DEPT', message: '존재하지 않는 부서입니다' } });
+        return;
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(data.password, config.bcrypt.saltRounds);
+
+    const newUser = await prisma.user.create({
+      data: {
+        employeeId: data.employeeId,
+        name: data.name,
+        email: data.email,
+        password: hashedPassword,
+        role: data.role as any,
+        status: 'active',  // 관리자가 등록하므로 바로 활성화
+        position: data.position,
+        phone: data.phone,
+        departmentId: data.departmentId || null,
+      },
+      select: {
+        id: true, employeeId: true, name: true, email: true, role: true, status: true,
+        position: true, phone: true,
+        department: { select: { id: true, name: true } },
+        createdAt: true,
+      },
+    });
+
+    res.status(201).json({ success: true, data: newUser });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: err.errors[0]?.message || '입력값을 확인해주세요' } });
+      return;
+    }
+    console.error('Create user error:', err);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
 
 // GET /admin/users - 전체 사용자 목록 (검색, 역할 필터, 상태 필터, 페이지네이션)
 router.get('/users', async (req: Request, res: Response) => {

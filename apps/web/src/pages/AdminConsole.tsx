@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Shield, Users, Settings, ScrollText, ToggleLeft, ToggleRight,
   Search, RefreshCw, ChevronLeft, ChevronRight, Edit2, Check, X,
-  UserCheck, UserX, LogIn, FileCheck,
+  UserCheck, UserX, LogIn, FileCheck, UserPlus, Eye, EyeOff,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -58,6 +58,28 @@ interface AdminStats {
   pendingApprovals: number;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  code: string;
+}
+
+interface CreateUserForm {
+  employeeId: string;
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  departmentId: string;
+  position: string;
+  phone: string;
+}
+
+const EMPTY_USER_FORM: CreateUserForm = {
+  employeeId: '', name: '', email: '', password: '',
+  role: 'user', departmentId: '', position: '', phone: '',
+};
+
 type TabKey = 'modules' | 'users' | 'settings' | 'logs';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
@@ -68,17 +90,17 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
 ];
 
 const ROLE_MAP: Record<string, { label: string; color: string }> = {
-  super_admin: { label: '최고관리자', color: 'bg-red-100 text-red-700' },
-  admin:       { label: '관리자',     color: 'bg-orange-100 text-orange-700' },
-  dept_admin:  { label: '부서관리자', color: 'bg-yellow-100 text-yellow-700' },
-  user:        { label: '일반사용자', color: 'bg-gray-100 text-gray-600' },
+  super_admin: { label: '최고관리자', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' },
+  admin:       { label: '관리자',     color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' },
+  dept_admin:  { label: '부서관리자', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400' },
+  user:        { label: '일반사용자', color: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300' },
 };
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  active:    { label: '활성',   color: 'bg-green-100 text-green-700' },
-  inactive:  { label: '비활성', color: 'bg-gray-100 text-gray-500' },
-  suspended: { label: '정지',   color: 'bg-red-100 text-red-600' },
-  pending:   { label: '대기중', color: 'bg-yellow-100 text-yellow-700' },
+  active:    { label: '활성',   color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' },
+  inactive:  { label: '비활성', color: 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-gray-400' },
+  suspended: { label: '정지',   color: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400' },
+  pending:   { label: '대기중', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400' },
 };
 
 /* ─────────────────────────── Component ─────────────────────────── */
@@ -104,6 +126,14 @@ export default function AdminConsolePage() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
+
+  // Create User Modal
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateUserForm>(EMPTY_USER_FORM);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
 
   // Audit Logs
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -208,6 +238,57 @@ export default function AdminConsolePage() {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const res = await api.get('/departments/flat');
+      setDepartments(res.data.data || []);
+    } catch (err) {
+      console.error('Departments fetch error:', err);
+    }
+  };
+
+  const openCreateUser = () => {
+    setCreateForm(EMPTY_USER_FORM);
+    setCreateError('');
+    setShowPassword(false);
+    setShowCreateUser(true);
+    if (departments.length === 0) fetchDepartments();
+  };
+
+  const handleCreateUser = async () => {
+    if (!createForm.employeeId || !createForm.name || !createForm.email || !createForm.password) {
+      setCreateError('사번, 이름, 이메일, 비밀번호는 필수입니다');
+      return;
+    }
+    if (createForm.password.length < 8) {
+      setCreateError('비밀번호는 8자 이상이어야 합니다');
+      return;
+    }
+    setCreateLoading(true);
+    setCreateError('');
+    try {
+      const payload: any = {
+        employeeId: createForm.employeeId,
+        name: createForm.name,
+        email: createForm.email,
+        password: createForm.password,
+        role: createForm.role,
+      };
+      if (createForm.departmentId) payload.departmentId = createForm.departmentId;
+      if (createForm.position) payload.position = createForm.position;
+      if (createForm.phone) payload.phone = createForm.phone;
+
+      await api.post('/admin/users', payload);
+      setShowCreateUser(false);
+      fetchUsers();
+      fetchStats();
+    } catch (err: any) {
+      setCreateError(err.response?.data?.error?.message || '직원 등록 중 오류가 발생했습니다');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   /* ── Module toggle ── */
   const handleModuleToggle = async (mod: Module) => {
     try {
@@ -270,11 +351,11 @@ export default function AdminConsolePage() {
     if (meta.totalPages <= 1) return null;
     const pages = Array.from({ length: Math.min(meta.totalPages, 7) }, (_, i) => i + 1);
     return (
-      <div className="flex items-center justify-center gap-1 pt-4 border-t mt-4">
+      <div className="flex items-center justify-center gap-1 pt-4 border-t dark:border-slate-700 mt-4">
         <button
           onClick={() => onPage(meta.page - 1)}
           disabled={meta.page === 1}
-          className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30"
+          className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-30 dark:text-gray-400"
         >
           <ChevronLeft size={16} />
         </button>
@@ -283,7 +364,7 @@ export default function AdminConsolePage() {
             key={p}
             onClick={() => onPage(p)}
             className={`px-3 py-1 rounded text-sm ${
-              meta.page === p ? 'bg-primary-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+              meta.page === p ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
             }`}
           >
             {p}
@@ -292,7 +373,7 @@ export default function AdminConsolePage() {
         <button
           onClick={() => onPage(meta.page + 1)}
           disabled={meta.page === meta.totalPages}
-          className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30"
+          className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-30 dark:text-gray-400"
         >
           <ChevronRight size={16} />
         </button>
@@ -309,33 +390,33 @@ export default function AdminConsolePage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2 dark:text-white">
         <Shield size={24} /> 관리자 콘솔
       </h1>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {STAT_CARDS.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="card py-4 flex items-center gap-4">
+          <div key={label} className="card dark:bg-slate-800 dark:border-slate-700/80 py-4 flex items-center gap-4">
             <Icon size={28} className={color} />
             <div>
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className="text-2xl font-bold">{value}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+              <p className="text-2xl font-bold dark:text-white">{value}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-primary-50/50 p-1.5 rounded-2xl w-fit overflow-x-auto">
+      <div className="flex gap-1 mb-6 bg-primary-50/50 dark:bg-slate-800/50 p-1.5 rounded-2xl w-fit overflow-x-auto">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
               activeTab === key
-                ? 'bg-white shadow-sm text-primary-600'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white dark:bg-slate-700 shadow-sm text-primary-600 dark:text-primary-400'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
             <Icon size={15} /> {label}
@@ -345,7 +426,7 @@ export default function AdminConsolePage() {
 
       {/* ─── 모듈관리 ─── */}
       {activeTab === 'modules' && (
-        <div className="card">
+        <div className="card dark:bg-slate-800 dark:border-slate-700/80">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold">모듈 목록</h2>
             <button onClick={fetchModules} className="text-gray-400 hover:text-gray-600">
@@ -361,10 +442,10 @@ export default function AdminConsolePage() {
               {modules.map((mod) => (
                 <div
                   key={mod.id}
-                  className="flex items-center justify-between py-3 px-4 rounded-2xl border hover:bg-primary-50/50 transition-colors"
+                  className="flex items-center justify-between py-3 px-4 rounded-2xl border dark:border-slate-700 hover:bg-primary-50/50 dark:hover:bg-slate-700/50 transition-colors"
                 >
                   <div>
-                    <p className="font-medium">{mod.displayName}</p>
+                    <p className="font-medium dark:text-white">{mod.displayName}</p>
                     {mod.description && <p className="text-xs text-gray-400 mt-0.5">{mod.description}</p>}
                     <p className="text-xs text-gray-300 mt-0.5">ID: {mod.name}</p>
                   </div>
@@ -390,7 +471,7 @@ export default function AdminConsolePage() {
 
       {/* ─── 사용자관리 ─── */}
       {activeTab === 'users' && (
-        <div className="card">
+        <div className="card dark:bg-slate-800 dark:border-slate-700/80">
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -412,7 +493,13 @@ export default function AdminConsolePage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
-            <p className="text-sm text-gray-500 ml-auto">총 {usersMeta.total}명</p>
+            <button
+              onClick={openCreateUser}
+              className="btn-primary flex items-center gap-1.5 text-sm ml-auto"
+            >
+              <UserPlus size={15} /> 직원 등록
+            </button>
+            <p className="text-sm text-gray-500 dark:text-gray-400">총 {usersMeta.total}명</p>
           </div>
 
           {usersLoading ? (
@@ -421,7 +508,7 @@ export default function AdminConsolePage() {
             <>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-gray-500">
+                  <tr className="border-b dark:border-slate-700 text-left text-gray-500 dark:text-gray-400">
                     <th className="pb-3 font-medium">사용자</th>
                     <th className="pb-3 font-medium w-24">부서</th>
                     <th className="pb-3 font-medium w-32">역할</th>
@@ -437,10 +524,10 @@ export default function AdminConsolePage() {
                     </tr>
                   ) : (
                     users.map((u) => (
-                      <tr key={u.id} className="border-b last:border-0 hover:bg-primary-50/50">
+                      <tr key={u.id} className="border-b last:border-0 dark:border-slate-700 hover:bg-primary-50/50 dark:hover:bg-slate-700/50">
                         <td className="py-3">
                           <div>
-                            <p className="font-medium">{u.name}</p>
+                            <p className="font-medium dark:text-white">{u.name}</p>
                             <p className="text-xs text-gray-400">{u.employeeId} · {u.email}</p>
                           </div>
                         </td>
@@ -511,7 +598,7 @@ export default function AdminConsolePage() {
 
       {/* ─── 시스템설정 ─── */}
       {activeTab === 'settings' && (
-        <div className="card">
+        <div className="card dark:bg-slate-800 dark:border-slate-700/80">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold">시스템 설정</h2>
             <button onClick={fetchSettings} className="text-gray-400 hover:text-gray-600">
@@ -591,9 +678,157 @@ export default function AdminConsolePage() {
         </div>
       )}
 
+      {/* ─── 직원 등록 모달 ─── */}
+      {showCreateUser && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateUser(false)}>
+          <div
+            className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl w-full max-w-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold flex items-center gap-2 dark:text-white">
+                <UserPlus size={20} className="text-primary-600" /> 직원 등록
+              </h2>
+              <button onClick={() => setShowCreateUser(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            {createError && (
+              <div className="mb-4 px-4 py-2.5 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400">
+                {createError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">사번 *</label>
+                  <input
+                    type="text"
+                    value={createForm.employeeId}
+                    onChange={(e) => setCreateForm({ ...createForm, employeeId: e.target.value })}
+                    placeholder="EMP001"
+                    className="input-field"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">이름 *</label>
+                  <input
+                    type="text"
+                    value={createForm.name}
+                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                    placeholder="홍길동"
+                    className="input-field"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">이메일 *</label>
+                <input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                  placeholder="user@company.com"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">비밀번호 *</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={createForm.password}
+                    onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                    placeholder="8자 이상"
+                    className="input-field pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">역할</label>
+                  <select
+                    value={createForm.role}
+                    onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}
+                    className="input-field"
+                  >
+                    {Object.entries(ROLE_MAP).map(([k, v]) => (
+                      <option key={k} value={k} disabled={k === 'super_admin' && user?.role !== 'super_admin'}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">부서</label>
+                  <select
+                    value={createForm.departmentId}
+                    onChange={(e) => setCreateForm({ ...createForm, departmentId: e.target.value })}
+                    className="input-field"
+                  >
+                    <option value="">부서 선택</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">직책</label>
+                  <input
+                    type="text"
+                    value={createForm.position}
+                    onChange={(e) => setCreateForm({ ...createForm, position: e.target.value })}
+                    placeholder="사원, 대리, 과장..."
+                    className="input-field"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">전화번호</label>
+                  <input
+                    type="tel"
+                    value={createForm.phone}
+                    onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                    placeholder="010-0000-0000"
+                    className="input-field"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowCreateUser(false)} className="btn-secondary">
+                취소
+              </button>
+              <button
+                onClick={handleCreateUser}
+                disabled={createLoading}
+                className="btn-primary flex items-center gap-1.5"
+              >
+                {createLoading ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                등록
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── 감사로그 ─── */}
       {activeTab === 'logs' && (
-        <div className="card">
+        <div className="card dark:bg-slate-800 dark:border-slate-700/80">
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative">
