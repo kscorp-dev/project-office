@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
-import { ChevronRight, ChevronDown, Users, User, Plus, Building2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Users, Plus, Building2 } from 'lucide-react';
 
 interface DeptNode {
   id: string;

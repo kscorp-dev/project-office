@@ -6,6 +6,7 @@ import { authorize } from '../middleware/authorize';
 import { validate, validateQuery } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { AppError } from '../services/auth.service';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ const updateUserSchema = z.object({
 // GET /users - 사용자 목록
 router.get('/', authenticate, validateQuery(listUsersQuery), async (req: Request, res: Response) => {
   try {
-    const { page, limit, search, departmentId, role, status, sortBy, sortOrder } = req.query as z.infer<typeof listUsersQuery>;
+    const { page, limit, search, departmentId, role, status, sortBy, sortOrder } = req.query as unknown as z.infer<typeof listUsersQuery>;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -85,7 +86,7 @@ router.get('/', authenticate, validateQuery(listUsersQuery), async (req: Request
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       select: {
         id: true, employeeId: true, email: true, name: true, phone: true,
         role: true, status: true, position: true, profileImage: true,
@@ -108,7 +109,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
 // PATCH /users/:id - 사용자 수정 (관리자)
 router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(updateUserSchema), async (req: Request, res: Response) => {
   try {
-    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.user.findUnique({ where: { id: qs(req.params.id) } });
     if (!existing) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다' } });
       return;
@@ -121,7 +122,7 @@ router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(u
     }
 
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: req.body,
       select: {
         id: true, employeeId: true, email: true, name: true, phone: true,

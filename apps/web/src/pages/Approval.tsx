@@ -39,7 +39,7 @@ export default function ApprovalPage() {
   const { user } = useAuthStore();
   const [activeBox, setActiveBox] = useState('pending');
   const [documents, setDocuments] = useState<ApprovalDoc[]>([]);
-  const [meta, setMeta] = useState({ total: 0, page: 1, totalPages: 1 });
+  const [, setMeta] = useState({ total: 0, page: 1, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
   const [showCreate, setShowCreate] = useState(false);

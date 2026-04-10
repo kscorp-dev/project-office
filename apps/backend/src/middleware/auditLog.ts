@@ -31,7 +31,7 @@ export async function createAuditLog({
         ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip,
         userAgent: req.headers['user-agent'] ?? null,
         deviceId: req.user?.deviceId ?? null,
-        details: details ?? undefined,
+        details: (details ?? undefined) as any,
         result,
         riskLevel,
       },

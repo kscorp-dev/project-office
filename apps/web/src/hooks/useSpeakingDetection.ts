@@ -123,10 +123,11 @@ export function useSpeakingDetection() {
       });
 
       // 가장 큰 발언자 추적
-      if (loudest) {
-        if (activeSpeakerRef.current !== loudest.id) {
-          activeSpeakerRef.current = loudest.id;
-          setActiveSpeaker(loudest.id);
+      const finalLoudest = loudest as { id: string; level: number } | null;
+      if (finalLoudest) {
+        if (activeSpeakerRef.current !== finalLoudest.id) {
+          activeSpeakerRef.current = finalLoudest.id;
+          setActiveSpeaker(finalLoudest.id);
         }
       }
     }, CHECK_INTERVAL_MS);

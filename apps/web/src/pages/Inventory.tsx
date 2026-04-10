@@ -213,7 +213,7 @@ function InventoryChart() {
 }
 
 export default function InventoryPage() {
-  const { user } = useAuthStore();
+  useAuthStore();
   const [tab, setTab] = useState<'items' | 'transactions'>('items');
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -330,7 +330,6 @@ export default function InventoryPage() {
     }
   };
 
-  const formatDate = (dt: string) => new Date(dt).toLocaleDateString('ko-KR');
   const formatDateTime = (dt: string) => new Date(dt).toLocaleString('ko-KR');
 
   // Item Detail View

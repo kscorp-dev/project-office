@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { approvalService } from '../services/approval.service';
 import { AppError } from '../services/auth.service';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('approval'));
@@ -63,9 +64,9 @@ router.post('/documents', authenticate, validate(createDocSchema), async (req: R
 // GET /approvals/documents - 문서 목록
 router.get('/documents', authenticate, async (req: Request, res: Response) => {
   try {
-    const box = (req.query.box as string) || 'drafts';
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const box = qs(req.query.box) || 'drafts';
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
 
     const result = await approvalService.getDocuments(req.user!.id, box, page, limit);
     res.json({ success: true, data: result.documents, meta: result.meta });
@@ -77,7 +78,7 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
 // GET /approvals/documents/:id - 문서 상세
 router.get('/documents/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.getDocumentDetail(req.params.id);
+    const doc = await approvalService.getDocumentDetail(qs(req.params.id));
     res.json({ success: true, data: doc });
   } catch (err) {
     if (err instanceof AppError) {
@@ -91,7 +92,7 @@ router.get('/documents/:id', authenticate, async (req: Request, res: Response) =
 // POST /approvals/documents/:id/submit - 상신
 router.post('/documents/:id/submit', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.submitDocument(req.params.id, req.user!.id);
+    const doc = await approvalService.submitDocument(qs(req.params.id), req.user!.id);
     await createAuditLog({ req, action: 'approval_submit', resourceType: 'approval', resourceId: doc.id });
     res.json({ success: true, data: doc });
   } catch (err) {
@@ -106,7 +107,7 @@ router.post('/documents/:id/submit', authenticate, async (req: Request, res: Res
 // POST /approvals/documents/:id/approve - 승인
 router.post('/documents/:id/approve', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.approve(req.params.id, req.user!.id, req.body.comment);
+    const doc = await approvalService.approve(qs(req.params.id), req.user!.id, req.body.comment);
     await createAuditLog({ req, action: 'approval_approve', resourceType: 'approval', resourceId: doc.id });
     res.json({ success: true, data: doc });
   } catch (err) {
@@ -121,7 +122,7 @@ router.post('/documents/:id/approve', authenticate, async (req: Request, res: Re
 // POST /approvals/documents/:id/reject - 반려
 router.post('/documents/:id/reject', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.reject(req.params.id, req.user!.id, req.body.comment);
+    const doc = await approvalService.reject(qs(req.params.id), req.user!.id, req.body.comment);
     await createAuditLog({ req, action: 'approval_reject', resourceType: 'approval', resourceId: doc.id, riskLevel: 'medium' });
     res.json({ success: true, data: doc });
   } catch (err) {
@@ -136,7 +137,7 @@ router.post('/documents/:id/reject', authenticate, async (req: Request, res: Res
 // POST /approvals/documents/:id/withdraw - 회수
 router.post('/documents/:id/withdraw', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.withdraw(req.params.id, req.user!.id);
+    const doc = await approvalService.withdraw(qs(req.params.id), req.user!.id);
     await createAuditLog({ req, action: 'approval_withdraw', resourceType: 'approval', resourceId: doc.id });
     res.json({ success: true, data: doc });
   } catch (err) {

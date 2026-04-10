@@ -7,6 +7,7 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { config } from '../config';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 
@@ -30,14 +31,14 @@ router.get('/modules', async (_req: Request, res: Response) => {
 // PATCH /admin/modules/:id - 모듈 활성화/비활성화
 router.patch('/modules/:id', async (req: Request, res: Response) => {
   try {
-    const module = await prisma.featureModule.findUnique({ where: { id: req.params.id } });
+    const module = await prisma.featureModule.findUnique({ where: { id: qs(req.params.id) } });
     if (!module) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '모듈을 찾을 수 없습니다' } });
       return;
     }
 
     const updated = await prisma.featureModule.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         isEnabled: req.body.isEnabled !== undefined ? req.body.isEnabled : !module.isEnabled,
       },
@@ -72,9 +73,9 @@ router.put('/settings/:key', async (req: Request, res: Response) => {
     }
 
     const setting = await prisma.systemSetting.upsert({
-      where: { key: req.params.key },
+      where: { key: qs(req.params.key) },
       update: { value: String(req.body.value), updatedBy: req.user!.id },
-      create: { key: req.params.key, value: String(req.body.value), updatedBy: req.user!.id },
+      create: { key: qs(req.params.key), value: String(req.body.value), updatedBy: req.user!.id },
     });
 
     res.json({ success: true, data: setting });
@@ -162,11 +163,11 @@ router.post('/users', async (req: Request, res: Response) => {
 // GET /admin/users - 전체 사용자 목록 (검색, 역할 필터, 상태 필터, 페이지네이션)
 router.get('/users', async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const search = req.query.search as string | undefined;
-    const role = req.query.role as string | undefined;
-    const status = req.query.status as string | undefined;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const search = qsOpt(req.query.search);
+    const role = qsOpt(req.query.role);
+    const status = qsOpt(req.query.status);
 
     const where: any = {};
     if (search) {
@@ -226,14 +227,14 @@ router.patch('/users/:id/role', async (req: Request, res: Response) => {
       return;
     }
 
-    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const user = await prisma.user.findUnique({ where: { id: qs(req.params.id) } });
     if (!user) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다' } });
       return;
     }
 
     const updated = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { role: req.body.role },
       select: { id: true, name: true, email: true, role: true, status: true },
     });
@@ -253,7 +254,7 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
       return;
     }
 
-    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const user = await prisma.user.findUnique({ where: { id: qs(req.params.id) } });
     if (!user) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다' } });
       return;
@@ -266,7 +267,7 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
     }
 
     const updated = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { status: req.body.status },
       select: { id: true, name: true, email: true, role: true, status: true },
     });
@@ -282,12 +283,12 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
 // GET /admin/audit-logs - 감사 로그 (action 필터, user 필터, 날짜 범위, 페이지네이션)
 router.get('/audit-logs', async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 50;
-    const action = req.query.action as string | undefined;
-    const userId = req.query.userId as string | undefined;
-    const startDate = req.query.startDate as string | undefined;
-    const endDate = req.query.endDate as string | undefined;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 50;
+    const action = qsOpt(req.query.action);
+    const userId = qsOpt(req.query.userId);
+    const startDate = qsOpt(req.query.startDate);
+    const endDate = qsOpt(req.query.endDate);
 
     const where: any = {};
     if (action) {

@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('parking'));
@@ -47,7 +48,7 @@ router.post('/zones', authenticate, authorize('super_admin', 'admin'), validate(
 router.patch('/zones/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
     const zone = await prisma.parkingZone.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: req.body,
     });
     res.json({ success: true, data: zone });
@@ -59,7 +60,7 @@ router.patch('/zones/:id', authenticate, authorize('super_admin', 'admin'), asyn
 router.delete('/zones/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
     await prisma.parkingZone.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { isActive: false },
     });
     res.json({ success: true, data: { message: '구역이 삭제되었습니다' } });
@@ -82,11 +83,11 @@ const lineSchema = z.object({
 
 router.post('/zones/:zoneId/lines', authenticate, authorize('super_admin', 'admin'), validate(lineSchema), async (req: Request, res: Response) => {
   try {
-    const zone = await prisma.parkingZone.findUnique({ where: { id: req.params.zoneId } });
+    const zone = await prisma.parkingZone.findUnique({ where: { id: qs(req.params.zoneId) } });
     if (!zone) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '구역을 찾을 수 없습니다' } }); return; }
 
     const line = await prisma.parkingLine.create({
-      data: { ...req.body, zoneId: req.params.zoneId },
+      data: { ...req.body, zoneId: qs(req.params.zoneId) },
     });
     res.status(201).json({ success: true, data: line });
   } catch {
@@ -97,7 +98,7 @@ router.post('/zones/:zoneId/lines', authenticate, authorize('super_admin', 'admi
 router.delete('/lines/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
     await prisma.parkingLine.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { isActive: false },
     });
     res.json({ success: true, data: { message: '라인이 삭제되었습니다' } });

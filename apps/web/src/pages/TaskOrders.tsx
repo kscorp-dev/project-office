@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ClipboardList, Plus, Search, X, ChevronLeft, CheckSquare, MessageCircle,
-  AlertTriangle, Clock, ArrowRight, Send,
+  AlertTriangle, ArrowRight, Send,
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -79,7 +79,7 @@ const STATUS_TRANSITIONS: Record<string, { label: string; next: string }[]> = {
 };
 
 export default function TaskOrdersPage() {
-  const { user } = useAuthStore();
+  useAuthStore();
   const [tasks, setTasks] = useState<TaskOrder[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);

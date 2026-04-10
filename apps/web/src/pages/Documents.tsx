@@ -93,7 +93,7 @@ function FolderTreeItem({ node, selectedId, onSelect, depth = 0 }: FolderTreeIte
 }
 
 export default function DocumentsPage() {
-  const { user } = useAuthStore();
+  useAuthStore();
 
   const [myFolders, setMyFolders] = useState<FolderNode[]>([]);
   const [sharedFolders, setSharedFolders] = useState<FolderNode[]>([]);

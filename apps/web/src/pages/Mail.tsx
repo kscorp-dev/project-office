@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Mail, Inbox, Send, Star, Trash2, Archive, Plus, Search,
   Settings, RefreshCw, ChevronLeft, Paperclip, X,

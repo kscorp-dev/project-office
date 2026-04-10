@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { validate } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 
@@ -62,7 +63,7 @@ router.get('/flat', authenticate, async (_req: Request, res: Response) => {
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const dept = await prisma.department.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         manager: { select: { id: true, name: true, position: true } },
         parent: { select: { id: true, name: true, code: true } },
@@ -122,20 +123,20 @@ router.post('/', authenticate, authorize('super_admin', 'admin'), validate(creat
 // PATCH /departments/:id - 부서 수정
 router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(updateDeptSchema), async (req: Request, res: Response) => {
   try {
-    const dept = await prisma.department.findUnique({ where: { id: req.params.id } });
+    const dept = await prisma.department.findUnique({ where: { id: qs(req.params.id) } });
     if (!dept) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '부서를 찾을 수 없습니다' } });
       return;
     }
 
     // 자기 자신을 상위 부서로 지정 방지
-    if (req.body.parentId === req.params.id) {
+    if (req.body.parentId === qs(req.params.id)) {
       res.status(400).json({ success: false, error: { code: 'INVALID_PARENT', message: '자기 자신을 상위 부서로 지정할 수 없습니다' } });
       return;
     }
 
     const updated = await prisma.department.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: req.body,
     });
 
@@ -150,7 +151,7 @@ router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(u
 router.delete('/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
     const dept = await prisma.department.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: { _count: { select: { users: true, children: true } } },
     });
 
@@ -170,11 +171,11 @@ router.delete('/:id', authenticate, authorize('super_admin', 'admin'), async (re
     }
 
     await prisma.department.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { isActive: false },
     });
 
-    await createAuditLog({ req, action: 'department_delete', resourceType: 'department', resourceId: req.params.id });
+    await createAuditLog({ req, action: 'department_delete', resourceType: 'department', resourceId: qs(req.params.id) });
     res.json({ success: true, data: { message: '부서가 비활성화되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });

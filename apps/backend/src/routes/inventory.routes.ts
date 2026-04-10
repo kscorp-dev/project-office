@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('inventory'));
@@ -62,10 +63,10 @@ const itemSchema = z.object({
 // GET /inventory/items - 자재 목록
 router.get('/items', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const search = req.query.search as string;
-    const categoryId = req.query.categoryId as string;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const search = qs(req.query.search);
+    const categoryId = qs(req.query.categoryId);
     const lowStock = req.query.lowStock === 'true';
 
     const where: any = { isActive: true };
@@ -117,7 +118,7 @@ router.get('/items', authenticate, async (req: Request, res: Response) => {
 router.get('/items/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const item = await prisma.inventoryItem.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         category: true,
         supplier: true,
@@ -162,7 +163,7 @@ router.post('/items', authenticate, authorize('super_admin', 'admin', 'dept_admi
 router.patch('/items/:id', authenticate, authorize('super_admin', 'admin', 'dept_admin'), async (req: Request, res: Response) => {
   try {
     const item = await prisma.inventoryItem.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: req.body,
     });
     res.json({ success: true, data: item });
@@ -174,7 +175,7 @@ router.patch('/items/:id', authenticate, authorize('super_admin', 'admin', 'dept
 // DELETE /inventory/items/:id - 자재 비활성화
 router.delete('/items/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    await prisma.inventoryItem.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.inventoryItem.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '자재가 비활성화되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -268,10 +269,10 @@ router.post('/transactions', authenticate, validate(transactionSchema), async (r
 // GET /inventory/transactions - 입출고 이력
 router.get('/transactions', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const itemId = req.query.itemId as string;
-    const type = req.query.type as string;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const itemId = qs(req.query.itemId);
+    const type = qs(req.query.type);
 
     const where: any = {};
     if (itemId) where.itemId = itemId;
@@ -339,7 +340,7 @@ router.get('/stats/summary', authenticate, async (_req, res: Response) => {
 // 월별 재고 추이 (선 그래프용)
 router.get('/stats/stock-trend', authenticate, async (req: Request, res: Response) => {
   try {
-    const months = Math.min(parseInt(req.query.months as string) || 6, 12);
+    const months = Math.min(parseInt(qs(req.query.months)) || 6, 12);
     const now = new Date();
 
     // 월 라벨 생성 (최근 N개월)

@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('attendance'));
@@ -92,9 +93,9 @@ router.get('/today', authenticate, async (req: Request, res: Response) => {
 // GET /attendance/monthly - 월별 근태 기록
 router.get('/monthly', authenticate, async (req: Request, res: Response) => {
   try {
-    const year = parseInt(req.query.year as string) || new Date().getFullYear();
-    const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
-    const userId = (req.query.userId as string) || req.user!.id;
+    const year = parseInt(qs(req.query.year)) || new Date().getFullYear();
+    const month = parseInt(qs(req.query.month)) || new Date().getMonth() + 1;
+    const userId = qs(req.query.userId) || req.user!.id;
 
     // dept_admin 이상만 다른 사용자 조회 가능
     if (userId !== req.user!.id && !['super_admin', 'admin', 'dept_admin'].includes(req.user!.role)) {
@@ -174,12 +175,12 @@ router.get('/vacations', authenticate, async (req: Request, res: Response) => {
 // PATCH /attendance/vacations/:id/approve - 휴가 승인 (관리자)
 router.patch('/vacations/:id/approve', authenticate, authorize('super_admin', 'admin', 'dept_admin'), async (req: Request, res: Response) => {
   try {
-    const vacation = await prisma.vacation.findUnique({ where: { id: req.params.id } });
+    const vacation = await prisma.vacation.findUnique({ where: { id: qs(req.params.id) } });
     if (!vacation) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '휴가 신청을 찾을 수 없습니다' } }); return; }
 
     const updated = await prisma.$transaction(async (tx) => {
       const v = await tx.vacation.update({
-        where: { id: req.params.id },
+        where: { id: qs(req.params.id) },
         data: { status: 'approved', approvedBy: req.user!.id, approvedAt: new Date() },
       });
 
@@ -205,7 +206,7 @@ router.patch('/vacations/:id/approve', authenticate, authorize('super_admin', 'a
 // GET /attendance/balance - 연차 잔여
 router.get('/balance', authenticate, async (req: Request, res: Response) => {
   try {
-    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    const year = parseInt(qs(req.query.year)) || new Date().getFullYear();
     let balance = await prisma.vacationBalance.findUnique({
       where: { userId_year: { userId: req.user!.id, year } },
     });

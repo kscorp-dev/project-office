@@ -23,10 +23,10 @@ const scopeLabel: Record<string, string> = { personal: '개인', department: '�
 export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [, setSelectedDate] = useState<Date | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

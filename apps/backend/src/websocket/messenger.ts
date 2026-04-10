@@ -55,7 +55,7 @@ export function setupMessengerSocket(io: SocketIOServer) {
         // 메시지 저장
         const message = await prisma.$transaction(async (tx) => {
           const msg = await tx.message.create({
-            data: { roomId, senderId: userId, content, type: type as any, metadata: metadata || undefined, parentId },
+            data: { roomId, senderId: userId, content, type: type as any, metadata: (metadata || undefined) as any, parentId },
             include: {
               sender: { select: { id: true, name: true, profileImage: true } },
             },

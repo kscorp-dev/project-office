@@ -51,7 +51,7 @@ export class ApprovalService {
           templateId: data.templateId,
           title: data.title,
           content: data.content,
-          formData: data.formData ?? undefined,
+          formData: (data.formData ?? undefined) as any,
           urgency: data.urgency || 'normal',
           drafterId,
           status: submit ? 'pending' : 'draft',

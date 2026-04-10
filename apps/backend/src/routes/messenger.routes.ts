@@ -10,6 +10,7 @@ import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { config } from '../config';
 import { AppError } from '../services/auth.service';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('messenger'));
@@ -149,9 +150,9 @@ router.post('/rooms', authenticate, validate(createRoomSchema), async (req: Requ
 // GET /messenger/rooms/:id/messages - 메시지 목록
 router.get('/rooms/:id/messages', authenticate, async (req: Request, res: Response) => {
   try {
-    const roomId = req.params.id;
-    const cursor = req.query.cursor as string | undefined;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const roomId = qs(req.params.id);
+    const cursor = qsOpt(req.query.cursor);
+    const limit = parseInt(qs(req.query.limit)) || 50;
 
     // 참여자 확인
     const participant = await prisma.chatParticipant.findUnique({
@@ -204,7 +205,7 @@ const sendMessageSchema = z.object({
 
 router.post('/rooms/:id/messages', authenticate, validate(sendMessageSchema), async (req: Request, res: Response) => {
   try {
-    const roomId = req.params.id;
+    const roomId = qs(req.params.id);
 
     const participant = await prisma.chatParticipant.findUnique({
       where: { roomId_userId: { roomId, userId: req.user!.id } },
@@ -253,7 +254,7 @@ router.post('/rooms/:id/messages', authenticate, validate(sendMessageSchema), as
 // POST /messenger/rooms/:id/upload - 파일 전송
 router.post('/rooms/:id/upload', authenticate, messengerUpload.single('file'), async (req: Request, res: Response) => {
   try {
-    const roomId = req.params.id;
+    const roomId = qs(req.params.id);
     const file = req.file;
     if (!file) {
       res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 없습니다' } });

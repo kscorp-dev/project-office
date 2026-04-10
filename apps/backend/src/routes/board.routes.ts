@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('board'));
@@ -52,11 +53,11 @@ const postSchema = z.object({
 // GET /board/boards/:boardId/posts - 게시글 목록
 router.get('/boards/:boardId/posts', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const search = req.query.search as string;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const search = qs(req.query.search);
 
-    const where: any = { boardId: req.params.boardId, isActive: true };
+    const where: any = { boardId: qs(req.params.boardId), isActive: true };
     if (search) {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
@@ -88,7 +89,7 @@ router.get('/boards/:boardId/posts', authenticate, async (req: Request, res: Res
 router.get('/posts/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const post = await prisma.post.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         author: { select: { id: true, name: true, position: true } },
         board: { select: { id: true, name: true } },
@@ -116,11 +117,11 @@ router.get('/posts/:id', authenticate, async (req: Request, res: Response) => {
 
     // 조회수 증가 및 읽음 처리
     await Promise.all([
-      prisma.post.update({ where: { id: req.params.id }, data: { viewCount: { increment: 1 } } }),
+      prisma.post.update({ where: { id: qs(req.params.id) }, data: { viewCount: { increment: 1 } } }),
       prisma.postRead.upsert({
-        where: { postId_userId: { postId: req.params.id, userId: req.user!.id } },
+        where: { postId_userId: { postId: qs(req.params.id), userId: req.user!.id } },
         update: { readAt: new Date() },
-        create: { postId: req.params.id, userId: req.user!.id },
+        create: { postId: qs(req.params.id), userId: req.user!.id },
       }),
     ]);
 
@@ -133,7 +134,7 @@ router.get('/posts/:id', authenticate, async (req: Request, res: Response) => {
 // POST /board/boards/:boardId/posts - 게시글 작성
 router.post('/boards/:boardId/posts', authenticate, validate(postSchema), async (req: Request, res: Response) => {
   try {
-    const board = await prisma.board.findUnique({ where: { id: req.params.boardId } });
+    const board = await prisma.board.findUnique({ where: { id: qs(req.params.boardId) } });
     if (!board || !board.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시판을 찾을 수 없습니다' } });
       return;
@@ -147,7 +148,7 @@ router.post('/boards/:boardId/posts', authenticate, validate(postSchema), async 
 
     const post = await prisma.post.create({
       data: {
-        boardId: req.params.boardId,
+        boardId: qs(req.params.boardId),
         authorId: req.user!.id,
         title: req.body.title,
         content: req.body.content,
@@ -168,7 +169,7 @@ router.post('/boards/:boardId/posts', authenticate, validate(postSchema), async 
 // PATCH /board/posts/:id - 게시글 수정
 router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+    const post = await prisma.post.findUnique({ where: { id: qs(req.params.id) } });
     if (!post || !post.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
       return;
@@ -179,7 +180,7 @@ router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => 
     }
 
     const updated = await prisma.post.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         title: req.body.title,
         content: req.body.content,
@@ -196,7 +197,7 @@ router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => 
 // DELETE /board/posts/:id - 게시글 삭제 (soft)
 router.delete('/posts/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+    const post = await prisma.post.findUnique({ where: { id: qs(req.params.id) } });
     if (!post) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
       return;
@@ -206,7 +207,7 @@ router.delete('/posts/:id', authenticate, async (req: Request, res: Response) =>
       return;
     }
 
-    await prisma.post.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.post.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '게시글이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -225,7 +226,7 @@ router.post('/posts/:postId/comments', authenticate, validate(commentSchema), as
   try {
     const comment = await prisma.comment.create({
       data: {
-        postId: req.params.postId,
+        postId: qs(req.params.postId),
         authorId: req.user!.id,
         content: req.body.content,
         parentId: req.body.parentId,
@@ -243,7 +244,7 @@ router.post('/posts/:postId/comments', authenticate, validate(commentSchema), as
 // DELETE /board/comments/:id - 댓글 삭제 (soft)
 router.delete('/comments/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const comment = await prisma.comment.findUnique({ where: { id: req.params.id } });
+    const comment = await prisma.comment.findUnique({ where: { id: qs(req.params.id) } });
     if (!comment) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '댓글을 찾을 수 없습니다' } });
       return;
@@ -253,7 +254,7 @@ router.delete('/comments/:id', authenticate, async (req: Request, res: Response)
       return;
     }
 
-    await prisma.comment.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.comment.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '댓글이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

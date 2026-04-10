@@ -4,6 +4,7 @@ import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('document'));
@@ -19,7 +20,7 @@ const folderSchema = z.object({
 // GET /document/folders - 폴더 목록 (내 소유 + 공유된 폴더, 트리 구조)
 router.get('/folders', authenticate, async (req: Request, res: Response) => {
   try {
-    const type = req.query.type as string | undefined;
+    const type = qsOpt(req.query.type);
 
     const where: any = {};
     if (type === 'my') {
@@ -98,7 +99,7 @@ router.post('/folders', authenticate, validate(folderSchema), async (req: Reques
 // PATCH /document/folders/:id - 폴더 수정
 router.patch('/folders/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const folder = await prisma.documentFolder.findUnique({ where: { id: req.params.id } });
+    const folder = await prisma.documentFolder.findUnique({ where: { id: qs(req.params.id) } });
     if (!folder) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '폴더를 찾을 수 없습니다' } });
       return;
@@ -109,7 +110,7 @@ router.patch('/folders/:id', authenticate, async (req: Request, res: Response) =
     }
 
     const updated = await prisma.documentFolder.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         name: req.body.name,
         parentId: req.body.parentId !== undefined ? req.body.parentId : undefined,
@@ -125,7 +126,7 @@ router.patch('/folders/:id', authenticate, async (req: Request, res: Response) =
 // DELETE /document/folders/:id - 폴더 삭제 (hard delete)
 router.delete('/folders/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const folder = await prisma.documentFolder.findUnique({ where: { id: req.params.id } });
+    const folder = await prisma.documentFolder.findUnique({ where: { id: qs(req.params.id) } });
     if (!folder) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '폴더를 찾을 수 없습니다' } });
       return;
@@ -135,7 +136,7 @@ router.delete('/folders/:id', authenticate, async (req: Request, res: Response) 
       return;
     }
 
-    await prisma.documentFolder.delete({ where: { id: req.params.id } });
+    await prisma.documentFolder.delete({ where: { id: qs(req.params.id) } });
     res.json({ success: true, data: { message: '폴더가 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -158,10 +159,10 @@ const fileSchema = z.object({
 // GET /document/files - 파일 목록 (folderId 필터, 이름/태그 검색, 페이지네이션)
 router.get('/files', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const folderId = req.query.folderId as string | undefined;
-    const search = req.query.search as string | undefined;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const folderId = qsOpt(req.query.folderId);
+    const search = qsOpt(req.query.search);
 
     const where: any = {
       isActive: true,
@@ -217,7 +218,7 @@ router.get('/files', authenticate, async (req: Request, res: Response) => {
 router.get('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const file = await prisma.document.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         uploader: { select: { id: true, name: true, position: true } },
         folder: { select: { id: true, name: true } },
@@ -285,7 +286,7 @@ router.post('/files', authenticate, validate(fileSchema), async (req: Request, r
 // PATCH /document/files/:id - 파일 수정 (description, tags, isShared)
 router.patch('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
+    const file = await prisma.document.findUnique({ where: { id: qs(req.params.id) } });
     if (!file || !file.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
       return;
@@ -296,7 +297,7 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
     }
 
     const updated = await prisma.document.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         description: req.body.description,
         tags: req.body.tags,
@@ -313,7 +314,7 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
 // DELETE /document/files/:id - 파일 비활성화 (soft delete)
 router.delete('/files/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
+    const file = await prisma.document.findUnique({ where: { id: qs(req.params.id) } });
     if (!file || !file.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
       return;
@@ -323,7 +324,7 @@ router.delete('/files/:id', authenticate, async (req: Request, res: Response) =>
       return;
     }
 
-    await prisma.document.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.document.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '파일이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -333,14 +334,14 @@ router.delete('/files/:id', authenticate, async (req: Request, res: Response) =>
 // POST /document/files/:id/download - 다운로드 카운트 증가
 router.post('/files/:id/download', authenticate, async (req: Request, res: Response) => {
   try {
-    const file = await prisma.document.findUnique({ where: { id: req.params.id } });
+    const file = await prisma.document.findUnique({ where: { id: qs(req.params.id) } });
     if (!file || !file.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
       return;
     }
 
     const updated = await prisma.document.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { downloadCount: { increment: 1 } },
     });
 

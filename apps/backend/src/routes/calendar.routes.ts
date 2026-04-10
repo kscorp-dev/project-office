@@ -4,6 +4,7 @@ import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('calendar'));
@@ -24,8 +25,8 @@ const eventSchema = z.object({
 // GET /calendar/events - 일정 조회
 router.get('/events', authenticate, async (req: Request, res: Response) => {
   try {
-    const start = req.query.start ? new Date(req.query.start as string) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const end = req.query.end ? new Date(req.query.end as string) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+    const start = req.query.start ? new Date(qs(req.query.start)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const end = req.query.end ? new Date(qs(req.query.end)) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
 
     const events = await prisma.calendarEvent.findMany({
       where: {
@@ -83,7 +84,7 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
 // PATCH /calendar/events/:id - 일정 수정
 router.patch('/events/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const event = await prisma.calendarEvent.findUnique({ where: { id: req.params.id } });
+    const event = await prisma.calendarEvent.findUnique({ where: { id: qs(req.params.id) } });
     if (!event) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '일정을 찾을 수 없습니다' } }); return; }
     if (event.creatorId !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '수정 권한이 없습니다' } }); return;
@@ -91,7 +92,7 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
 
     const { startDate, endDate, ...rest } = req.body;
     const updated = await prisma.calendarEvent.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         ...rest,
         ...(startDate ? { startDate: new Date(startDate) } : {}),
@@ -107,13 +108,13 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
 // DELETE /calendar/events/:id
 router.delete('/events/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const event = await prisma.calendarEvent.findUnique({ where: { id: req.params.id } });
+    const event = await prisma.calendarEvent.findUnique({ where: { id: qs(req.params.id) } });
     if (!event) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '일정을 찾을 수 없습니다' } }); return; }
     if (event.creatorId !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '삭제 권한이 없습니다' } }); return;
     }
 
-    await prisma.calendarEvent.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.calendarEvent.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '일정이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

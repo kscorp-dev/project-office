@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { Responsive, useContainerWidth } from 'react-grid-layout';
-import type { Layout, Layouts } from 'react-grid-layout';
+import type { LayoutItem } from 'react-grid-layout';
+type Layouts = Record<string, LayoutItem[]>;
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import {
@@ -10,7 +11,7 @@ import {
   Clock, Newspaper, Package, Video, FolderOpen, Settings,
   ChevronLeft, ChevronRight, Bell, Mail, Shield,
   CheckCircle2, AlertCircle, Timer, ArrowRight,
-  GripVertical, Pencil, RotateCcw, Plus, X, Eye, EyeOff, Move,
+  GripVertical, Pencil, RotateCcw, Plus, X, Move,
 } from 'lucide-react';
 
 // useContainerWidth 훅으로 컨테이너 너비 감지
@@ -47,7 +48,7 @@ const WIDGET_DEFS: WidgetDef[] = [
 
 /* ── 기본 레이아웃 ── */
 function getDefaultLayouts(): Layouts {
-  const lg: Layout[] = [
+  const lg: LayoutItem[] = [
     { i: 'profile',    x: 0,  y: 0,  w: 4, h: 4 },
     { i: 'shortcuts',  x: 0,  y: 4,  w: 4, h: 5 },
     { i: 'calendar',   x: 0,  y: 9,  w: 4, h: 6 },
@@ -352,7 +353,7 @@ export default function DashboardPage() {
     if (def) {
       const newLayouts = { ...layouts };
       for (const bp of Object.keys(newLayouts)) {
-        const existing = newLayouts[bp].find(l => l.i === id);
+        const existing = newLayouts[bp].find((l: LayoutItem) => l.i === id);
         if (!existing) {
           newLayouts[bp] = [...newLayouts[bp], { i: id, x: 0, y: Infinity, w: def.defaultW, h: def.defaultH }];
         }
@@ -442,7 +443,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── 그리드 레이아웃 ── */}
-      <div ref={containerRef}>
+      <div ref={containerRef as React.RefObject<HTMLDivElement>}>
       <Responsive
         className="layout"
         width={containerWidth ?? 1200}
@@ -450,12 +451,11 @@ export default function DashboardPage() {
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
         cols={{ lg: 12, md: 10, sm: 6, xs: 4 }}
         rowHeight={40}
-        isDraggable={editing}
-        isResizable={editing}
         draggableHandle=".widget-drag-handle"
-        onLayoutChange={(_, allLayouts) => saveLayouts(allLayouts)}
+        onLayoutChange={(_: LayoutItem[], allLayouts: Layouts) => saveLayouts(allLayouts)}
         compactType="vertical"
-        margin={[16, 16]}
+        margin={[16, 16] as [number, number]}
+        {...({ isDraggable: editing, isResizable: editing } as any)}
       >
         {visibleWidgets.map(w => {
           const isMemo = w.id === 'memo';

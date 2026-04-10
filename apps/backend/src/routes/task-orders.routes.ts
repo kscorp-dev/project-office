@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('task_orders'));
@@ -71,12 +72,12 @@ const taskOrderSchema = z.object({
 // GET /task-orders - 작업지시서 목록
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const status = req.query.status as string;
-    const priority = req.query.priority as string;
-    const search = req.query.search as string;
-    const box = req.query.box as string; // sent, received, all
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const status = qs(req.query.status);
+    const priority = qs(req.query.priority);
+    const search = qs(req.query.search);
+    const box = qs(req.query.box); // sent, received, all
 
     const where: any = { isActive: true };
 
@@ -143,7 +144,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const task = await prisma.taskOrder.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         creator: { select: { id: true, name: true, position: true, department: { select: { name: true } } } },
         client: true,
@@ -243,7 +244,7 @@ router.post('/', authenticate, validate(taskOrderSchema), async (req: Request, r
 // PATCH /task-orders/:id - 작업지시서 수정
 router.patch('/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const task = await prisma.taskOrder.findUnique({ where: { id: req.params.id } });
+    const task = await prisma.taskOrder.findUnique({ where: { id: qs(req.params.id) } });
     if (!task || !task.isActive) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '작업지시서를 찾을 수 없습니다' } });
       return;
@@ -259,7 +260,7 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
 
     const { instructionDate, dueDate, ...rest } = req.body;
     const updated = await prisma.taskOrder.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         ...rest,
         ...(instructionDate ? { instructionDate: new Date(instructionDate) } : {}),
@@ -278,7 +279,7 @@ router.post('/:id/status', authenticate, async (req: Request, res: Response) => 
   try {
     const { status: newStatus, comment } = req.body;
     const task = await prisma.taskOrder.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: { assignees: true },
     });
 
@@ -312,7 +313,7 @@ router.post('/:id/status', authenticate, async (req: Request, res: Response) => 
 
     const updated = await prisma.$transaction(async (tx) => {
       const t = await tx.taskOrder.update({
-        where: { id: req.params.id },
+        where: { id: qs(req.params.id) },
         data: {
           status: newStatus,
           ...(newStatus === 'final_complete' ? { completedAt: new Date() } : {}),
@@ -321,7 +322,7 @@ router.post('/:id/status', authenticate, async (req: Request, res: Response) => 
 
       await tx.taskStatusHistory.create({
         data: {
-          taskId: req.params.id,
+          taskId: qs(req.params.id),
           fromStatus: task.status,
           toStatus: newStatus,
           changedBy: req.user!.id,
@@ -343,7 +344,7 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response) =
   try {
     const comment = await prisma.taskComment.create({
       data: {
-        taskId: req.params.id,
+        taskId: qs(req.params.id),
         userId: req.user!.id,
         content: req.body.content,
       },
@@ -358,14 +359,14 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response) =
 // PATCH /task-orders/:id/checklist/:checkId - 체크리스트 토글
 router.patch('/:id/checklist/:checkId', authenticate, async (req: Request, res: Response) => {
   try {
-    const item = await prisma.taskChecklist.findUnique({ where: { id: req.params.checkId } });
+    const item = await prisma.taskChecklist.findUnique({ where: { id: qs(req.params.checkId) } });
     if (!item) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '체크리스트 항목을 찾을 수 없습니다' } });
       return;
     }
 
     const updated = await prisma.taskChecklist.update({
-      where: { id: req.params.checkId },
+      where: { id: qs(req.params.checkId) },
       data: {
         isCompleted: !item.isCompleted,
         completedBy: !item.isCompleted ? req.user!.id : null,
@@ -380,7 +381,7 @@ router.patch('/:id/checklist/:checkId', authenticate, async (req: Request, res: 
 // DELETE /task-orders/:id - 작업지시서 삭제 (soft, draft만)
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const task = await prisma.taskOrder.findUnique({ where: { id: req.params.id } });
+    const task = await prisma.taskOrder.findUnique({ where: { id: qs(req.params.id) } });
     if (!task) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '작업지시서를 찾을 수 없습니다' } });
       return;
@@ -394,7 +395,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    await prisma.taskOrder.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.taskOrder.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '작업지시서가 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -405,7 +406,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
 router.get('/clients/list', authenticate, async (req: Request, res: Response) => {
   try {
-    const search = req.query.search as string;
+    const search = qs(req.query.search);
     const where: any = { isActive: true };
     if (search) {
       where.OR = [

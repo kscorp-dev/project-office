@@ -10,6 +10,7 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { config } from '../config';
+import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
 router.use(checkModule('meeting'));
@@ -37,9 +38,9 @@ function generateRoomCode(): string {
 // GET /meeting - 회의 목록 (내가 호스트 + 초대된 회의, 페이지네이션)
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const status = req.query.status as string;
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = parseInt(qs(req.query.limit)) || 20;
+    const status = qs(req.query.status);
 
     const where: any = {
       OR: [
@@ -75,7 +76,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const meeting = await prisma.meeting.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         host: { select: { id: true, name: true, position: true } },
         participants: {
@@ -147,7 +148,7 @@ router.post('/', authenticate, validate(meetingSchema), async (req: Request, res
 // PATCH /meeting/:id - 회의 수정 (호스트만)
 router.patch('/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({ where: { id: qs(req.params.id) } });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
@@ -163,7 +164,7 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
 
     const { scheduledAt, participantIds, ...rest } = req.body;
     const updated = await prisma.meeting.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: {
         ...rest,
         ...(scheduledAt ? { scheduledAt: new Date(scheduledAt) } : {}),
@@ -179,7 +180,7 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
 // POST /meeting/:id/start - 회의 시작 (호스트만)
 router.post('/:id/start', authenticate, async (req: Request, res: Response) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({ where: { id: qs(req.params.id) } });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
@@ -194,7 +195,7 @@ router.post('/:id/start', authenticate, async (req: Request, res: Response) => {
     }
 
     const updated = await prisma.meeting.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { status: 'in_progress', startedAt: new Date() },
     });
 
@@ -207,7 +208,7 @@ router.post('/:id/start', authenticate, async (req: Request, res: Response) => {
 // POST /meeting/:id/end - 회의 종료 (호스트만)
 router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({ where: { id: qs(req.params.id) } });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
@@ -222,7 +223,7 @@ router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
     }
 
     const updated = await prisma.meeting.update({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       data: { status: 'ended', endedAt: new Date() },
     });
 
@@ -235,7 +236,7 @@ router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
 // POST /meeting/:id/cancel - 회의 취소 (호스트만)
 router.post('/:id/cancel', authenticate, async (req: Request, res: Response) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({ where: { id: qs(req.params.id) } });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
@@ -248,7 +249,7 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response) => 
       res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: '이미 종료되거나 취소된 회의입니다' } });
       return;
     }
-    await prisma.meeting.update({ where: { id: req.params.id }, data: { status: 'cancelled' } });
+    await prisma.meeting.update({ where: { id: qs(req.params.id) }, data: { status: 'cancelled' } });
     res.json({ success: true, data: { message: '회의가 취소되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -258,7 +259,7 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response) => 
 // DELETE /meeting/:id - 회의 취소 (호스트만)
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({ where: { id: qs(req.params.id) } });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
@@ -272,7 +273,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    await prisma.meeting.update({ where: { id: req.params.id }, data: { status: 'cancelled' } });
+    await prisma.meeting.update({ where: { id: qs(req.params.id) }, data: { status: 'cancelled' } });
     res.json({ success: true, data: { message: '회의가 취소되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -283,7 +284,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 router.get('/:id/join', authenticate, async (req: Request, res: Response) => {
   try {
     const meeting = await prisma.meeting.findUnique({
-      where: { id: req.params.id },
+      where: { id: qs(req.params.id) },
       include: {
         host: { select: { id: true, name: true } },
         participants: { select: { userId: true, role: true } },
@@ -337,7 +338,7 @@ interface SharedDocMeta {
 /** multer 저장소 설정 — uploads/meetings/{meetingId}/ */
 const meetingStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const meetingId = req.params.id;
+    const meetingId = qs(req.params.id);
     const dir = path.resolve(config.upload.dir, 'meetings', meetingId);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
@@ -381,7 +382,7 @@ function writeMeta(meetingId: string, data: SharedDocMeta[]) {
 // POST /meeting/:id/documents — 문서 업로드
 router.post('/:id/documents', authenticate, meetingUpload.single('file'), async (req: Request, res: Response) => {
   try {
-    const meetingId = req.params.id;
+    const meetingId = qs(req.params.id);
     const file = req.file;
     if (!file) {
       res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 첨부되지 않았습니다' } });
@@ -420,7 +421,7 @@ router.post('/:id/documents', authenticate, meetingUpload.single('file'), async 
 // GET /meeting/:id/documents — 공유 문서 목록
 router.get('/:id/documents', authenticate, async (req: Request, res: Response) => {
   try {
-    const docs = readMeta(req.params.id);
+    const docs = readMeta(qs(req.params.id));
     res.json({ success: true, data: docs });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -430,7 +431,8 @@ router.get('/:id/documents', authenticate, async (req: Request, res: Response) =
 // GET /meeting/:id/documents/:docId/file — 파일 스트림
 router.get('/:id/documents/:docId/file', authenticate, async (req: Request, res: Response) => {
   try {
-    const { id: meetingId, docId } = req.params;
+    const meetingId = qs(req.params.id);
+    const docId = qs(req.params.docId);
     const meta = readMeta(meetingId);
     const doc = meta.find((d) => d.id === docId);
 
@@ -456,7 +458,8 @@ router.get('/:id/documents/:docId/file', authenticate, async (req: Request, res:
 // DELETE /meeting/:id/documents/:docId — 문서 삭제
 router.delete('/:id/documents/:docId', authenticate, async (req: Request, res: Response) => {
   try {
-    const { id: meetingId, docId } = req.params;
+    const meetingId = qs(req.params.id);
+    const docId = qs(req.params.docId);
     const meta = readMeta(meetingId);
     const idx = meta.findIndex((d) => d.id === docId);
 

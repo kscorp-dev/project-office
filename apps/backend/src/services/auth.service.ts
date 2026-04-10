@@ -308,11 +308,11 @@ export class AuthService {
     };
 
     const accessToken = jwt.sign(payload, config.jwt.accessSecret, {
-      expiresIn: config.jwt.accessExpiresIn,
+      expiresIn: config.jwt.accessExpiresIn as any,
     });
 
     const refreshToken = jwt.sign({ sub: userId, type: 'refresh' }, config.jwt.refreshSecret, {
-      expiresIn: config.jwt.refreshExpiresIn,
+      expiresIn: config.jwt.refreshExpiresIn as any,
     });
 
     return { accessToken, refreshToken };

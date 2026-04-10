@@ -8,7 +8,7 @@ import {
   PanelLeft, PanelRight, PanelTop, PanelBottom, RotateCcw, Cog, Mail,
   GripVertical, Eye, EyeOff, Sun, Moon, Monitor,
 } from 'lucide-react';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 /* ── 네비게이션 아이템 정의 ── */
 const NAV_ITEMS: Record<string, { to: string; icon: any; label: string }> = {
@@ -325,7 +325,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
 }
 
 /* ── 다크모드 빠른 토글 버튼 ── */
-function ThemeQuickToggle({ compact }: { compact?: boolean }) {
+function ThemeQuickToggle(_: { compact?: boolean }) {
   const { theme, setTheme } = useLayoutStore();
   const cycle = () => {
     const order: ThemeMode[] = ['light', 'dark', 'system'];

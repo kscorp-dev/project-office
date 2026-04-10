@@ -14,7 +14,7 @@ interface Room {
   name?: string;
   type: string;
   unreadCount: number;
-  lastMessage?: { content: string; createdAt: string; sender?: { name: string } };
+  lastMessage?: { content: string; type?: string; createdAt: string; sender?: { name: string } };
   participants: { user: { id: string; name: string; profileImage?: string } }[];
 }
 
@@ -33,8 +33,6 @@ interface Msg {
   createdAt: string;
   sender?: { id: string; name: string; profileImage?: string };
 }
-
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + 'B';
