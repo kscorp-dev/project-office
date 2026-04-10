@@ -1,70 +1,178 @@
-# Project Office v0.2.0
+# Project Office v0.7.3
 
 사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV, 근태관리, 작업지시서 외 12개 모듈
 
+> **Production**: [https://43-200-29-148.sslip.io](https://43-200-29-148.sslip.io)
+
 ## 기능 모듈 (12개)
 
-| # | 모듈 | 주요 기능 | Phase |
-|---|------|----------|-------|
-| 1 | 인증/조직관리 | JWT 인증, RBAC, 조직도, 인사관리 | 1 |
-| 2 | 전자결재 | 결재선, 위임/대결, 양식관리, 문서함 | 1 |
-| 3 | 메신저 | 1:1/그룹 채팅, 읽음확인, 멘션, 파일공유 | 1 |
-| 4 | CCTV 모니터링 | RTSP→HLS 스트리밍, PTZ, 녹화 재생 | 2 |
-| 5 | 근태관리 | GPS/IP 출퇴근, 휴가, 연차 자동부여 | 2 |
-| 6 | 캘린더 | 개인/공유 일정, 결재/근태 연동 | 2 |
-| 7 | 게시판 | 공지사항, 필독, 부서별 게시판 | 2 |
-| 8 | 작업지시서 | 6단계 워크플로우, 발주/대금청구 (TOPAZ 통합) | 3 |
-| 9 | 재고관리 | 입출고, 재고실사, 통계 대시보드 | 3 |
-| 10 | 화상회의 | WebRTC SFU, STT, AI 자동 회의록 | 4 |
-| 11 | 문서관리 | 버전관리, 미리보기, 외부 공유링크 | 4 |
-| 12 | 관리자콘솔 | 모듈 ON/OFF, 보안설정, 감사로그 | 4 |
+| # | 모듈 | 주요 기능 | 상태 |
+|---|------|----------|------|
+| 1 | 인증/조직관리 | JWT 인증, RBAC, 조직도, 인사관리, 직원등록 | Done |
+| 2 | 전자결재 | 결재선, 위임/대결, 양식관리, 문서함 | Done |
+| 3 | 메신저 | 1:1/그룹 채팅, 읽음확인, 멘션, 파일전송/수신 | Done |
+| 4 | CCTV 모니터링 | RTSP→HLS 스트리밍, PTZ, 녹화 재생, YOLO 감지 | Done |
+| 5 | 근태관리 | GPS/IP 출퇴근, 휴가, 연차 자동부여 | Done |
+| 6 | 캘린더 | 개인/공유 일정, 결재/근태 연동 | Done |
+| 7 | 게시판 | 공지사항, 필독, 부서별 게시판 | Done |
+| 8 | 작업지시서 | 6단계 워크플로우, 발주/대금청구 | Done |
+| 9 | 재고관리 | 입출고, 재고실사, 통계 대시보드 | Done |
+| 10 | 화상회의 | WebRTC SFU, STT 음성인식, AI 회의록, TTS | Done |
+| 11 | 문서관리 | 버전관리, 미리보기, 외부 공유링크, 뷰어 | Done |
+| 12 | 관리자콘솔 | 모듈 ON/OFF, 보안설정, 감사로그 | Done |
+
+### 추가 시스템
+
+| 모듈 | 설명 |
+|------|------|
+| 주차관리 | 입출차, 차량번호 인식, 구역 위치, 4면 촬영, 담당자 알림 |
+| 메일 | 받은편지함, 보내기, 계정설정 |
+| Detection (YOLO) | YOLOv8+ByteTrack 차량 추적, 번호판 인식 |
 
 ## 기술 스택
 
 | 영역 | 기술 |
 |------|------|
-| Backend | Node.js 20+ / Express / TypeScript / Prisma / Socket.IO |
+| Backend | Node.js 20 / Express / TypeScript / Prisma / Socket.IO |
 | Web | React 18 / TypeScript / Vite / Zustand / Tailwind + shadcn/ui |
 | Mobile | React Native 0.76+ / Expo SDK 52+ / TypeScript / Expo Router |
-| DB | PostgreSQL 15+ / Redis 7+ |
-| 실시간 | WebSocket (Socket.IO) / WebRTC (mediasoup) |
-| 영상 | FFmpeg (RTSP→HLS) |
-| AI | Claude API (회의록) / Whisper (STT) |
+| Detection | Python 3.11 / FastAPI / YOLOv8 / ByteTrack / EasyOCR |
+| DB | PostgreSQL 16 / Redis 7 |
+| 실시간 | WebSocket (Socket.IO) / WebRTC |
+| AI | Claude API (회의록) / Whisper (STT) / TTS 음성 안내 |
+| Infra | AWS EC2 / Docker Compose / Nginx / Let's Encrypt |
+| CI/CD | GitHub Actions (SSH deploy) |
 
-## 프로젝트 구조 (모노레포)
+## 프로젝트 구조
 
 ```
 project-office/
 ├── apps/
-│   ├── backend/          # API 서버 (Node.js + Express)
+│   ├── backend/          # API 서버 (Express + Prisma)
 │   ├── web/              # 웹 프론트엔드 (React + Vite)
-│   └── mobile/           # 모바일 앱 (React Native + Expo)
+│   ├── mobile/           # 모바일 앱 (Expo + EAS Build)
+│   └── detection/        # 차량 감지 서비스 (Python + YOLO)
 ├── packages/
-│   └── shared/           # 공유 코드 (Types, API, Validation, Utils)
-├── docs/                 # 기획 문서
-├── package.json          # 루트 (npm workspaces)
-└── turbo.json            # 모노레포 빌드 설정
+│   └── shared/           # 공유 타입/유틸리티
+├── scripts/
+│   └── deploy.sh         # 배포 스크립트
+├── .github/
+│   └── workflows/
+│       └── deploy.yml    # CI/CD 파이프라인
+├── docker-compose.yml    # 프로덕션 컨테이너 구성
+├── package.json          # 모노레포 루트 (npm workspaces)
+└── turbo.json            # Turborepo 빌드 설정
 ```
 
 ## 시작하기
 
 ### 사전 요구사항
 - Node.js 20+
-- PostgreSQL 15+
+- PostgreSQL 16+
 - Redis 7+
-- Expo CLI (`npm install -g expo-cli`)
+- Docker & Docker Compose (배포 시)
 
-### 설치
+### 설치 및 실행
+
 ```bash
-npm install          # 루트에서 전체 의존성 설치
+# 의존성 설치
+npm install
+
+# 개발 서버
+npm run dev:backend     # API (http://localhost:3000)
+npm run dev:web         # 웹 (http://localhost:5173)
+npm run dev:mobile      # 모바일 (Expo)
+npm run dev:detection   # YOLO 감지 (http://localhost:8100)
 ```
 
-### 실행
+### Docker 배포
+
 ```bash
-npm run dev:backend  # API 서버 (http://localhost:3000)
-npm run dev:web      # 웹 앱 (http://localhost:5173)
-npm run dev:mobile   # 모바일 앱 (Expo)
+# .env 파일 설정 (.env.example 참고)
+cp .env.example .env
+
+# 전체 서비스 실행
+docker-compose up -d --build
+
+# Detection 포함 실행
+docker-compose --profile detection up -d --build
+
+# 상태 확인
+docker-compose ps
 ```
+
+## 배포 환경
+
+### 인프라 구성
+
+| 항목 | 설정 |
+|------|------|
+| 서버 | AWS EC2 (ap-northeast-2) |
+| IP | 43.200.29.148 (Elastic IP) |
+| HTTPS | Let's Encrypt + Nginx 리버스 프록시 |
+| 도메인 | 43-200-29-148.sslip.io |
+| CI/CD | GitHub Actions → SSH deploy |
+
+### 컨테이너 구성
+
+| 서비스 | 내부 포트 | 설명 |
+|--------|----------|------|
+| web | 80 | Nginx로 React SPA 서빙 |
+| backend | 3000 | Express API + Socket.IO |
+| postgres | 5432 | PostgreSQL 16 (127.0.0.1 바인딩) |
+| redis | 6379 | Redis 7 (127.0.0.1 바인딩) |
+| detection | 8100 | YOLO 감지 (프로필 활성화 시) |
+
+### 보안 설정
+
+- HTTPS 강제 (HTTP→443 리다이렉트)
+- HTTP/2 활성화
+- 보안 헤더: HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy
+- DB/Redis 포트 외부 비노출 (127.0.0.1 바인딩 + Security Group 차단)
+- .env 파일 퍼미션 600
+- Express trust proxy + rate limiting
+- Helmet.js 보안 미들웨어
+
+### 자동화
+
+| 작업 | 스케줄 | 설명 |
+|------|--------|------|
+| DB 백업 | 매일 02:00 UTC | pg_dump + gzip, 7일 보관 |
+| 헬스 모니터링 | 5분 주기 | 서비스 다운 시 자동 재시작 |
+| SSL 갱신 | 매주 월 03:00 UTC | Certbot auto-renew |
+
+### 배포 스크립트
+
+```bash
+./scripts/deploy.sh deploy    # git pull + docker build + 실행
+./scripts/deploy.sh build     # 컨테이너 재빌드
+./scripts/deploy.sh restart   # 컨테이너 재시작
+./scripts/deploy.sh logs      # 로그 보기
+./scripts/deploy.sh status    # 상태 + 리소스 확인
+./scripts/deploy.sh down      # 전체 중지
+```
+
+## 성능 최적화
+
+- **코드 스플리팅**: Vite manualChunks (727KB → 294KB 메인 번들)
+  - vendor-react, vendor-icons, vendor-network, vendor-grid, vendor-misc
+- **Gzip 압축**: Nginx에서 JS/CSS/JSON/SVG 압축
+- **정적 파일 캐시**: 7일 Cache-Control + immutable 헤더
+- **Docker 멀티스테이지 빌드**: 최소 프로덕션 이미지
+
+## 버전 히스토리
+
+| 버전 | 주요 변경 |
+|------|----------|
+| v0.7.3 | TypeScript 빌드 오류 전면 수정, AWS 배포, CI/CD, 보안 강화 |
+| v0.7.2 | 메신저 파일 전송/수신, 문서 뷰어 |
+| v0.7.1 | 관리자 직원 등록, AWS 배포 설정 |
+| v0.7.0 | 다크모드, 대시보드 위젯 리사이즈 |
+| v0.6.0 | WebRTC 화상회의, TTS 음성 안내 |
+| v0.5.0 | YOLO+ByteTrack 차량 추적, 번호판 인식 |
+| v0.4.x | React Native 모바일 앱, CCTV 실시간 트래킹, 주차 감지 |
+| v0.3.x | 대시보드 리디자인, 화상회의 STT, 사이드바 커스터마이징, 주차관리, 메일 |
+| v0.2.0 | Phase 1~4 전체 기능 구현 (12개 모듈) |
 
 ## 문서
 
