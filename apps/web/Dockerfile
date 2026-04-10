@@ -7,6 +7,7 @@ COPY package.json tsconfig.json vite.config.ts tailwind.config.js postcss.config
 RUN npm install
 
 COPY index.html ./
+COPY public ./public/
 COPY src ./src/
 
 ARG VITE_API_URL=/api
