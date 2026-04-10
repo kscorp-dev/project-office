@@ -36,11 +36,12 @@ export function setupMessengerSocket(io: SocketIOServer) {
       roomId: string;
       content: string;
       type?: string;
+      metadata?: Record<string, unknown>;
       parentId?: string;
       mentionIds?: string[];
     }) => {
       try {
-        const { roomId, content, type = 'text', parentId, mentionIds } = data;
+        const { roomId, content, type = 'text', metadata, parentId, mentionIds } = data;
 
         // 참여자 확인
         const participant = await prisma.chatParticipant.findUnique({
@@ -54,7 +55,7 @@ export function setupMessengerSocket(io: SocketIOServer) {
         // 메시지 저장
         const message = await prisma.$transaction(async (tx) => {
           const msg = await tx.message.create({
-            data: { roomId, senderId: userId, content, type: type as any, parentId },
+            data: { roomId, senderId: userId, content, type: type as any, metadata: metadata || undefined, parentId },
             include: {
               sender: { select: { id: true, name: true, profileImage: true } },
             },

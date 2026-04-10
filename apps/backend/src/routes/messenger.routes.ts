@@ -1,13 +1,46 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { config } from '../config';
 import { AppError } from '../services/auth.service';
 
 const router = Router();
 router.use(checkModule('messenger'));
+
+// ===== 파일 업로드 설정 =====
+const messengerStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.resolve(config.upload.dir, 'messenger');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const messengerUpload = multer({
+  storage: messengerStorage,
+  limits: { fileSize: config.upload.maxFileSize },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
+      '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+      '.txt', '.hwp', '.csv', '.zip', '.mp4', '.mp3',
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('지원하지 않는 파일 형식입니다'));
+  },
+});
 
 // ===== 채팅방 =====
 
@@ -214,6 +247,73 @@ router.post('/rooms/:id/messages', authenticate, validate(sendMessageSchema), as
     res.status(201).json({ success: true, data: message });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /messenger/rooms/:id/upload - 파일 전송
+router.post('/rooms/:id/upload', authenticate, messengerUpload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const roomId = req.params.id;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 없습니다' } });
+      return;
+    }
+
+    // 참여자 확인
+    const participant = await prisma.chatParticipant.findUnique({
+      where: { roomId_userId: { roomId, userId: req.user!.id } },
+    });
+    if (!participant || participant.leftAt) {
+      // 업로드된 파일 삭제
+      fs.unlinkSync(file.path);
+      res.status(403).json({ success: false, error: { code: 'NOT_MEMBER', message: '채팅방 멤버가 아닙니다' } });
+      return;
+    }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext);
+    const msgType = isImage ? 'image' : 'file';
+
+    const metadata = {
+      fileName: file.originalname,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      filePath: `/uploads/messenger/${file.filename}`,
+    };
+
+    const message = await prisma.$transaction(async (tx) => {
+      const msg = await tx.message.create({
+        data: {
+          roomId,
+          senderId: req.user!.id,
+          content: file.originalname,
+          type: msgType as any,
+          metadata,
+        },
+        include: {
+          sender: { select: { id: true, name: true, profileImage: true } },
+        },
+      });
+
+      await tx.chatRoom.update({
+        where: { id: roomId },
+        data: { updatedAt: new Date() },
+      });
+
+      return msg;
+    });
+
+    // Socket.IO로 다른 참여자에게 브로드캐스트
+    const io = req.app.get('io');
+    if (io) {
+      io.of('/messenger').to(roomId).emit('message:new', message);
+    }
+
+    res.status(201).json({ success: true, data: message });
+  } catch (err: any) {
+    console.error('File upload error:', err);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '파일 업로드 중 오류가 발생했습니다' } });
   }
 });
 

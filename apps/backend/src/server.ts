@@ -58,9 +58,13 @@ app.use(rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Static file serving (uploads)
+import path from 'path';
+app.use('/uploads', express.static(path.resolve(config.upload.dir)));
+
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', version: '0.2.0', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '0.7.1', timestamp: new Date().toISOString() });
 });
 
 // API Routes
@@ -94,6 +98,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // WebSocket
 setupMessengerSocket(io);
 setupMeetingSocket(io);
+
+// Socket.IO 인스턴스를 app에 저장 (라우트에서 접근 가능)
+app.set('io', io);
 
 httpServer.listen(config.port, () => {
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);
