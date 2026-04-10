@@ -1,74 +1,24 @@
-name: Build & Deploy to AWS
+name: Deploy to AWS EC2
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-env:
-  AWS_REGION: ap-northeast-2
-  ECR_BACKEND: project-office-backend
-  ECR_WEB: project-office-web
-
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & push Backend
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-        run: |
-          docker build -t $REGISTRY/$ECR_BACKEND:${{ github.sha }} -t $REGISTRY/$ECR_BACKEND:latest ./apps/backend
-          docker push $REGISTRY/$ECR_BACKEND --all-tags
-
-      - name: Build & push Web
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-        run: |
-          docker build -t $REGISTRY/$ECR_WEB:${{ github.sha }} -t $REGISTRY/$ECR_WEB:latest ./apps/web
-          docker push $REGISTRY/$ECR_WEB --all-tags
-
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Deploy to EC2 via SSM
-        run: |
-          aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=[
-              "cd /opt/project-office",
-              "git pull origin main",
-              "aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com",
-              "docker compose pull",
-              "docker compose up -d --remove-orphans",
-              "docker image prune -f"
-            ]' \
-            --timeout-seconds 300
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /opt/project-office
+            git pull origin main
+            docker-compose up -d --build --remove-orphans
+            docker image prune -f
+            echo "✅ Deployed at $(date)"
