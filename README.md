@@ -1,4 +1,4 @@
-# Project Office v0.7.3
+# Project Office v0.8.0
 
 사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV, 근태관리, 작업지시서 외 12개 모듈
 
@@ -85,6 +85,21 @@ npm run dev:mobile      # 모바일 (Expo)
 npm run dev:detection   # YOLO 감지 (http://localhost:8100)
 ```
 
+### 테스트
+
+```bash
+# Backend (76 유닛/통합 테스트 — 일부 통합 테스트는 PostgreSQL 필요)
+cd apps/backend
+npm test                    # 전체 실행
+npm run test:unit          # 유닛만
+npm run test:integration   # DB 필요한 통합 테스트
+npm run test:coverage      # 커버리지 리포트
+
+# Web (28 유닛 테스트 — jsdom)
+cd apps/web
+npm test
+```
+
 ### Docker 배포
 
 ```bash
@@ -164,6 +179,7 @@ docker-compose ps
 
 | 버전 | 주요 변경 |
 |------|----------|
+| **v0.8.0** | **전면 코드 품질/보안/성능 강화 + 테스트 스위트 104건**<br/>• Prisma migrations 도입, 배포 블로커 5건 해결<br/>• JWT 시크릿 강제화, XSS(DOMPurify), MIME 교차검증, 토큰 persist<br/>• Error Boundary, Refresh race condition, 결재 낙관적 락, 권한 재검증<br/>• N+1 쿼리 제거, advisory lock 동시성, onDelete 정책, CSRF 방어<br/>• pino 구조화 로깅 + 중앙 에러 핸들러, nginx 보안 헤더 강화<br/>• Vitest 기반 단위/통합 테스트 104건 (XSS/Race/Cycle 검증 포함) |
 | v0.7.3 | TypeScript 빌드 오류 전면 수정, AWS 배포, CI/CD, 보안 강화 |
 | v0.7.2 | 메신저 파일 전송/수신, 문서 뷰어 |
 | v0.7.1 | 관리자 직원 등록, AWS 배포 설정 |
