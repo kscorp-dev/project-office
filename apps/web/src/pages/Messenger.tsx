@@ -62,7 +62,7 @@ export default function MessengerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Socket 연결
+  // Socket 연결 — cleanup 시 명시적으로 리스너 해제
   useEffect(() => {
     if (!accessToken) return;
 
@@ -71,27 +71,45 @@ export default function MessengerPage() {
       transports: ['websocket'],
     });
 
-    s.on('connect', () => console.log('Messenger connected'));
-
-    s.on('message:new', (msg: Msg) => {
+    const onConnect = () => {
+      if (import.meta.env.DEV) console.log('Messenger connected');
+    };
+    const onConnectError = (err: Error) => {
+      if (import.meta.env.DEV) console.warn('Messenger socket error:', err.message);
+    };
+    const onMessageNew = (msg: Msg) => {
       setMessages(prev => {
         // 중복 방지 (파일 업로드 시 REST + Socket 모두 메시지를 추가할 수 있음)
         if (prev.some(m => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
-      fetchRooms();
-    });
-
-    s.on('typing:start', ({ userId }: { userId: string }) => {
+      // 방 목록 업데이트는 throttle 대상 — 여기선 메시지만 반영
+      // (사용자가 방 목록으로 돌아가거나 새로고침 시 최신화됨)
+    };
+    const onTypingStart = ({ userId }: { userId: string }) => {
       setTyping(prev => [...new Set([...prev, userId])]);
-    });
-
-    s.on('typing:stop', ({ userId }: { userId: string }) => {
+    };
+    const onTypingStop = ({ userId }: { userId: string }) => {
       setTyping(prev => prev.filter(id => id !== userId));
-    });
+    };
+
+    s.on('connect', onConnect);
+    s.on('connect_error', onConnectError);
+    s.on('message:new', onMessageNew);
+    s.on('typing:start', onTypingStart);
+    s.on('typing:stop', onTypingStop);
 
     setSocket(s);
-    return () => { s.disconnect(); };
+
+    return () => {
+      // 명시적 리스너 해제 → effect 재실행 시 중복 구독 방지
+      s.off('connect', onConnect);
+      s.off('connect_error', onConnectError);
+      s.off('message:new', onMessageNew);
+      s.off('typing:start', onTypingStart);
+      s.off('typing:stop', onTypingStop);
+      s.disconnect();
+    };
   }, [accessToken]);
 
   useEffect(() => { fetchRooms(); }, []);

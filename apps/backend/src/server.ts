@@ -2,9 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import pinoHttp from 'pino-http';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { config } from './config';
+import { logger } from './config/logger';
+// package.json에서 버전 자동 로드 (하드코딩 방지)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require('../package.json') as { version: string };
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -40,15 +45,44 @@ const io = new SocketIOServer(httpServer, {
 // Trust proxy (behind Nginx reverse proxy)
 app.set('trust proxy', 1);
 
+// HTTP 요청 로깅 (pino-http) — errorHandler보다 먼저 배치해야 요청 컨텍스트가 에러 로그에도 실린다
+app.use(pinoHttp({
+  logger,
+  // 헬스체크/정적 자산 로그는 INFO 대신 DEBUG로 낮춰 노이즈 감소
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    if (req.url === '/health' || req.url?.startsWith('/uploads')) return 'debug';
+    return 'info';
+  },
+  // 민감 헤더 제거
+  serializers: {
+    req: (req) => ({
+      id: req.id,
+      method: req.method,
+      url: req.url,
+      remoteAddress: req.socket?.remoteAddress,
+    }),
+  },
+}));
+
 // Security Middleware
 app.use(helmet());
+
+// CORS — config.corsOrigin은 단일 또는 콤마 구분 여러 Origin 허용
+const corsAllowList = config.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean);
 app.use(cors({
-  origin: config.corsOrigin,
+  origin: corsAllowList.length === 1 && corsAllowList[0] === '*' ? '*' : corsAllowList,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
   maxAge: 86400,
 }));
+
+// CSRF 보완: state-changing 요청의 Origin/Referer 검증
+// (CORS 이후에 배치 — preflight는 통과하고 실제 요청만 검사)
+import { originCheck } from './middleware/originCheck';
+app.use(originCheck);
 
 // Global Rate Limiter
 app.use(rateLimit({
@@ -67,7 +101,7 @@ app.use('/uploads', express.static(path.resolve(config.upload.dir)));
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', version: '0.7.1', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: pkg.version, timestamp: new Date().toISOString() });
 });
 
 // API Routes
@@ -88,15 +122,11 @@ app.use('/api/parking', parkingRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 Handler
-app.use((_req, res) => {
-  res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '요청한 리소스를 찾을 수 없습니다' } });
-});
+import { notFoundHandler, errorHandler } from './middleware/errorHandler';
+app.use(notFoundHandler);
 
-// Error Handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 내부 오류가 발생했습니다' } });
-});
+// 중앙 에러 핸들러 (Zod, Prisma, AppError를 일관된 응답으로 변환 + pino 로깅)
+app.use(errorHandler);
 
 // WebSocket
 setupMessengerSocket(io);
@@ -106,6 +136,8 @@ setupMeetingSocket(io);
 app.set('io', io);
 
 httpServer.listen(config.port, () => {
+  logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
+  // 기존 콘솔 로그도 유지 (startup 가시성)
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);
 });
 

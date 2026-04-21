@@ -6,6 +6,7 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { parsePagination, buildMeta } from '../utils/pagination';
 
 const router = Router();
 router.use(checkModule('cctv'));
@@ -106,12 +107,17 @@ router.get('/cameras/:id/recordings', authenticate, async (req: Request, res: Re
     if (startDate) where.startTime = { gte: new Date(startDate as string) };
     if (endDate) where.endTime = { ...(where.endTime || {}), lte: new Date(endDate as string) };
 
-    const recordings = await prisma.recording.findMany({
-      where,
-      orderBy: { startTime: 'desc' },
-      take: 50,
-    });
-    res.json({ success: true, data: recordings });
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultLimit: 50, maxLimit: 200 });
+    const [recordings, total] = await Promise.all([
+      prisma.recording.findMany({
+        where,
+        orderBy: { startTime: 'desc' },
+        skip: pagination.skip,
+        take: pagination.limit,
+      }),
+      prisma.recording.count({ where }),
+    ]);
+    res.json({ success: true, data: recordings, meta: buildMeta(pagination, total) });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

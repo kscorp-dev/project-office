@@ -4,6 +4,7 @@ FastAPI 기반, YOLOv8 Nano 모델 사용
 실시간 카메라 스트리밍 + WebSocket 지원
 """
 import io
+import os
 import re
 import time
 import asyncio
@@ -23,7 +24,11 @@ from detector import ParkingDetector
 from camera_stream import CameraManager, StreamlinkStream
 
 # 백엔드 webhook URL (입출차 이벤트 전송용)
-BACKEND_WEBHOOK_URL = "http://localhost:3000/api/parking/events/webhook"
+# 환경변수 BACKEND_WEBHOOK_URL 우선, 없으면 개발용 localhost
+BACKEND_WEBHOOK_URL = os.getenv(
+    "BACKEND_WEBHOOK_URL",
+    "http://localhost:3000/api/parking/events/webhook",
+)
 
 
 # --- 전역 ---

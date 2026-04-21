@@ -6,6 +6,9 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { parsePagination, buildMeta } from '../utils/pagination';
+import { recordAttendance } from '../services/attendance.service';
+import { AppError } from '../services/auth.service';
 
 const router = Router();
 router.use(checkModule('attendance'));
@@ -19,43 +22,24 @@ const checkSchema = z.object({
   note: z.string().max(200).optional(),
 });
 
-// POST /attendance/check - 출퇴근 기록
+// POST /attendance/check - 출퇴근 기록 (service에서 advisory lock으로 동시성 방어)
 router.post('/check', authenticate, validate(checkSchema), async (req: Request, res: Response) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // 오늘 이미 같은 타입 기록이 있는지 확인
-    const existing = await prisma.attendance.findFirst({
-      where: {
-        userId: req.user!.id,
-        type: req.body.type,
-        checkTime: { gte: today, lt: tomorrow },
-      },
+    const attendance = await recordAttendance({
+      userId: req.user!.id,
+      type: req.body.type,
+      latitude: req.body.latitude,
+      longitude: req.body.longitude,
+      note: req.body.note,
+      ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip,
+      deviceType: req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'web',
     });
-
-    if (existing) {
-      res.status(400).json({ success: false, error: { code: 'ALREADY_CHECKED', message: `이미 ${req.body.type === 'check_in' ? '출근' : '퇴근'} 처리되었습니다` } });
+    res.status(201).json({ success: true, data: attendance });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
       return;
     }
-
-    const attendance = await prisma.attendance.create({
-      data: {
-        userId: req.user!.id,
-        type: req.body.type,
-        checkTime: new Date(),
-        latitude: req.body.latitude,
-        longitude: req.body.longitude,
-        ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip,
-        deviceType: req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'web',
-        note: req.body.note,
-      },
-    });
-
-    res.status(201).json({ success: true, data: attendance });
-  } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -158,15 +142,27 @@ router.post('/vacations', authenticate, validate(vacationSchema), async (req: Re
   }
 });
 
-// GET /attendance/vacations - 휴가 목록
+// GET /attendance/vacations - 휴가 목록 (페이지네이션)
 router.get('/vacations', authenticate, async (req: Request, res: Response) => {
   try {
-    const vacations = await prisma.vacation.findMany({
-      where: { userId: req.user!.id },
-      orderBy: { startDate: 'desc' },
-      take: 50,
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultLimit: 20, maxLimit: 100 });
+    const where = { userId: req.user!.id };
+
+    const [vacations, total] = await Promise.all([
+      prisma.vacation.findMany({
+        where,
+        orderBy: { startDate: 'desc' },
+        skip: pagination.skip,
+        take: pagination.limit,
+      }),
+      prisma.vacation.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: vacations,
+      meta: buildMeta(pagination, total),
     });
-    res.json({ success: true, data: vacations });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

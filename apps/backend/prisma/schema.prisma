@@ -330,7 +330,7 @@ model ChatRoom {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  creator      User?             @relation("CreatedRooms", fields: [creatorId], references: [id])
+  creator      User?             @relation("CreatedRooms", fields: [creatorId], references: [id], onDelete: SetNull)
   participants ChatParticipant[]
   messages     Message[]
 
@@ -368,8 +368,8 @@ model Message {
   updatedAt DateTime    @updatedAt @map("updated_at")
 
   room    ChatRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender  User?        @relation("SentMessages", fields: [senderId], references: [id])
-  parent  Message?     @relation("MessageReplies", fields: [parentId], references: [id])
+  sender  User?        @relation("SentMessages", fields: [senderId], references: [id], onDelete: SetNull)
+  parent  Message?     @relation("MessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
   replies Message[]    @relation("MessageReplies")
   reads   MessageRead[]
   mentions MessageMention[]
@@ -595,7 +595,7 @@ model EventAttendee {
 
 model Board {
   id          String  @id @default(uuid())
-  name        String
+  name        String  @unique
   type        String  @default("general") // notice, general, department
   description String?
   departmentId String? @map("department_id")

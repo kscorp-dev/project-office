@@ -166,21 +166,18 @@ router.post('/boards/:boardId/posts', authenticate, validate(postSchema), async 
   }
 });
 
-// PATCH /board/posts/:id - 게시글 수정
+// PATCH /board/posts/:id - 게시글 수정 (TOCTOU 방어: 조건부 업데이트)
 router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const post = await prisma.post.findUnique({ where: { id: qs(req.params.id) } });
-    if (!post || !post.isActive) {
-      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
-      return;
-    }
-    if (post.authorId !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
-      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '수정 권한이 없습니다' } });
-      return;
-    }
+    const postId = qs(req.params.id);
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
 
-    const updated = await prisma.post.update({
-      where: { id: qs(req.params.id) },
+    // 작성자 권한 조건을 where에 직접 포함 → TOCTOU 제거
+    // 관리자가 아니면 authorId까지 일치해야 업데이트
+    const result = await prisma.post.updateMany({
+      where: isAdmin
+        ? { id: postId, isActive: true }
+        : { id: postId, isActive: true, authorId: req.user!.id },
       data: {
         title: req.body.title,
         content: req.body.content,
@@ -188,26 +185,48 @@ router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => 
         isMustRead: req.body.isMustRead,
       },
     });
+
+    if (result.count === 0) {
+      // 존재하지 않거나 권한이 없거나 이미 삭제된 경우 구분
+      const exists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, isActive: true } });
+      if (!exists || !exists.isActive) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
+      } else {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '수정 권한이 없습니다' } });
+      }
+      return;
+    }
+
+    const updated = await prisma.post.findUnique({ where: { id: postId } });
     res.json({ success: true, data: updated });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
 
-// DELETE /board/posts/:id - 게시글 삭제 (soft)
+// DELETE /board/posts/:id - 게시글 삭제 (soft, TOCTOU 방어)
 router.delete('/posts/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const post = await prisma.post.findUnique({ where: { id: qs(req.params.id) } });
-    if (!post) {
-      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
-      return;
-    }
-    if (post.authorId !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
-      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '삭제 권한이 없습니다' } });
+    const postId = qs(req.params.id);
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
+
+    const result = await prisma.post.updateMany({
+      where: isAdmin
+        ? { id: postId, isActive: true }
+        : { id: postId, isActive: true, authorId: req.user!.id },
+      data: { isActive: false },
+    });
+
+    if (result.count === 0) {
+      const exists = await prisma.post.findUnique({ where: { id: postId }, select: { id: true, isActive: true } });
+      if (!exists || !exists.isActive) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '게시글을 찾을 수 없습니다' } });
+      } else {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '삭제 권한이 없습니다' } });
+      }
       return;
     }
 
-    await prisma.post.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '게시글이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

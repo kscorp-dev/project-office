@@ -91,8 +91,18 @@ export class ApprovalService {
 
   /**
    * 문서 상세 조회
+   *
+   * @param documentId - 문서 ID
+   * @param requesterId - 조회 요청자 (권한 검사용). 생략하면 검사 스킵 (내부 호출용).
+   * @param requesterRole - 요청자 역할 (super_admin/admin은 모든 문서 조회 가능)
+   *
+   * 권한: 기안자, 결재자, 참조자, 또는 관리자만 조회 가능
    */
-  async getDocumentDetail(documentId: string) {
+  async getDocumentDetail(
+    documentId: string,
+    requesterId?: string,
+    requesterRole?: string,
+  ) {
     const doc = await prisma.approvalDocument.findUnique({
       where: { id: documentId },
       include: {
@@ -114,6 +124,19 @@ export class ApprovalService {
     });
 
     if (!doc) throw new AppError(404, 'NOT_FOUND', '결재 문서를 찾을 수 없습니다');
+
+    // 권한 검사 — requesterId가 주어진 경우에만
+    if (requesterId) {
+      const isAdmin = requesterRole === 'super_admin' || requesterRole === 'admin';
+      const isDrafter = doc.drafterId === requesterId;
+      const isApprover = doc.lines.some((l) => l.approverId === requesterId);
+      const isReference = doc.references.some((r) => r.userId === requesterId);
+
+      if (!isAdmin && !isDrafter && !isApprover && !isReference) {
+        throw new AppError(403, 'FORBIDDEN', '이 문서를 조회할 권한이 없습니다');
+      }
+    }
+
     return doc;
   }
 
@@ -139,41 +162,62 @@ export class ApprovalService {
 
   /**
    * 결재 승인
+   *
+   * 동시성 방어:
+   * 1) 트랜잭션 내부에서 문서를 다시 읽어 최신 currentStep으로 판단
+   * 2) 문서 업데이트는 updateMany + where(currentStep) 조건부 업데이트로
+   *    낙관적 락 효과 → 동시에 두 요청이 들어와도 한 쪽만 성공
+   * 3) currentStep이 lines 범위를 벗어난 경우 방어적으로 에러
    */
   async approve(documentId: string, approverId: string, comment?: string) {
-    const doc = await prisma.approvalDocument.findUnique({
-      where: { id: documentId },
-      include: { lines: { orderBy: { step: 'asc' } } },
-    });
-
-    if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
-    if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태가 아닙니다');
-
-    const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
-    if (!currentLine || currentLine.approverId !== approverId) {
-      throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
-    }
-
-    const isLastStep = doc.currentStep >= doc.lines.length;
-
     await prisma.$transaction(async (tx) => {
-      // 현재 결재선 승인
-      await tx.approvalLine.update({
-        where: { id: currentLine.id },
-        data: { status: 'approved', comment, actedAt: new Date() },
+      // 트랜잭션 내부에서 최신 상태로 재조회
+      const doc = await tx.approvalDocument.findUnique({
+        where: { id: documentId },
+        include: { lines: { orderBy: { step: 'asc' } } },
       });
 
-      // 마지막 결재자면 문서 최종 승인
+      if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
+      if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태가 아닙니다');
+
+      // currentStep 범위 검증 (잘못된 데이터 방어)
+      if (doc.currentStep < 1 || doc.currentStep > doc.lines.length) {
+        throw new AppError(500, 'INVALID_STATE', '결재 단계 상태가 올바르지 않습니다');
+      }
+
+      const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
+      if (!currentLine || currentLine.approverId !== approverId) {
+        throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
+      }
+
+      const isLastStep = doc.currentStep >= doc.lines.length;
+
+      // 현재 결재선 승인 (pending 상태일 때만 — 중복 승인 차단)
+      const lineUpdate = await tx.approvalLine.updateMany({
+        where: { id: currentLine.id, status: 'pending' },
+        data: { status: 'approved', comment, actedAt: new Date() },
+      });
+      if (lineUpdate.count === 0) {
+        throw new AppError(409, 'ALREADY_ACTED', '이미 처리된 결재입니다');
+      }
+
+      // 문서 업데이트 — currentStep이 여전히 기대값일 때만 (낙관적 락)
       if (isLastStep) {
-        await tx.approvalDocument.update({
-          where: { id: documentId },
+        const docUpdate = await tx.approvalDocument.updateMany({
+          where: { id: documentId, currentStep: doc.currentStep, status: 'pending' },
           data: { status: 'approved', completedAt: new Date() },
         });
+        if (docUpdate.count === 0) {
+          throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
+        }
       } else {
-        await tx.approvalDocument.update({
-          where: { id: documentId },
+        const docUpdate = await tx.approvalDocument.updateMany({
+          where: { id: documentId, currentStep: doc.currentStep, status: 'pending' },
           data: { currentStep: doc.currentStep + 1 },
         });
+        if (docUpdate.count === 0) {
+          throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
+        }
       }
     });
 
@@ -181,34 +225,44 @@ export class ApprovalService {
   }
 
   /**
-   * 결재 반려
+   * 결재 반려 — approve와 동일한 동시성 방어 적용
    */
   async reject(documentId: string, approverId: string, comment: string) {
     if (!comment) throw new AppError(400, 'COMMENT_REQUIRED', '반려 사유를 입력해주세요');
 
-    const doc = await prisma.approvalDocument.findUnique({
-      where: { id: documentId },
-      include: { lines: { orderBy: { step: 'asc' } } },
-    });
-
-    if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
-    if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태가 아닙니다');
-
-    const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
-    if (!currentLine || currentLine.approverId !== approverId) {
-      throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
-    }
-
     await prisma.$transaction(async (tx) => {
-      await tx.approvalLine.update({
-        where: { id: currentLine.id },
+      const doc = await tx.approvalDocument.findUnique({
+        where: { id: documentId },
+        include: { lines: { orderBy: { step: 'asc' } } },
+      });
+
+      if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
+      if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태가 아닙니다');
+
+      if (doc.currentStep < 1 || doc.currentStep > doc.lines.length) {
+        throw new AppError(500, 'INVALID_STATE', '결재 단계 상태가 올바르지 않습니다');
+      }
+
+      const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
+      if (!currentLine || currentLine.approverId !== approverId) {
+        throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
+      }
+
+      const lineUpdate = await tx.approvalLine.updateMany({
+        where: { id: currentLine.id, status: 'pending' },
         data: { status: 'rejected', comment, actedAt: new Date() },
       });
+      if (lineUpdate.count === 0) {
+        throw new AppError(409, 'ALREADY_ACTED', '이미 처리된 결재입니다');
+      }
 
-      await tx.approvalDocument.update({
-        where: { id: documentId },
+      const docUpdate = await tx.approvalDocument.updateMany({
+        where: { id: documentId, currentStep: doc.currentStep, status: 'pending' },
         data: { status: 'rejected', completedAt: new Date() },
       });
+      if (docUpdate.count === 0) {
+        throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
+      }
     });
 
     return this.getDocumentDetail(documentId);

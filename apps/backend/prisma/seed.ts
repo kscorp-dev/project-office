@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  // 기능 모듈 시드
+  // 기능 모듈 시드 (task_orders 복수형으로 통일)
   const modules = [
     { name: 'auth', displayName: '인증/조직관리', sortOrder: 1 },
     { name: 'approval', displayName: '전자결재', sortOrder: 2 },
@@ -13,13 +13,16 @@ async function main() {
     { name: 'attendance', displayName: '근무관리', sortOrder: 5 },
     { name: 'calendar', displayName: '캘린더', sortOrder: 6 },
     { name: 'board', displayName: '게시판', sortOrder: 7 },
-    { name: 'task_order', displayName: '작업지시서', sortOrder: 8 },
+    { name: 'task_orders', displayName: '작업지시서', sortOrder: 8 },
     { name: 'inventory', displayName: '재고관리', sortOrder: 9 },
     { name: 'meeting', displayName: '화상회의', sortOrder: 10 },
     { name: 'document', displayName: '문서관리', sortOrder: 11 },
     { name: 'parking', displayName: 'AI 주차 추적', sortOrder: 12 },
     { name: 'admin', displayName: '관리자콘솔', sortOrder: 13 },
   ];
+
+  // 과거 잘못 시드된 단수형 'task_order' 제거
+  await prisma.featureModule.deleteMany({ where: { name: 'task_order' } });
 
   for (const mod of modules) {
     await prisma.featureModule.upsert({
@@ -63,7 +66,12 @@ async function main() {
   }
 
   // 슈퍼관리자 계정
-  const hashedPassword = await bcrypt.hash('Admin@1234', 12);
+  // SEED_ADMIN_PASSWORD 환경변수 우선, 없으면 개발용 기본값 (프로덕션 seed에서는 반드시 설정)
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'Admin@1234';
+  if (process.env.NODE_ENV === 'production' && !process.env.SEED_ADMIN_PASSWORD) {
+    console.warn('[seed] ⚠️  프로덕션 환경에서 SEED_ADMIN_PASSWORD가 설정되지 않아 기본값 사용 — 즉시 변경 필요');
+  }
+  const hashedPassword = await bcrypt.hash(adminPassword, 12);
 
   await prisma.user.upsert({
     where: { employeeId: 'admin' },
@@ -99,14 +107,8 @@ async function main() {
     });
   }
 
-  // 모듈명 통일 (task_orders, task_order 둘 다 대응)
-  await prisma.featureModule.upsert({
-    where: { name: 'task_orders' },
-    update: {},
-    create: { name: 'task_orders', displayName: '작업지시서', sortOrder: 8 },
-  });
-
-  // 게시판 시드
+  // 게시판 시드 — Board.name @unique 제약 사용 (이전에는 id에 name을 넣어
+  // 매 실행마다 새로 생성되는 버그가 있었음)
   const boards = [
     { name: '공지사항', type: 'notice', sortOrder: 1 },
     { name: '자유게시판', type: 'general', sortOrder: 2 },
@@ -115,7 +117,7 @@ async function main() {
 
   for (const board of boards) {
     await prisma.board.upsert({
-      where: { id: board.name },
+      where: { name: board.name },
       update: {},
       create: board,
     });

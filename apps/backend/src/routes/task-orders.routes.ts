@@ -414,7 +414,9 @@ router.get('/clients/list', authenticate, async (req: Request, res: Response) =>
         { contactPerson: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const clients = await prisma.client.findMany({ where, orderBy: { companyName: 'asc' }, take: 50 });
+    // 간단한 무한 스크롤/검색용 상한 — 필요 시 pagination으로 교체
+    const limit = Math.min(parseInt(qs(req.query.limit) || '50', 10) || 50, 200);
+    const clients = await prisma.client.findMany({ where, orderBy: { companyName: 'asc' }, take: limit });
     res.json({ success: true, data: clients });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

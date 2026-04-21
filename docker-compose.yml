@@ -66,9 +66,15 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        # 빌드 타임에 API_URL 주입 (Vite는 빌드 시점에 env를 정적 번들링함)
+        # 프로덕션(Nginx 리버스 프록시): /api
+        # 개발 외부 접근: http://<host>:3001/api 등
+        VITE_API_URL: ${VITE_API_URL:-/api}
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "${WEB_PORT:-8080}:80"
 
@@ -78,6 +84,8 @@ services:
       context: ./apps/detection
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      BACKEND_WEBHOOK_URL: ${BACKEND_WEBHOOK_URL:-http://backend:3000/api/parking/events/webhook}
     ports:
       - "${DETECTION_PORT:-8100}:8100"
     volumes:

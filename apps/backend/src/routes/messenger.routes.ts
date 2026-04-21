@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { checkModule } from '../middleware/checkModule';
@@ -11,6 +12,7 @@ import { validate } from '../middleware/validate';
 import { config } from '../config';
 import { AppError } from '../services/auth.service';
 import { qs, qsOpt } from '../utils/query';
+import { messengerFileFilter } from '../utils/fileFilter';
 
 const router = Router();
 router.use(checkModule('messenger'));
@@ -31,16 +33,8 @@ const messengerStorage = multer.diskStorage({
 const messengerUpload = multer({
   storage: messengerStorage,
   limits: { fileSize: config.upload.maxFileSize },
-  fileFilter: (_req, file, cb) => {
-    const allowed = [
-      '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-      '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-      '.txt', '.hwp', '.csv', '.zip', '.mp4', '.mp3',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('지원하지 않는 파일 형식입니다'));
-  },
+  // 확장자 + MIME 타입 교차 검증 (경로 traversal, 실행 파일 차단 포함)
+  fileFilter: messengerFileFilter,
 });
 
 // ===== 채팅방 =====
@@ -48,10 +42,12 @@ const messengerUpload = multer({
 // GET /messenger/rooms - 내 채팅방 목록
 router.get('/rooms', authenticate, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
+
     const rooms = await prisma.chatRoom.findMany({
       where: {
         isActive: true,
-        participants: { some: { userId: req.user!.id, leftAt: null } },
+        participants: { some: { userId, leftAt: null } },
       },
       include: {
         participants: {
@@ -67,28 +63,32 @@ router.get('/rooms', authenticate, async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' },
     });
 
-    // 안읽은 메시지 수 계산
-    const roomsWithUnread = await Promise.all(
-      rooms.map(async (room) => {
-        const participant = room.participants.find(p => p.userId === req.user!.id);
-        const unreadCount = participant
-          ? await prisma.message.count({
-              where: {
-                roomId: room.id,
-                createdAt: { gt: participant.lastReadAt },
-                senderId: { not: req.user!.id },
-                isDeleted: false,
-              },
-            })
-          : 0;
+    // N+1 제거: 모든 방의 안읽음 카운트를 단일 쿼리로
+    // participants의 last_read_at을 join해 각 방별로 COUNT 계산
+    let unreadMap = new Map<string, number>();
+    if (rooms.length > 0) {
+      const roomIds = rooms.map((r) => r.id);
+      const rows = await prisma.$queryRaw<Array<{ room_id: string; cnt: bigint }>>`
+        SELECT m.room_id, COUNT(*)::bigint AS cnt
+        FROM messages m
+        INNER JOIN chat_participants p
+          ON p.room_id = m.room_id
+          AND p.user_id = ${userId}
+          AND p.left_at IS NULL
+        WHERE m.room_id IN (${Prisma.join(roomIds)})
+          AND m.created_at > p.last_read_at
+          AND (m.sender_id IS NULL OR m.sender_id <> ${userId})
+          AND m.is_deleted = false
+        GROUP BY m.room_id
+      `;
+      unreadMap = new Map(rows.map((r) => [r.room_id, Number(r.cnt)]));
+    }
 
-        return {
-          ...room,
-          unreadCount,
-          lastMessage: room.messages[0] || null,
-        };
-      }),
-    );
+    const roomsWithUnread = rooms.map((room) => ({
+      ...room,
+      unreadCount: unreadMap.get(room.id) ?? 0,
+      lastMessage: room.messages[0] || null,
+    }));
 
     res.json({ success: true, data: roomsWithUnread });
   } catch {

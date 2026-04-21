@@ -58,3 +58,10 @@ apps/mobile/dist/
 # Shared
 packages/shared/dist/
 packages/shared/node_modules/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Claude Code session metadata
+.claude/
+

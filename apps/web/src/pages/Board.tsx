@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Newspaper, Search, Pin, Eye, MessageCircle, Plus, X, ChevronLeft, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth';
+import { sanitizeHtml } from '../utils/sanitize';
 
 interface BoardItem {
   id: string;
@@ -61,6 +62,8 @@ export default function BoardPage() {
   const [selectedPost, setSelectedPost] = useState<PostDetail | null>(null);
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -111,7 +114,8 @@ export default function BoardPage() {
 
   const handleCreatePost = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!selectedBoard) return;
+    if (!selectedBoard || isSubmittingPost) return;
+    setIsSubmittingPost(true);
     const form = new FormData(e.currentTarget);
     try {
       await api.post(`/board/boards/${selectedBoard.id}/posts`, {
@@ -124,6 +128,8 @@ export default function BoardPage() {
       fetchPosts();
     } catch (err: any) {
       alert(err.response?.data?.error?.message || '게시글 작성 중 오류가 발생했습니다');
+    } finally {
+      setIsSubmittingPost(false);
     }
   };
 
@@ -139,13 +145,16 @@ export default function BoardPage() {
   };
 
   const handleAddComment = async () => {
-    if (!selectedPost || !newComment.trim()) return;
+    if (!selectedPost || !newComment.trim() || isSubmittingComment) return;
+    setIsSubmittingComment(true);
     try {
       await api.post(`/board/posts/${selectedPost.id}/comments`, { content: newComment });
       setNewComment('');
       fetchPostDetail(selectedPost.id);
     } catch (err: any) {
       alert(err.response?.data?.error?.message || '댓글 작성 중 오류가 발생했습니다');
+    } finally {
+      setIsSubmittingComment(false);
     }
   };
 
@@ -188,7 +197,7 @@ export default function BoardPage() {
             </div>
           </div>
 
-          <div className="prose max-w-none mb-6 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
+          <div className="prose max-w-none mb-6 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedPost.content) }} />
 
           {/* Actions */}
           {(selectedPost.author.id === user?.id || ['super_admin', 'admin'].includes(user?.role || '')) && (
@@ -235,7 +244,9 @@ export default function BoardPage() {
                 placeholder="댓글을 입력하세요"
                 className="input-field flex-1"
               />
-              <button onClick={handleAddComment} className="btn-primary">등록</button>
+              <button onClick={handleAddComment} className="btn-primary" disabled={isSubmittingComment || !newComment.trim()}>
+                {isSubmittingComment ? '등록 중...' : '등록'}
+              </button>
             </div>
           </div>
         </div>
@@ -376,8 +387,12 @@ export default function BoardPage() {
                 </div>
               )}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary">취소</button>
-                <button type="submit" className="btn-primary">등록</button>
+                <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary" disabled={isSubmittingPost}>
+                  취소
+                </button>
+                <button type="submit" className="btn-primary" disabled={isSubmittingPost}>
+                  {isSubmittingPost ? '등록 중...' : '등록'}
+                </button>
               </div>
             </form>
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { api } from '../services/api';
 import { useWebRTC, ChatMessage, SharedDocument } from '../hooks/useWebRTC';
 import { useTTS } from '../hooks/useTTS';
 import { useSpeakingDetection } from '../hooks/useSpeakingDetection';
@@ -588,7 +589,6 @@ function ZoomableViewer({
 function DocumentPanel({
   documents,
   meetingId,
-  accessToken,
   onUpload,
   onRemove,
   onView,
@@ -596,7 +596,6 @@ function DocumentPanel({
 }: {
   documents: SharedDocument[];
   meetingId: string;
-  accessToken: string;
   onUpload: (file: File) => void;
   onRemove: (docId: string) => void;
   onView: (doc: SharedDocument) => void;
@@ -675,15 +674,30 @@ function DocumentPanel({
                       <Maximize2 size={12} />
                     </button>
                   )}
-                  <a
-                    href={`${API_URL}/meeting/${meetingId}/documents/${doc.id}/file?token=${accessToken}`}
-                    download={doc.fileName}
-                    onClick={(e) => e.stopPropagation()}
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      // 토큰이 URL에 노출되지 않도록 blob 방식으로 다운로드
+                      try {
+                        const { data } = await api.get(
+                          `/meeting/${meetingId}/documents/${doc.id}/file`,
+                          { responseType: 'blob' },
+                        );
+                        const url = URL.createObjectURL(data);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = doc.fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch { /* silent fail */ }
+                    }}
                     className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-600"
                     title="다운로드"
                   >
                     <Download size={12} />
-                  </a>
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onRemove(doc.id); }}
                     className="p-1 rounded text-gray-400 hover:text-red-400 hover:bg-gray-600"
@@ -806,19 +820,32 @@ export default function MeetingRoom() {
     },
   });
 
-  /* ── 카메라/마이크 초기화 ── */
+  /* ── 카메라/마이크 초기화 (unmount race condition 방지) ── */
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let cancelled = false;
 
     const initMedia = async () => {
+      const acquire = async (constraints: MediaStreamConstraints) => {
+        const s = await navigator.mediaDevices.getUserMedia(constraints);
+        if (cancelled) {
+          // 컴포넌트 언마운트 후 해결된 경우 즉시 트랙 해제
+          s.getTracks().forEach((t) => t.stop());
+          return null;
+        }
+        return s;
+      };
+
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setLocalStream(stream);
+        stream = await acquire({ video: true, audio: true });
+        if (stream) setLocalStream(stream);
       } catch {
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          setLocalStream(stream);
-          setIsVideoOff(true);
+          stream = await acquire({ audio: true });
+          if (stream) {
+            setLocalStream(stream);
+            setIsVideoOff(true);
+          }
         } catch {
           /* 마이크/카메라 없이도 참가 가능 */
         }
@@ -827,6 +854,7 @@ export default function MeetingRoom() {
 
     initMedia();
     return () => {
+      cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -842,15 +870,14 @@ export default function MeetingRoom() {
     });
   }, [remotePeers, updateStream]);
 
-  /* ── 문서 목록 초기 로드 ── */
+  /* ── 문서 목록 초기 로드 (api 서비스 사용 — 자동 토큰 refresh) ── */
   useEffect(() => {
     if (!connected || !roomId || !accessToken) return;
-    fetch(`${API_URL}/meeting/${roomId}/documents`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-      .then((r) => r.json())
-      .then((data) => { if (data.success) setSharedDocs(data.data); })
-      .catch(() => {});
+    let cancelled = false;
+    api.get(`/meeting/${roomId}/documents`)
+      .then(({ data }) => { if (!cancelled && data.success) setSharedDocs(data.data); })
+      .catch(() => { /* 오프라인/권한 없음 */ });
+    return () => { cancelled = true; };
   }, [connected, roomId, accessToken]);
 
   /* ── 문서 업로드 ── */
@@ -1536,7 +1563,6 @@ export default function MeetingRoom() {
                   <DocumentPanel
                     documents={sharedDocs}
                     meetingId={roomId || ''}
-                    accessToken={accessToken}
                     onUpload={handleDocUpload}
                     onRemove={handleDocRemove}
                     onView={setViewingDoc}
@@ -1612,7 +1638,6 @@ export default function MeetingRoom() {
               <DocumentPanel
                 documents={sharedDocs}
                 meetingId={roomId || ''}
-                accessToken={accessToken}
                 onUpload={handleDocUpload}
                 onRemove={handleDocRemove}
                 onView={setViewingDoc}

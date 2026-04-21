@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
+import { sanitizeHtml } from '../utils/sanitize';
 import {
   FileCheck, Plus, Clock, CheckCircle, XCircle, Send,
   ChevronRight, Eye, AlertCircle,
@@ -235,7 +236,7 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
         </div>
 
         <div className="p-6">
-          <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: doc.content }} />
+          <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHtml(doc.content) }} />
         </div>
 
         {/* 결재선 */}
@@ -295,6 +296,8 @@ function DocDetailModal({ doc, currentUserId, onClose, onApprove, onReject, onWi
 function CreateDocModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     templateId: '', title: '', content: '', urgency: 'normal',
     approverIds: [] as string[], referenceIds: [] as string[],
@@ -306,10 +309,19 @@ function CreateDocModal({ onClose, onCreated }: { onClose: () => void; onCreated
   }, []);
 
   const handleSubmit = async (submit: boolean) => {
+    // 중복 제출 방지 — 이전 요청이 진행 중이면 무시
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
     try {
       await api.post('/approvals/documents', { ...form, submit });
       onCreated();
-    } catch {}
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || '저장에 실패했습니다';
+      setSubmitError(msg);
+      setIsSubmitting(false);  // 실패 시 재시도 가능하도록 복원
+    }
+    // 성공 시 onCreated가 모달을 닫으므로 isSubmitting 해제 불필요
   };
 
   const toggleApprover = (userId: string) => {
@@ -381,11 +393,26 @@ function CreateDocModal({ onClose, onCreated }: { onClose: () => void; onCreated
           </div>
         </div>
 
+        {submitError && (
+          <div className="px-6 pb-2">
+            <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-sm">{submitError}</div>
+          </div>
+        )}
         <div className="p-6 border-t flex justify-end gap-3">
-          <button onClick={onClose} className="btn-secondary">취소</button>
-          <button onClick={() => handleSubmit(false)} className="btn-secondary" disabled={!form.templateId || !form.title}>임시저장</button>
-          <button onClick={() => handleSubmit(true)} className="btn-primary" disabled={!form.templateId || !form.title || !form.content || form.approverIds.length === 0}>
-            상신
+          <button onClick={onClose} className="btn-secondary" disabled={isSubmitting}>취소</button>
+          <button
+            onClick={() => handleSubmit(false)}
+            className="btn-secondary"
+            disabled={isSubmitting || !form.templateId || !form.title}
+          >
+            {isSubmitting ? '저장 중...' : '임시저장'}
+          </button>
+          <button
+            onClick={() => handleSubmit(true)}
+            className="btn-primary"
+            disabled={isSubmitting || !form.templateId || !form.title || !form.content || form.approverIds.length === 0}
+          >
+            {isSubmitting ? '상신 중...' : '상신'}
           </button>
         </div>
       </div>

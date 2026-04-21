@@ -6,6 +6,7 @@ import { authorize } from '../middleware/authorize';
 import { validate } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { qs, qsOpt } from '../utils/query';
+import { wouldCreateCycle as checkCycle } from '../utils/departmentTree';
 
 const router = Router();
 
@@ -120,23 +121,67 @@ router.post('/', authenticate, authorize('super_admin', 'admin'), validate(creat
   }
 });
 
+/**
+ * Prisma 기반 Department 부모 조회기 (순환 검증용)
+ */
+const deptLookup = {
+  findParent: (id: string) => prisma.department.findUnique({
+    where: { id },
+    select: { parentId: true },
+  }),
+};
+
+/**
+ * 부서 트리에서 순환 참조 검사 (utils/departmentTree의 BFS 재사용)
+ */
+async function wouldCreateCycle(deptId: string, newParentId: string): Promise<boolean> {
+  return checkCycle(deptId, newParentId, deptLookup);
+}
+
 // PATCH /departments/:id - 부서 수정
 router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(updateDeptSchema), async (req: Request, res: Response) => {
   try {
-    const dept = await prisma.department.findUnique({ where: { id: qs(req.params.id) } });
+    const deptId = qs(req.params.id);
+    const dept = await prisma.department.findUnique({ where: { id: deptId } });
     if (!dept) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '부서를 찾을 수 없습니다' } });
       return;
     }
 
     // 자기 자신을 상위 부서로 지정 방지
-    if (req.body.parentId === qs(req.params.id)) {
+    if (req.body.parentId === deptId) {
       res.status(400).json({ success: false, error: { code: 'INVALID_PARENT', message: '자기 자신을 상위 부서로 지정할 수 없습니다' } });
       return;
     }
 
+    // 순환 참조 방지: newParent가 자기 자신의 자손이면 거부
+    if (req.body.parentId && req.body.parentId !== dept.parentId) {
+      const cycle = await wouldCreateCycle(deptId, req.body.parentId);
+      if (cycle) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'CYCLE_DETECTED', message: '순환 참조를 일으키는 상위 부서 지정입니다' },
+        });
+        return;
+      }
+
+      // depth 재계산 필요
+      const newParent = await prisma.department.findUnique({
+        where: { id: req.body.parentId },
+        select: { depth: true },
+      });
+      if (!newParent) {
+        res.status(400).json({ success: false, error: { code: 'INVALID_PARENT', message: '상위 부서를 찾을 수 없습니다' } });
+        return;
+      }
+      req.body.depth = newParent.depth + 1;
+    } else if (req.body.parentId === null) {
+      // 루트로 이동
+      req.body.depth = 0;
+    }
+
     const updated = await prisma.department.update({
-      where: { id: qs(req.params.id) },
+      where: { id: deptId },
       data: req.body,
     });
 

@@ -11,6 +11,7 @@ import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
+import { meetingFileFilter } from '../utils/fileFilter';
 
 const router = Router();
 router.use(checkModule('meeting'));
@@ -352,16 +353,8 @@ const meetingStorage = multer.diskStorage({
 const meetingUpload = multer({
   storage: meetingStorage,
   limits: { fileSize: config.upload.maxFileSize },
-  fileFilter: (_req, file, cb) => {
-    const allowed = [
-      '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-      '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-      '.txt', '.hwp', '.csv',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('지원하지 않는 파일 형식입니다'));
-  },
+  // 확장자 + MIME 타입 교차 검증
+  fileFilter: meetingFileFilter,
 });
 
 /** 메타데이터 JSON 읽기/쓰기 헬퍼 */

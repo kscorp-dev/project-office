@@ -75,10 +75,14 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// GET /approvals/documents/:id - 문서 상세
+// GET /approvals/documents/:id - 문서 상세 (기안자/결재자/참조자/관리자만)
 router.get('/documents/:id', authenticate, async (req: Request, res: Response) => {
   try {
-    const doc = await approvalService.getDocumentDetail(qs(req.params.id));
+    const doc = await approvalService.getDocumentDetail(
+      qs(req.params.id),
+      req.user!.id,
+      req.user!.role,
+    );
     res.json({ success: true, data: doc });
   } catch (err) {
     if (err instanceof AppError) {

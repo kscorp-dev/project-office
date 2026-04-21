@@ -7,6 +7,7 @@ import {
   Plus, Trash2, LogIn, LogOut, Activity, Shield,
 } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
+import { api } from '../services/api';
 
 /* ── 타입 ── */
 type Zone = string;
@@ -1127,11 +1128,7 @@ function ZoneConfigPanel({ activeCameraId }: { activeCameraId: string | null }) 
 
   const fetchZones = useCallback(async () => {
     try {
-      const token = useAuthStore.getState().accessToken;
-      const res = await fetch('http://localhost:3000/api/parking/zones', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
+      const { data } = await api.get('/parking/zones');
       if (data.success) setZones(data.data);
     } catch { /* offline */ }
   }, []);
@@ -1164,13 +1161,7 @@ function ZoneConfigPanel({ activeCameraId }: { activeCameraId: string | null }) 
   const handleAddZone = async () => {
     setLoading(true);
     try {
-      const token = useAuthStore.getState().accessToken;
-      const res = await fetch('http://localhost:3000/api/parking/zones', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...newZone, cameraId: activeCameraId }),
-      });
-      const data = await res.json();
+      const { data } = await api.post('/parking/zones', { ...newZone, cameraId: activeCameraId });
       if (data.success) {
         await fetchZones();
         setShowForm(false);
@@ -1182,11 +1173,7 @@ function ZoneConfigPanel({ activeCameraId }: { activeCameraId: string | null }) 
 
   const handleDeleteZone = async (zoneId: string) => {
     try {
-      const token = useAuthStore.getState().accessToken;
-      await fetch(`http://localhost:3000/api/parking/zones/${zoneId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.delete(`/parking/zones/${zoneId}`);
       await fetchZones();
     } catch { /* error */ }
   };
@@ -1194,13 +1181,7 @@ function ZoneConfigPanel({ activeCameraId }: { activeCameraId: string | null }) 
   const handleAddLine = async (zoneId: string) => {
     setLoading(true);
     try {
-      const token = useAuthStore.getState().accessToken;
-      const res = await fetch(`http://localhost:3000/api/parking/zones/${zoneId}/lines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(newLine),
-      });
-      const data = await res.json();
+      const { data } = await api.post(`/parking/zones/${zoneId}/lines`, newLine);
       if (data.success) {
         await fetchZones();
         setShowLineForm(null);
@@ -1212,11 +1193,7 @@ function ZoneConfigPanel({ activeCameraId }: { activeCameraId: string | null }) 
 
   const handleDeleteLine = async (lineId: string) => {
     try {
-      const token = useAuthStore.getState().accessToken;
-      await fetch(`http://localhost:3000/api/parking/lines/${lineId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await api.delete(`/parking/lines/${lineId}`);
       await fetchZones();
     } catch { /* error */ }
   };
@@ -1388,11 +1365,7 @@ function EventLogPanel({ activeCameraId }: { activeCameraId: string | null }) {
   useEffect(() => {
     const fetch_ = async () => {
       try {
-        const token = useAuthStore.getState().accessToken;
-        const res = await fetch('http://localhost:3000/api/parking/events?limit=20', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
+        const { data } = await api.get('/parking/events?limit=20');
         if (data.success) setBackendEvents(data.data.events);
       } catch { /* offline */ }
     };
@@ -1486,11 +1459,7 @@ export default function ParkingPage() {
   useEffect(() => {
     const fetchZones = async () => {
       try {
-        const token = useAuthStore.getState().accessToken;
-        const res = await fetch('http://localhost:3000/api/parking/zones', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
+        const { data } = await api.get('/parking/zones');
         if (data.success) setDbZones(data.data);
       } catch { /* offline */ }
     };
