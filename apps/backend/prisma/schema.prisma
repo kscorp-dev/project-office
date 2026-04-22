@@ -98,6 +98,11 @@ model User {
   ownedFolders         DocumentFolder[]       @relation("OwnedFolders")
   uploadedDocuments    Document[]             @relation("UploadedDocuments")
 
+  // 메일 (Phase 5)
+  mailAccount          MailAccount?
+  mailContacts         MailContact[]          @relation("MailContacts")
+  mailAdminLogs        MailAdminLog[]         @relation("MailAdminLogs")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -1256,4 +1261,110 @@ model ParkingEvent {
   @@index([plateNumber])
   @@index([zoneId])
   @@map("parking_events")
+}
+
+// ===== 메일 (Phase 5) =====
+
+model MailDomain {
+  id          String   @id @default(uuid())
+  domain      String   @unique
+  quotaBytes  BigInt   @default(107374182400) @map("quota_bytes")  // 100GB 기본
+  maxAliases  Int      @default(400) @map("max_aliases")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("mail_domains")
+}
+
+/// 1인 1계정 원칙. WorkMail의 User와 1:1 매핑.
+model MailAccount {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  email           String   @unique
+  displayName     String   @map("display_name")
+
+  /// WorkMail user ID (EntityId), 관리자 API 호출 시 사용
+  workmailUserId  String?  @unique @map("workmail_user_id")
+
+  imapHost        String   @default("imap.mail.us-east-1.awsapps.com") @map("imap_host")
+  imapPort        Int      @default(993) @map("imap_port")
+  smtpHost        String   @default("smtp.mail.us-east-1.awsapps.com") @map("smtp_host")
+  smtpPort        Int      @default(465) @map("smtp_port")
+
+  /// AES-256-GCM 암호화된 IMAP/SMTP 비밀번호 (iv:tag:ciphertext hex)
+  encryptedPassword String @map("encrypted_password")
+
+  quotaMB         Int      @default(51200) @map("quota_mb")      // 50GB
+  usedMB          Float    @default(0) @map("used_mb")
+  isActive        Boolean  @default(true) @map("is_active")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  lastSyncError   String?  @map("last_sync_error")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        MailMessageCache[]
+
+  @@map("mail_accounts")
+}
+
+/// IMAP 헤더 캐시. 본문은 캐시하지 않고 필요 시 IMAP에서 직접 FETCH.
+model MailMessageCache {
+  id              String   @id @default(uuid())
+  accountId       String   @map("account_id")
+  uid             BigInt                                    // IMAP UID (폴더 내 unique)
+  folder          String   @default("INBOX")
+  messageId       String   @map("message_id")               // RFC822 Message-ID
+  subject         String?
+  fromEmail       String   @map("from_email")
+  fromName        String?  @map("from_name")
+  toJson          Json     @map("to_json")                  // [{email, name}]
+  ccJson          Json?    @map("cc_json")
+  snippet         String?                                   // 본문 미리보기(~200자)
+  sentAt          DateTime @map("sent_at")
+  isSeen          Boolean  @default(false) @map("is_seen")
+  isFlagged       Boolean  @default(false) @map("is_flagged")
+  isDeleted       Boolean  @default(false) @map("is_deleted")
+  hasAttachment   Boolean  @default(false) @map("has_attachment")
+  size            Int
+  cachedAt        DateTime @default(now()) @map("cached_at")
+
+  account         MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, folder, uid])
+  @@index([accountId, folder, sentAt(sort: Desc)])
+  @@index([accountId, messageId])
+  @@map("mail_message_cache")
+}
+
+model MailContact {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  email       String
+  name        String?
+  frequency   Int      @default(1)                          // 자동완성 가중치
+  lastUsedAt  DateTime @default(now()) @map("last_used_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user        User     @relation("MailContacts", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, email])
+  @@index([userId, frequency(sort: Desc)])
+  @@map("mail_contacts")
+}
+
+model MailAdminLog {
+  id          String   @id @default(uuid())
+  actorId     String   @map("actor_id")
+  targetEmail String   @map("target_email")
+  action      String                                        // create, delete, quota, reset_password, activate, deactivate, link
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actor       User     @relation("MailAdminLogs", fields: [actorId], references: [id])
+
+  @@index([targetEmail, createdAt])
+  @@index([actorId, createdAt])
+  @@map("mail_admin_logs")
 }

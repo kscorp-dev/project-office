@@ -1,4 +1,4 @@
-# Project Office v0.8.0
+# Project Office v0.9.0
 
 사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV, 근태관리, 작업지시서 외 12개 모듈
 
@@ -179,7 +179,8 @@ docker-compose ps
 
 | 버전 | 주요 변경 |
 |------|----------|
-| **v0.8.0** | **전면 코드 품질/보안/성능 강화 + 테스트 스위트 104건**<br/>• Prisma migrations 도입, 배포 블로커 5건 해결<br/>• JWT 시크릿 강제화, XSS(DOMPurify), MIME 교차검증, 토큰 persist<br/>• Error Boundary, Refresh race condition, 결재 낙관적 락, 권한 재검증<br/>• N+1 쿼리 제거, advisory lock 동시성, onDelete 정책, CSRF 방어<br/>• pino 구조화 로깅 + 중앙 에러 핸들러, nginx 보안 헤더 강화<br/>• Vitest 기반 단위/통합 테스트 104건 (XSS/Race/Cycle 검증 포함) |
+| **v0.9.0** | **AWS WorkMail 통합 + 자체 메일 시스템 완전 구현**<br/>• WorkMail API로 관리자의 메일박스 생성/삭제/쿼터/비번재설정 자동화<br/>• IMAP/SMTP 직접 연동 (imapflow + nodemailer + mailparser)<br/>• Mail.tsx 실제 API 연동 (데모 제거), 본문 XSS sanitize, 100MB 첨부<br/>• 5분 주기 헤더 캐시 워커 (node-cron)<br/>• AES-256-GCM 비밀번호 암호화 + 감사 로그 (MailAdminLog)<br/>• 관리자 콘솔에 메일관리 탭 추가 (연결 상태/계정 목록) |
+| v0.8.0 | **전면 코드 품질/보안/성능 강화 + 테스트 스위트 104건**<br/>• Prisma migrations 도입, 배포 블로커 5건 해결<br/>• JWT 시크릿 강제화, XSS(DOMPurify), MIME 교차검증, 토큰 persist<br/>• Error Boundary, Refresh race condition, 결재 낙관적 락, 권한 재검증<br/>• N+1 쿼리 제거, advisory lock 동시성, onDelete 정책, CSRF 방어<br/>• pino 구조화 로깅 + 중앙 에러 핸들러, nginx 보안 헤더 강화<br/>• Vitest 기반 단위/통합 테스트 104건 (XSS/Race/Cycle 검증 포함) |
 | v0.7.3 | TypeScript 빌드 오류 전면 수정, AWS 배포, CI/CD, 보안 강화 |
 | v0.7.2 | 메신저 파일 전송/수신, 문서 뷰어 |
 | v0.7.1 | 관리자 직원 등록, AWS 배포 설정 |

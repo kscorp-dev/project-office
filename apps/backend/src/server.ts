@@ -1,3 +1,6 @@
+// Express 4에서 async route의 throw를 errorHandler로 자동 전달
+// (Express 5 이상에서는 기본 동작이라 제거 가능)
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -27,6 +30,8 @@ import meetingRoutes from './routes/meeting.routes';
 import documentRoutes from './routes/document.routes';
 import parkingRoutes from './routes/parking.routes';
 import adminRoutes from './routes/admin.routes';
+import mailAdminRoutes from './routes/mail-admin.routes';
+import mailRoutes from './routes/mail.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -120,6 +125,8 @@ app.use('/api/meeting', meetingRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/parking', parkingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/mail', mailAdminRoutes);
+app.use('/api/mail', mailRoutes);
 
 // 404 Handler
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
@@ -135,10 +142,18 @@ setupMeetingSocket(io);
 // Socket.IO 인스턴스를 app에 저장 (라우트에서 접근 가능)
 app.set('io', io);
 
+import { startMailSyncScheduler } from './workers/mailSync.worker';
+
 httpServer.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
   // 기존 콘솔 로그도 유지 (startup 가시성)
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);
+
+  // 메일 동기화 스케줄러 시작 (기본 5분 주기)
+  // 환경변수 DISABLE_MAIL_SYNC=1이면 비활성화 (테스트/CI용)
+  if (process.env.DISABLE_MAIL_SYNC !== '1') {
+    startMailSyncScheduler();
+  }
 });
 
 export { app, io };

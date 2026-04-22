@@ -3,6 +3,7 @@ import {
   Shield, Users, Settings, ScrollText, ToggleLeft, ToggleRight,
   Search, RefreshCw, ChevronLeft, ChevronRight, Edit2, Check, X,
   UserCheck, UserX, LogIn, FileCheck, UserPlus, Eye, EyeOff,
+  Mail, Cloud, Wifi, WifiOff, AlertCircle,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -80,14 +81,44 @@ const EMPTY_USER_FORM: CreateUserForm = {
   role: 'user', departmentId: '', position: '', phone: '',
 };
 
-type TabKey = 'modules' | 'users' | 'settings' | 'logs';
+type TabKey = 'modules' | 'users' | 'settings' | 'logs' | 'mail';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'modules',  label: '모듈관리',   icon: ToggleLeft },
   { key: 'users',    label: '사용자관리',  icon: Users },
+  { key: 'mail',     label: '메일관리',    icon: Mail },
   { key: 'settings', label: '시스템설정',  icon: Settings },
   { key: 'logs',     label: '감사로그',    icon: ScrollText },
 ];
+
+/* ─────────────────────────── Mail Admin Types ─────────────────────────── */
+
+interface WorkMailOrgInfo {
+  organizationId: string;
+  alias: string;
+  state: string;
+  defaultMailDomain: string;
+  directoryId: string;
+  directoryType: string;
+  completedDate: string;
+  arn: string;
+}
+
+interface WorkMailHealth {
+  connected: boolean;
+  organization: WorkMailOrgInfo;
+  endpoints: { imap: string; smtp: string };
+}
+
+interface WorkMailUser {
+  userId: string;
+  email: string | null;
+  name: string;
+  displayName: string;
+  state: string;
+  role: string;
+  enabledDate?: string;
+}
 
 const ROLE_MAP: Record<string, { label: string; color: string }> = {
   super_admin: { label: '최고관리자', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' },
@@ -144,6 +175,13 @@ export default function AdminConsolePage() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsMeta, setLogsMeta] = useState({ total: 0, page: 1, totalPages: 1 });
 
+  // Mail (WorkMail)
+  const [mailHealth, setMailHealth] = useState<WorkMailHealth | null>(null);
+  const [mailHealthError, setMailHealthError] = useState<string | null>(null);
+  const [mailHealthLoading, setMailHealthLoading] = useState(false);
+  const [mailUsers, setMailUsers] = useState<WorkMailUser[]>([]);
+  const [mailUsersLoading, setMailUsersLoading] = useState(false);
+
   useEffect(() => {
     fetchStats();
   }, []);
@@ -153,6 +191,7 @@ export default function AdminConsolePage() {
     if (activeTab === 'users') fetchUsers();
     if (activeTab === 'settings') fetchSettings();
     if (activeTab === 'logs') fetchLogs();
+    if (activeTab === 'mail') { fetchMailHealth(); fetchMailUsers(); }
   }, [activeTab]);
 
   useEffect(() => {
@@ -244,6 +283,36 @@ export default function AdminConsolePage() {
       setDepartments(res.data.data || []);
     } catch (err) {
       console.error('Departments fetch error:', err);
+    }
+  };
+
+  /* ──────────── WorkMail 관리 ──────────── */
+  const fetchMailHealth = async () => {
+    setMailHealthLoading(true);
+    setMailHealthError(null);
+    try {
+      const res = await api.get('/admin/mail/workmail/health');
+      setMailHealth(res.data.data);
+    } catch (err: any) {
+      setMailHealth(null);
+      setMailHealthError(
+        err?.response?.data?.error?.message || 'WorkMail 연결 실패',
+      );
+    } finally {
+      setMailHealthLoading(false);
+    }
+  };
+
+  const fetchMailUsers = async () => {
+    setMailUsersLoading(true);
+    try {
+      const res = await api.get('/admin/mail/workmail/users');
+      setMailUsers(res.data.data || []);
+    } catch (err) {
+      console.error('Mail users fetch error:', err);
+      setMailUsers([]);
+    } finally {
+      setMailUsersLoading(false);
     }
   };
 
@@ -822,6 +891,157 @@ export default function AdminConsolePage() {
                 등록
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 메일관리 (WorkMail) ─── */}
+      {activeTab === 'mail' && (
+        <div className="space-y-4">
+          {/* 연결 상태 카드 */}
+          <div className="card dark:bg-slate-800 dark:border-slate-700/80">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Cloud size={18} className="text-primary-600 dark:text-primary-400" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">AWS WorkMail 연결 상태</h3>
+              </div>
+              <button
+                onClick={() => { fetchMailHealth(); fetchMailUsers(); }}
+                disabled={mailHealthLoading}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-200"
+              >
+                <RefreshCw size={14} className={mailHealthLoading ? 'animate-spin' : ''} />
+                {mailHealthLoading ? '확인 중...' : '새로고침'}
+              </button>
+            </div>
+
+            {mailHealthError ? (
+              <div className="flex items-start gap-2 px-3 py-3 rounded-xl bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                <WifiOff size={18} className="flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-sm">연결 실패</p>
+                  <p className="text-xs mt-0.5">{mailHealthError}</p>
+                  <p className="text-xs mt-1 opacity-70">
+                    .env의 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, WORKMAIL_ORG_ID 값을 확인하세요.
+                  </p>
+                </div>
+              </div>
+            ) : mailHealth ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 mb-3">
+                  <Wifi size={16} />
+                  <span className="text-sm font-medium">연결 성공</span>
+                  <span className="text-xs opacity-70">
+                    (조직 상태: {mailHealth.organization.state})
+                  </span>
+                </div>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">조직 별칭</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono">{mailHealth.organization.alias}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">기본 도메인</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono">{mailHealth.organization.defaultMailDomain}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">Organization ID</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono text-xs truncate">{mailHealth.organization.organizationId}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">리전</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono">
+                      {mailHealth.organization.arn.split(':')[3]}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">IMAP 서버</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono text-xs">{mailHealth.endpoints.imap}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-xs">SMTP 서버</dt>
+                    <dd className="text-gray-800 dark:text-gray-200 font-mono text-xs">{mailHealth.endpoints.smtp}</dd>
+                  </div>
+                </dl>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
+                <RefreshCw size={14} className="animate-spin" />
+                <span className="text-sm">연결 상태 확인 중...</span>
+              </div>
+            )}
+          </div>
+
+          {/* 사용자 목록 */}
+          <div className="card dark:bg-slate-800 dark:border-slate-700/80">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Users size={18} className="text-primary-600 dark:text-primary-400" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                  메일 계정 ({mailUsers.length}명)
+                </h3>
+              </div>
+            </div>
+
+            {mailUsersLoading ? (
+              <div className="text-center py-10 text-gray-400 dark:text-gray-500 text-sm">
+                <RefreshCw size={18} className="mx-auto animate-spin mb-2" />
+                불러오는 중...
+              </div>
+            ) : mailUsers.length === 0 ? (
+              <div className="text-center py-10 text-gray-400 dark:text-gray-500 text-sm">
+                <AlertCircle size={18} className="mx-auto mb-2" />
+                등록된 메일 계정이 없습니다
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700">
+                      <th className="py-2 px-3 font-medium">이메일</th>
+                      <th className="py-2 px-3 font-medium">표시명</th>
+                      <th className="py-2 px-3 font-medium">역할</th>
+                      <th className="py-2 px-3 font-medium">상태</th>
+                      <th className="py-2 px-3 font-medium">활성화일</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-slate-700/60">
+                    {mailUsers.map((u) => (
+                      <tr key={u.userId} className="hover:bg-gray-50 dark:hover:bg-slate-700/40">
+                        <td className="py-2.5 px-3 font-mono text-gray-800 dark:text-gray-200">
+                          {u.email || <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{u.displayName}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300">
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              u.state === 'ENABLED'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                                : u.state === 'DISABLED'
+                                ? 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-gray-400'
+                                : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400'
+                            }`}
+                          >
+                            {u.state}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-xs text-gray-500 dark:text-gray-400">
+                          {u.enabledDate ? new Date(u.enabledDate).toLocaleString('ko-KR') : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                  ℹ️ Phase 5-B에서 계정 생성/삭제/쿼터 변경 UI가 추가됩니다. 현재는 연결 상태 확인 전용입니다.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
