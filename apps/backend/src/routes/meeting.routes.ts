@@ -13,6 +13,11 @@ import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
 import { meetingFileFilter } from '../utils/fileFilter';
 import { canViewMeeting, canJoinMeeting } from '../services/meeting.service';
+import {
+  generateMinutes,
+  updateMinutes,
+  finalizeMinutes,
+} from '../services/minutes.service';
 
 const router = Router();
 router.use(checkModule('meeting'));
@@ -227,6 +232,13 @@ router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
     const updated = await prisma.meeting.update({
       where: { id: qs(req.params.id) },
       data: { status: 'ended', endedAt: new Date() },
+    });
+
+    // 비동기 회의록 생성 트리거 (응답 차단 안 함)
+    // - 결과는 GET /:id/minutes로 조회
+    // - 실패/키 미설정은 MeetingMinutes.status=failed + errorMessage에 기록
+    generateMinutes(updated.id).catch((e) => {
+      console.warn('[Meeting] minutes generation failed:', (e as Error).message);
     });
 
     res.json({ success: true, data: updated });
@@ -528,5 +540,198 @@ router.delete('/:id/documents/:docId', authenticate, async (req: Request, res: R
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
+
+// ===== 회의록 (minutes) & 전사(transcripts) =====
+//
+// 접근 규칙: canViewMeeting (호스트/초대/참여이력/관리자만)
+// 편집/확정: 호스트 또는 관리자만
+// 재생성: 호스트만, final 상태가 아니어야 함 (regenerate=true 시 예외)
+
+// GET /meeting/:id/minutes — 회의록 조회 (status 포함)
+router.get('/:id/minutes', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meetingId = qs(req.params.id);
+    const access = await canViewMeeting({ meetingId, userId: req.user!.id, userRole: req.user!.role });
+    if (!access.ok) {
+      const code = access.reason || 'NOT_ALLOWED';
+      const status = code === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code, message: '접근 권한이 없습니다' } });
+      return;
+    }
+
+    const minutes = await prisma.meetingMinutes.findUnique({
+      where: { meetingId },
+      include: { finalizedBy: { select: { id: true, name: true } } },
+    });
+    res.json({ success: true, data: minutes }); // null이면 아직 생성 전
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /meeting/:id/transcripts — 전사(원문 발언) 조회 — 시간순
+router.get('/:id/transcripts', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meetingId = qs(req.params.id);
+    const access = await canViewMeeting({ meetingId, userId: req.user!.id, userRole: req.user!.role });
+    if (!access.ok) {
+      const code = access.reason || 'NOT_ALLOWED';
+      const status = code === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const rows = await prisma.meetingTranscript.findMany({
+      where: { meetingId },
+      orderBy: { timestamp: 'asc' },
+      select: { id: true, speakerId: true, speakerName: true, text: true, timestamp: true },
+    });
+    res.json({ success: true, data: rows });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// PATCH /meeting/:id/minutes — 회의록 편집 (호스트/관리자만, final 상태 아닐 때)
+const minutesPatchSchema = z.object({
+  summary: z.string().max(20000).optional(),
+  topics: z.array(z.string().max(500)).max(50).optional(),
+  decisions: z.array(z.string().max(1000)).max(50).optional(),
+  actionItems: z
+    .array(
+      z.object({
+        assignee: z.string().min(1).max(100),
+        task: z.string().min(1).max(500),
+        dueDate: z.string().max(20).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
+});
+
+router.patch('/:id/minutes', authenticate, validate(minutesPatchSchema), async (req: Request, res: Response) => {
+  try {
+    const meetingId = qs(req.params.id);
+    const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { hostId: true } });
+    if (!meeting) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+      return;
+    }
+    const isHost = meeting.hostId === req.user!.id;
+    const isAdmin = req.user!.role === 'admin' || req.user!.role === 'super_admin';
+    if (!isHost && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트/관리자만 편집 가능합니다' } });
+      return;
+    }
+
+    const minutes = await prisma.meetingMinutes.findUnique({ where: { meetingId } });
+    if (!minutes) {
+      res.status(404).json({ success: false, error: { code: 'MINUTES_NOT_FOUND', message: '회의록이 아직 생성되지 않았습니다' } });
+      return;
+    }
+    if (minutes.status === 'final') {
+      res.status(400).json({ success: false, error: { code: 'MINUTES_FINALIZED', message: '확정된 회의록은 편집할 수 없습니다' } });
+      return;
+    }
+
+    await updateMinutes(minutes.id, req.body);
+    const updated = await prisma.meetingMinutes.findUnique({ where: { id: minutes.id } });
+    res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /meeting/:id/minutes/finalize — 회의록 확정 (잠금, 호스트/관리자)
+router.post('/:id/minutes/finalize', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meetingId = qs(req.params.id);
+    const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { hostId: true } });
+    if (!meeting) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+      return;
+    }
+    const isHost = meeting.hostId === req.user!.id;
+    const isAdmin = req.user!.role === 'admin' || req.user!.role === 'super_admin';
+    if (!isHost && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트/관리자만 확정할 수 있습니다' } });
+      return;
+    }
+
+    const minutes = await prisma.meetingMinutes.findUnique({ where: { meetingId } });
+    if (!minutes) {
+      res.status(404).json({ success: false, error: { code: 'MINUTES_NOT_FOUND', message: '회의록이 아직 생성되지 않았습니다' } });
+      return;
+    }
+    if (minutes.status === 'final') {
+      res.status(400).json({ success: false, error: { code: 'ALREADY_FINALIZED', message: '이미 확정된 회의록입니다' } });
+      return;
+    }
+    if (minutes.status === 'generating') {
+      res.status(400).json({ success: false, error: { code: 'STILL_GENERATING', message: '생성이 완료된 후 확정할 수 있습니다' } });
+      return;
+    }
+
+    await finalizeMinutes(minutes.id, req.user!.id);
+    const updated = await prisma.meetingMinutes.findUnique({
+      where: { id: minutes.id },
+      include: { finalizedBy: { select: { id: true, name: true } } },
+    });
+    res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /meeting/:id/minutes/regenerate — 회의록 재생성 (호스트/관리자)
+// - failed/draft 상태에서 수동 재시도 가능
+// - final이라도 강제로 regenerate하려면 body.force=true (관리자만)
+const regenerateSchema = z.object({ force: z.boolean().optional() });
+
+router.post(
+  '/:id/minutes/regenerate',
+  authenticate,
+  validate(regenerateSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const meetingId = qs(req.params.id);
+      const meeting = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { hostId: true } });
+      if (!meeting) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+        return;
+      }
+      const isHost = meeting.hostId === req.user!.id;
+      const isAdmin = req.user!.role === 'admin' || req.user!.role === 'super_admin';
+      if (!isHost && !isAdmin) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트/관리자만 재생성 가능합니다' } });
+        return;
+      }
+
+      const force = Boolean(req.body?.force && isAdmin); // 강제 덮어쓰기는 관리자만
+      const result = await generateMinutes(meetingId, { regenerate: force });
+      if (!result.ok) {
+        const status = result.reason === 'ALREADY_FINALIZED' ? 400
+          : result.reason === 'ANTHROPIC_DISABLED' ? 503
+          : result.reason === 'NO_TRANSCRIPTS' ? 400
+          : 500;
+        res.status(status).json({
+          success: false,
+          error: {
+            code: result.reason,
+            message:
+              result.reason === 'ALREADY_FINALIZED' ? '이미 확정된 회의록입니다 (force=true + 관리자만 재생성 가능)'
+              : result.reason === 'ANTHROPIC_DISABLED' ? '서버에 ANTHROPIC_API_KEY가 설정되지 않아 자동 요약을 사용할 수 없습니다'
+              : result.reason === 'NO_TRANSCRIPTS' ? '저장된 발언 기록이 없습니다'
+              : 'Claude 요약 중 오류가 발생했습니다',
+          },
+        });
+        return;
+      }
+      const minutes = await prisma.meetingMinutes.findUnique({ where: { meetingId } });
+      res.json({ success: true, data: minutes });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
 
 export default router;

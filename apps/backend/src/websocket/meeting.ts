@@ -229,21 +229,42 @@ export function setupMeetingSocket(io: SocketIOServer) {
       });
     });
 
-    // ────── 회의록 공유 (STT 결과 브로드캐스트) ──────
-    socket.on('meeting:transcript', (data: { meetingId: string; text: string; isFinal: boolean }) => {
+    // ────── 회의록 공유 (STT 결과 브로드캐스트 + isFinal 저장) ──────
+    socket.on('meeting:transcript', async (data: { meetingId: string; text: string; isFinal: boolean }) => {
       const room = rooms.get(data.meetingId);
       if (!room) return;
 
       const participant = room.get(socket.id);
       if (!participant) return;
 
+      const text = (data.text || '').trim();
+      if (!text) return;
+
+      // 실시간 브로드캐스트 (interim + final 모두)
       socket.to(data.meetingId).emit('meeting:transcript', {
         id: `tr-${Date.now()}-${socket.id.slice(-4)}`,
         speaker: participant.name,
-        text: data.text,
+        text,
         isFinal: data.isFinal,
         timestamp: new Date().toISOString(),
       });
+
+      // 확정된 발언(isFinal=true)만 DB 저장 — AI 요약 입력 소스
+      if (data.isFinal) {
+        try {
+          await prisma.meetingTranscript.create({
+            data: {
+              meetingId: data.meetingId,
+              speakerId: participant.userId,
+              speakerName: participant.name,
+              text,
+            },
+          });
+        } catch (err) {
+          // 회의가 DB에 없거나(테스트용 가상 방) 일시적 DB 오류 — 로그만
+          console.warn('[Meeting WS] transcript persist failed:', (err as Error).message);
+        }
+      }
     });
 
     // ────── 문서 공유 알림 (REST 업로드 후 호출) ──────

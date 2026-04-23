@@ -77,4 +77,14 @@ export const config = {
     maxLoginAttempts: 5,
     lockDurationMinutes: 15,
   },
+
+  /** Anthropic Claude API — 회의록 자동 생성에 사용 */
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+    /** API 키가 없으면 자동 요약 비활성 — 로컬 개발/테스트 환경 대응 */
+    get enabled(): boolean {
+      return (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
+    },
+  },
 } as const;

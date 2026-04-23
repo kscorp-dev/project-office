@@ -1,4 +1,4 @@
-# Project Office v0.12.0
+# Project Office v0.13.0
 
 사내 업무 통합 플랫폼 - 전자결재, 메신저, CCTV, 근태관리, 작업지시서 외 12개 모듈
 
@@ -88,7 +88,7 @@ npm run dev:detection   # YOLO 감지 (http://localhost:8100)
 ### 테스트
 
 ```bash
-# Backend (103 유닛/통합 테스트 — 일부 통합 테스트는 PostgreSQL 필요)
+# Backend (118 유닛/통합 테스트 — 일부 통합 테스트는 PostgreSQL 필요)
 cd apps/backend
 npm test                    # 전체 실행
 npm run test:unit          # 유닛만
@@ -179,7 +179,8 @@ docker-compose ps
 
 | 버전 | 주요 변경 |
 |------|----------|
-| **v0.12.0** | **화상회의 권한 보안 강화 + 모바일 WebRTC 실스트림 연동**<br/>• `services/meeting.service.ts` 신규 — `canJoinMeeting`/`canViewMeeting` 중앙 권한 로직<br/>• 문서 업로드/조회/다운로드 3개 엔드포인트에 권한 검증 추가 (비참가자 차단, 업로드 실패 시 임시파일 정리)<br/>• WebSocket `meeting:join` 서버측 검증 추가 — NOT_FOUND/ACCESS_DENIED/NOT_ACTIVE/CANCELLED 에러 코드 분리<br/>• 모바일: `react-native-webrtc` + `@config-plugins/react-native-webrtc` + `socket.io-client` 추가<br/>• `app.json` — iOS NSMicrophoneUsageDescription / Android RECORD_AUDIO·BLUETOOTH·WAKE_LOCK 등 권한 추가<br/>• `useWebRTCMobile` 훅 신규 (~250줄) — 웹 `useWebRTC`와 동일한 시그널링 프로토콜, `/meeting` 네임스페이스<br/>• 회의실 화면(room.tsx): `Constants.appOwnership` 기반 조건부 모듈 로드 → Expo Go(프리뷰) · Dev Client(실스트림) 동시 지원<br/>• `RTCView`로 로컬/원격 영상 실시간 렌더링, 전면 카메라 자동 mirror, `_switchCamera()` 전/후면 전환<br/>• mic/cam 토글이 실제 `RTCPeerConnection` 트랙 상태 변경 + `meeting:media-toggle` 브로드캐스트<br/>• 새 테스트 15건 (`meeting-access.test.ts`) — 호스트/초대자/참여이력/외부인/관리자/종료·취소 회의 전 시나리오 커버<br/>• 전체 테스트 스위트 88 → **103건** 통과 |
+| **v0.13.0** | **AI 자동 회의록 생성 (Phase 2 완성)**<br/>• Prisma 신규 모델 `MeetingTranscript` / `MeetingMinutes` + enum `MeetingMinutesStatus`(generating/draft/final/failed) migration<br/>• WebSocket `meeting:transcript` 이벤트에서 `isFinal=true` 발언만 DB 영속화 (speaker·text·timestamp)<br/>• `@anthropic-ai/sdk` 통합 — `services/minutes.service.ts` (~260줄)<br/>  - Claude Sonnet 4.5로 전사 전체를 구조화 JSON(summary/topics/decisions/actionItems)으로 변환<br/>  - 회의 종료(`POST /:id/end`) 시 비동기 트리거, 결과는 GET 폴링<br/>  - 코드펜스·설명문 제거, 파싱 실패 시 원문 fallback — 견고한 JSON 파서<br/>• 회의록 REST 5종 신규 — GET/PATCH/finalize/regenerate/transcripts<br/>  - 편집/확정은 호스트·관리자만, final 상태는 편집 거부, 관리자는 force=true로 재생성<br/>• 웹 신규 `/meeting/:id/minutes` 페이지 (~500줄)<br/>  - 상태 배지 + 3초 폴링(generating) / 인라인 편집(draft) / 잠금(final) / 실패 메시지<br/>  - 요약 / 주제 / 결정사항 / 액션아이템 4섹션 조회·편집 UI<br/>  - 원문 발언 기록 펼침 + 브라우저 인쇄(PDF)<br/>• 회의 목록에서 종료된 회의 상세 → "AI 회의록 열람" 진입 버튼<br/>• `config.anthropic.enabled` — API 키 없으면 failed 상태로 우아하게 기록, 로컬/테스트 환경 깨지지 않음<br/>• 신규 테스트 15건 (9 단위 JSON 파서 + 6 통합) → 전체 **103 → 118건 통과** |
+| v0.12.0 | **화상회의 권한 보안 강화 + 모바일 WebRTC 실스트림 연동**<br/>• `services/meeting.service.ts` 신규 — `canJoinMeeting`/`canViewMeeting` 중앙 권한 로직<br/>• 문서 업로드/조회/다운로드 3개 엔드포인트에 권한 검증 추가 (비참가자 차단, 업로드 실패 시 임시파일 정리)<br/>• WebSocket `meeting:join` 서버측 검증 추가 — NOT_FOUND/ACCESS_DENIED/NOT_ACTIVE/CANCELLED 에러 코드 분리<br/>• 모바일: `react-native-webrtc` + `@config-plugins/react-native-webrtc` + `socket.io-client` 추가<br/>• `app.json` — iOS NSMicrophoneUsageDescription / Android RECORD_AUDIO·BLUETOOTH·WAKE_LOCK 등 권한 추가<br/>• `useWebRTCMobile` 훅 신규 (~250줄) — 웹 `useWebRTC`와 동일한 시그널링 프로토콜, `/meeting` 네임스페이스<br/>• 회의실 화면(room.tsx): `Constants.appOwnership` 기반 조건부 모듈 로드 → Expo Go(프리뷰) · Dev Client(실스트림) 동시 지원<br/>• `RTCView`로 로컬/원격 영상 실시간 렌더링, 전면 카메라 자동 mirror, `_switchCamera()` 전/후면 전환<br/>• mic/cam 토글이 실제 `RTCPeerConnection` 트랙 상태 변경 + `meeting:media-toggle` 브로드캐스트<br/>• 새 테스트 15건 (`meeting-access.test.ts`) — 호스트/초대자/참여이력/외부인/관리자/종료·취소 회의 전 시나리오 커버<br/>• 전체 테스트 스위트 88 → **103건** 통과 |
 | v0.11.0 | **모바일 화상회의 UI/UX 구축**<br/>• `app/meeting/` 3개 화면 신규 (목록 · 상세 · 회의실)<br/>• 회의 목록: 상태별 필터 칩, FAB 생성, 진행중 라이브 표시<br/>• 회의 상세: 참가자 목록, 상태별 동적 CTA (시작/참여/종료/취소)<br/>• 회의실: 2x2 영상 그리드 + 하단 컨트롤(🎤📹🖥💬📞) + 채팅 바텀시트<br/>• 대시보드·더보기에서 화상회의 라우팅 연결 (이전엔 "준비 중" 알림)<br/>• 타입체크 통과, expo-router 파일기반 라우팅 완전 통합<br/>• ⚠ 실제 WebRTC 영상/음성은 EAS Dev Client 빌드 필요 (UI는 완성) |
 | v0.10.0 | **관리자 메일 관리 UI + 실시간 알림 + 성능 최적화**<br/>• Step 1 — 관리자 콘솔 메일박스 생성/비밀번호 재설정/쿼터/삭제 UI<br/>• Step 2 — 직원 등록 시 WorkMail 계정 자동 생성 옵션 통합<br/>• Step 3 — 기존 WorkMail 계정 ↔ 앱 사용자 연결 UI (LinkMailboxModal)<br/>• Step 4 — IMAP IDLE + Socket.IO `/mail` 네임스페이스로 실시간 새 메일 알림<br/>  (토스트 + 사이드바 배지 + 브라우저 Notification + 자동 재연결)<br/>• 대시보드 "받은 메일" 위젯 추가 + 실시간 갱신<br/>• IMAP 연결 풀 (사용자별 2분 유휴) + stale-while-revalidate 캐시 전략<br/>  → 메일 탭 진입 속도 2~3초 → **11ms** (180배 개선)<br/>• 낙관적 UI (메일 상세 클릭 시 헤더 즉시, 본문만 loading)<br/>• Graceful shutdown hook (IMAP 풀 + IDLE 워커 정리) |
 | v0.9.0 | **AWS WorkMail 통합 + 자체 메일 시스템 완전 구현**<br/>• WorkMail API로 관리자의 메일박스 생성/삭제/쿼터/비번재설정 자동화<br/>• IMAP/SMTP 직접 연동 (imapflow + nodemailer + mailparser)<br/>• Mail.tsx 실제 API 연동 (데모 제거), 본문 XSS sanitize, 100MB 첨부<br/>• 5분 주기 헤더 캐시 워커 (node-cron)<br/>• AES-256-GCM 비밀번호 암호화 + 감사 로그 (MailAdminLog)<br/>• 관리자 콘솔에 메일관리 탭 추가 (연결 상태/계정 목록) |

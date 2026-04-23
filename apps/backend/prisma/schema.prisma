@@ -91,8 +91,10 @@ model User {
   inventoryProcessed   InventoryTransaction[] @relation("InventoryProcessed")
 
   // 화상회의
-  hostedMeetings       Meeting[]              @relation("HostedMeetings")
-  meetingParticipants  MeetingParticipant[]   @relation("MeetingParticipants")
+  hostedMeetings        Meeting[]             @relation("HostedMeetings")
+  meetingParticipants   MeetingParticipant[]  @relation("MeetingParticipants")
+  meetingTranscripts    MeetingTranscript[]   @relation("MeetingTranscriptSpeakers")
+  finalizedMinutes      MeetingMinutes[]      @relation("MeetingMinutesFinalizers")
 
   // 문서관리
   ownedFolders         DocumentFolder[]       @relation("OwnedFolders")
@@ -1044,8 +1046,10 @@ model Meeting {
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
-  host         User               @relation("HostedMeetings", fields: [hostId], references: [id])
+  host         User                @relation("HostedMeetings", fields: [hostId], references: [id])
   participants MeetingParticipant[]
+  transcripts  MeetingTranscript[]
+  minutes      MeetingMinutes?
 
   @@index([hostId])
   @@index([scheduledAt])
@@ -1067,6 +1071,62 @@ model MeetingParticipant {
 
   @@unique([meetingId, userId])
   @@map("meeting_participants")
+}
+
+/// 회의 중 발언 기록 (실시간 STT 결과)
+/// - 하나의 발언 = 하나의 row (isFinal=true만 저장)
+/// - AI 요약 입력 소스
+model MeetingTranscript {
+  id          String   @id @default(uuid())
+  meetingId   String   @map("meeting_id")
+  speakerId   String?  @map("speaker_id")        // 매핑 안 될 수도 있음 (게스트 발언)
+  speakerName String   @map("speaker_name")
+  text        String   @db.Text
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  speaker User?   @relation("MeetingTranscriptSpeakers", fields: [speakerId], references: [id], onDelete: SetNull)
+
+  @@index([meetingId, timestamp])
+  @@index([speakerId])
+  @@map("meeting_transcripts")
+}
+
+enum MeetingMinutesStatus {
+  generating   // Claude 요약 생성 중
+  draft        // 생성 완료, 편집 가능
+  final        // 확정 잠금
+  failed       // 생성 실패
+}
+
+/// AI 자동 생성 회의록 (회의당 1개)
+/// - status=generating → draft → final (편집 가능 → 잠금)
+/// - summary: 전체 요약 (Markdown)
+/// - decisions: 결정 사항 목록 (string[])
+/// - actionItems: 액션 아이템 {assignee, task, dueDate?} 배열
+/// - topics: 주요 논의 주제 목록 (string[])
+model MeetingMinutes {
+  id            String               @id @default(uuid())
+  meetingId     String               @unique @map("meeting_id")
+  status        MeetingMinutesStatus @default(generating)
+  summary       String               @default("") @db.Text
+  topics        String[]             @default([])
+  decisions     String[]             @default([])
+  actionItems   Json                 @default("[]") @map("action_items")   // [{assignee, task, dueDate?}]
+  rawModelReply String?              @map("raw_model_reply") @db.Text      // 디버깅용 원본 응답
+  errorMessage  String?              @map("error_message")
+  generatedAt   DateTime?            @map("generated_at")
+  finalizedAt   DateTime?            @map("finalized_at")
+  finalizedById String?              @map("finalized_by_id")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  meeting     Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  finalizedBy User?   @relation("MeetingMinutesFinalizers", fields: [finalizedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("meeting_minutes")
 }
 
 // ===== 문서관리 =====

@@ -421,6 +421,18 @@ export default function MeetingPage() {
                 )}
               </div>
             )}
+
+            {/* 회의록 바로가기 — 종료된 회의는 누구나 열람 가능 (canView 권한 서버에서 검증) */}
+            {selectedMeeting.status === 'ended' && (
+              <div className="flex gap-2 pt-4 border-t">
+                <button
+                  onClick={() => navigate(`/meeting/${selectedMeeting.id}/minutes`)}
+                  className="btn-primary flex items-center gap-1 flex-1 justify-center"
+                >
+                  📝 AI 회의록 열람
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
