@@ -7,6 +7,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { logger } from '../config/logger';
 import { qs } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { config } from '../config';
@@ -44,14 +45,15 @@ async function buildAccessUser(req: Request): Promise<AccessUser> {
 
 // ===== 카메라 그룹 =====
 
-router.get('/groups', authenticate, async (_req, res: Response) => {
+router.get('/groups', authenticate, async (req, res: Response) => {
   try {
     const groups = await prisma.cameraGroup.findMany({
       include: { cameras: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } },
       orderBy: { sortOrder: 'asc' },
     });
     res.json({ success: true, data: groups });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -60,7 +62,8 @@ router.post('/groups', authenticate, authorize('super_admin', 'admin'), async (r
   try {
     const group = await prisma.cameraGroup.create({ data: { name: req.body.name, sortOrder: req.body.sortOrder || 0 } });
     res.status(201).json({ success: true, data: group });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -98,7 +101,8 @@ router.get('/cameras', authenticate, async (req: Request, res: Response) => {
     // ptzPassword는 응답에서 제거 (민감)
     const sanitized = cameras.map(({ ptzPassword, ...c }) => c);
     res.json({ success: true, data: sanitized });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -118,7 +122,8 @@ router.get('/cameras/:id', authenticate, async (req: Request, res: Response) => 
     if (!camera) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '카메라를 찾을 수 없습니다' } }); return; }
     const { ptzPassword, ...rest } = camera;
     res.json({ success: true, data: { ...rest, canControl: level === 'control' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -133,7 +138,8 @@ router.post('/cameras', authenticate, authorize('super_admin', 'admin'), validat
     const camera = await prisma.camera.create({ data });
     const { ptzPassword, ...sanitized } = camera;
     res.status(201).json({ success: true, data: sanitized });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -149,7 +155,8 @@ router.patch('/cameras/:id', authenticate, authorize('super_admin', 'admin'), as
     const camera = await prisma.camera.update({ where: { id: qs(req.params.id) }, data });
     const { ptzPassword, ...sanitized } = camera;
     res.json({ success: true, data: sanitized });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -176,7 +183,8 @@ router.post(
         return;
       }
       res.json({ success: true, data: { message: result.message } });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -188,7 +196,8 @@ router.delete('/cameras/:id', authenticate, authorize('super_admin', 'admin'), a
     // 스트리밍 중이면 중지
     await stopStream(qs(req.params.id));
     res.json({ success: true, data: { message: '카메라가 비활성화되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -212,7 +221,8 @@ router.get(
         orderBy: { createdAt: 'desc' },
       });
       res.json({ success: true, data: rows });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -242,7 +252,8 @@ router.post(
         },
       });
       res.status(201).json({ success: true, data: perm });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -256,7 +267,8 @@ router.delete(
     try {
       await prisma.cameraPermission.delete({ where: { id: qs(req.params.permId) } });
       res.json({ success: true });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '권한을 찾을 수 없습니다' } });
     }
   },
@@ -294,7 +306,8 @@ router.post('/cameras/:id/ptz', authenticate, validate(ptzSchema), async (req: R
       return;
     }
     res.json({ success: true, data: { message: result.message ?? 'OK' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -352,7 +365,8 @@ router.post('/cameras/:id/stream/start', authenticate, async (req: Request, res:
         viewerCount: result.viewerCount,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -362,7 +376,8 @@ router.post('/cameras/:id/stream/stop', authenticate, async (req: Request, res: 
   try {
     detachViewer(qs(req.params.id), req.user!.id);
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -404,7 +419,8 @@ router.get('/cameras/:id/stream/:file', authenticate, async (req: Request, res: 
     );
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(absPath);
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -442,7 +458,8 @@ router.get('/cameras/:id/recordings', authenticate, async (req: Request, res: Re
       prisma.recording.count({ where }),
     ]);
     res.json({ success: true, data: recordings, meta: buildMeta(pagination, total) });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

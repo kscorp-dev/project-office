@@ -13,6 +13,7 @@ import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
 import { meetingFileFilter } from '../utils/fileFilter';
 import { canViewMeeting, canJoinMeeting } from '../services/meeting.service';
+import { logger } from '../config/logger';
 import {
   generateMinutes,
   updateMinutes,
@@ -74,7 +75,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, data: meetings, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -105,7 +107,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: meeting });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -147,7 +150,8 @@ router.post('/', authenticate, validate(meetingSchema), async (req: Request, res
     });
 
     res.status(201).json({ success: true, data: meeting });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -179,7 +183,8 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -207,7 +212,8 @@ router.post('/:id/start', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -242,7 +248,8 @@ router.post('/:id/end', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -265,7 +272,8 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response) => 
     }
     await prisma.meeting.update({ where: { id: qs(req.params.id) }, data: { status: 'cancelled' } });
     res.json({ success: true, data: { message: '회의가 취소되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -289,7 +297,8 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
     await prisma.meeting.update({ where: { id: qs(req.params.id) }, data: { status: 'cancelled' } });
     res.json({ success: true, data: { message: '회의가 취소되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -330,7 +339,8 @@ router.get('/:id/join', authenticate, async (req: Request, res: Response) => {
         requiresPassword: !!meeting.password,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -435,9 +445,9 @@ router.post('/:id/documents', authenticate, meetingUpload.single('file'), async 
     writeMeta(meetingId, meta);
 
     res.status(201).json({ success: true, data: doc });
-  } catch (err: any) {
-    console.error('[Meeting Document] Upload error:', err);
-    res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: err.message || '업로드 실패' } });
+  } catch (err) {
+    logger.error({ err, userId: req.user?.id, meetingId: req.params.id }, '[Meeting Document] 업로드 실패');
+    res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: '업로드에 실패했습니다' } });
   }
 });
 
@@ -461,7 +471,8 @@ router.get('/:id/documents', authenticate, async (req: Request, res: Response) =
 
     const docs = readMeta(meetingId);
     res.json({ success: true, data: docs });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -503,7 +514,8 @@ router.get('/:id/documents/:docId/file', authenticate, async (req: Request, res:
     res.setHeader('Content-Type', doc.mimeType);
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`);
     fs.createReadStream(filePath).pipe(res);
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -536,7 +548,8 @@ router.delete('/:id/documents/:docId', authenticate, async (req: Request, res: R
     writeMeta(meetingId, meta);
 
     res.json({ success: true, data: { message: '삭제되었습니다', documentId: docId } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -564,7 +577,8 @@ router.get('/:id/minutes', authenticate, async (req: Request, res: Response) => 
       include: { finalizedBy: { select: { id: true, name: true } } },
     });
     res.json({ success: true, data: minutes }); // null이면 아직 생성 전
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -586,7 +600,8 @@ router.get('/:id/transcripts', authenticate, async (req: Request, res: Response)
       select: { id: true, speakerId: true, speakerName: true, text: true, timestamp: true },
     });
     res.json({ success: true, data: rows });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -636,7 +651,8 @@ router.patch('/:id/minutes', authenticate, validate(minutesPatchSchema), async (
     await updateMinutes(minutes.id, req.body);
     const updated = await prisma.meetingMinutes.findUnique({ where: { id: minutes.id } });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -677,7 +693,8 @@ router.post('/:id/minutes/finalize', authenticate, async (req: Request, res: Res
       include: { finalizedBy: { select: { id: true, name: true } } },
     });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -728,7 +745,8 @@ router.post(
       }
       const minutes = await prisma.meetingMinutes.findUnique({ where: { meetingId } });
       res.json({ success: true, data: minutes });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },

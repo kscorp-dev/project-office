@@ -11,6 +11,7 @@ import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
 import { config } from '../config';
 import { makeFileFilter, IMAGE_MIME_MAP, DOCUMENT_MIME_MAP, ARCHIVE_MIME_MAP, MEDIA_MIME_MAP } from '../utils/fileFilter';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('document'));
@@ -63,7 +64,8 @@ router.get('/folders', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: roots });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -97,7 +99,8 @@ router.post('/folders', authenticate, validate(folderSchema), async (req: Reques
     });
 
     res.status(201).json({ success: true, data: folder });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -124,7 +127,8 @@ router.patch('/folders/:id', authenticate, async (req: Request, res: Response) =
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -144,7 +148,8 @@ router.delete('/folders/:id', authenticate, async (req: Request, res: Response) 
 
     await prisma.documentFolder.delete({ where: { id: qs(req.params.id) } });
     res.json({ success: true, data: { message: '폴더가 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -215,7 +220,8 @@ router.get('/files', authenticate, async (req: Request, res: Response) => {
     }));
 
     res.json({ success: true, data: serialized, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -245,7 +251,8 @@ router.get('/files/:id', authenticate, async (req: Request, res: Response) => {
       success: true,
       data: { ...file, fileSize: Number(file.fileSize), uploadedAt: file.createdAt },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -284,7 +291,8 @@ router.post('/files', authenticate, validate(fileSchema), async (req: Request, r
       success: true,
       data: { ...file, fileSize: Number(file.fileSize), uploadedAt: file.createdAt },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -312,7 +320,8 @@ router.patch('/files/:id', authenticate, async (req: Request, res: Response) => 
     });
 
     res.json({ success: true, data: { ...updated, fileSize: Number(updated.fileSize) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -332,7 +341,8 @@ router.delete('/files/:id', authenticate, async (req: Request, res: Response) =>
 
     await prisma.document.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '파일이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -352,7 +362,8 @@ router.post('/files/:id/download', authenticate, async (req: Request, res: Respo
     });
 
     res.json({ success: true, data: { downloadCount: updated.downloadCount } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -567,7 +578,8 @@ router.get('/files/:id/file', authenticate, async (req: Request, res: Response) 
       `attachment; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`,
     );
     res.sendFile(absPath);
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -596,7 +608,8 @@ router.get('/files/:id/versions', authenticate, async (req: Request, res: Respon
         history: versions.map((v) => ({ ...v, fileSize: Number(v.fileSize) })),
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -636,7 +649,8 @@ router.get('/files/:id/versions/:ver/file', authenticate, async (req: Request, r
       `attachment; filename*=UTF-8''${encodeURIComponent(version.fileName)}`,
     );
     res.sendFile(absPath);
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -673,7 +687,8 @@ router.get('/stats', authenticate, async (req: Request, res: Response) => {
         sharedFiles,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

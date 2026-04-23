@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { webhookAuth } from '../middleware/webhookAuth';
 import { qs, qsOpt } from '../utils/query';
 
 const router = Router();
@@ -138,8 +139,9 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// Webhook: detection 서버에서 호출 (인증 없이 — 내부 서비스 간 통신)
-router.post('/events/webhook', async (req: Request, res: Response) => {
+// Webhook: detection 서버 → 백엔드 (X-Webhook-Secret 헤더로 인증)
+// 시크릿 미설정 시 503 으로 엔드포인트 자체 비활성 (webhookAuth 내부에서 처리)
+router.post('/events/webhook', webhookAuth('PARKING_WEBHOOK_SECRET'), async (req: Request, res: Response) => {
   try {
     const { type, plateNumber, trackId, cameraId, lineId, zoneId, direction } = req.body;
     if (!type || !['entry', 'exit'].includes(type)) {

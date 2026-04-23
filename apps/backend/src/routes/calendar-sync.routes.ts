@@ -22,6 +22,7 @@ import { authenticate } from '../middleware/authenticate';
 import { validate } from '../middleware/validate';
 import { qs } from '../utils/query';
 import { AppError } from '../services/auth.service';
+import { logger } from '../config/logger';
 import {
   createSubscription,
   listSubscriptionsForUser,
@@ -259,9 +260,10 @@ router.post('/google/sync', authenticate, async (req: Request, res: Response) =>
       res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
       return;
     }
+    logger.error({ err, userId: req.user?.id }, '캘린더 동기화 실패');
     res.status(500).json({
       success: false,
-      error: { code: 'SYNC_FAILED', message: (err as Error).message || '동기화 실패' },
+      error: { code: 'SYNC_FAILED', message: '동기화에 실패했습니다' },
     });
   }
 });

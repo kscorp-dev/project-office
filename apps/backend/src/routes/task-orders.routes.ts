@@ -8,6 +8,7 @@ import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
+import { logger } from '../config/logger';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
 import { config } from '../config';
@@ -155,7 +156,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: tasksWithProgress, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -194,7 +196,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: task });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -256,7 +259,8 @@ router.post('/', authenticate, validate(taskOrderSchema), async (req: Request, r
     });
 
     res.status(201).json({ success: true, data: task });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -289,7 +293,8 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -354,7 +359,8 @@ router.post('/:id/status', authenticate, async (req: Request, res: Response) => 
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -371,7 +377,8 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response) =
       include: { user: { select: { id: true, name: true } } },
     });
     res.status(201).json({ success: true, data: comment });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -393,7 +400,8 @@ router.patch('/:id/checklist/:checkId', authenticate, async (req: Request, res: 
       },
     });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -417,7 +425,8 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
     await prisma.taskOrder.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '작업지시서가 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -438,7 +447,8 @@ router.get('/clients/list', authenticate, async (req: Request, res: Response) =>
     const limit = Math.min(parseInt(qs(req.query.limit) || '50', 10) || 50, 200);
     const clients = await prisma.client.findMany({ where, orderBy: { companyName: 'asc' }, take: limit });
     res.json({ success: true, data: clients });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -447,7 +457,8 @@ router.post('/clients/create', authenticate, async (req: Request, res: Response)
   try {
     const client = await prisma.client.create({ data: req.body });
     res.status(201).json({ success: true, data: client });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -479,7 +490,8 @@ router.get('/stats/summary', authenticate, async (req: Request, res: Response) =
     ]);
 
     res.json({ success: true, data: { sent, received, inProgress, overdue } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -600,7 +612,8 @@ router.get('/:id/design-files', authenticate, async (req: Request, res: Response
       success: true,
       data: rows.map((r) => ({ ...r, fileSize: Number(r.fileSize) })),
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -678,7 +691,8 @@ router.post(
       });
     } catch (err) {
       removeUploaded();
-      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message || '서버 오류' } });
+      logger.error({ err, userId: req.user?.id }, '작업지시서 디자인 파일 업로드 실패');
+      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: '업로드에 실패했습니다' } });
     }
   },
 );
@@ -760,7 +774,8 @@ router.post(
       });
     } catch (err) {
       removeUploaded();
-      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message || '서버 오류' } });
+      logger.error({ err, userId: req.user?.id }, '작업지시서 디자인 파일 버전 업로드 실패');
+      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: '업로드에 실패했습니다' } });
     }
   },
 );
@@ -802,7 +817,8 @@ router.get('/:id/design-files/:fileId/download', authenticate, async (req: Reque
       `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
     );
     res.sendFile(absPath);
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -828,7 +844,8 @@ router.post('/:id/design-files/:fileId/view', authenticate, async (req: Request,
       fileVersion: file.version, req,
     });
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -893,7 +910,8 @@ router.post(
       }).catch(() => {});
 
       res.json({ success: true, data: { ...updated, fileSize: Number(updated.fileSize) } });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -945,7 +963,8 @@ router.post(
       }).catch(() => {});
 
       res.json({ success: true });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -981,7 +1000,8 @@ router.get('/:id/design-files/:fileId/versions', authenticate, async (req: Reque
       success: true,
       data: versions.map((v) => ({ ...v, fileSize: Number(v.fileSize) })),
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -1011,7 +1031,8 @@ router.get('/:id/design-files/:fileId/logs', authenticate, async (req: Request, 
       take: 200,
     });
     res.json({ success: true, data: logs });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

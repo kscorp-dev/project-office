@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
+import { logger } from '../config/logger';
 import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
 
@@ -18,13 +19,14 @@ router.use(authenticate, authorize('super_admin', 'admin'));
 
 // GET /admin/modules - 모듈 목록 (admin/super_admin)
 // sortOrder 기준 정렬 → 기획 순서(auth, approval, messenger, cctv, attendance ...)
-router.get('/modules', async (_req: Request, res: Response) => {
+router.get('/modules', async (req: Request, res: Response) => {
   try {
     const modules = await prisma.featureModule.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
     res.json({ success: true, data: modules });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -76,7 +78,8 @@ router.patch('/modules/:id', async (req: Request, res: Response) => {
     }).catch(() => { /* audit 실패가 토글을 막지 않도록 */ });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -84,13 +87,14 @@ router.patch('/modules/:id', async (req: Request, res: Response) => {
 // ===== 시스템 설정 =====
 
 // GET /admin/settings - 시스템 설정 전체
-router.get('/settings', async (_req: Request, res: Response) => {
+router.get('/settings', async (req: Request, res: Response) => {
   try {
     const settings = await prisma.systemSetting.findMany({
       orderBy: { key: 'asc' },
     });
     res.json({ success: true, data: settings });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -139,7 +143,8 @@ router.put('/settings/:key', async (req: Request, res: Response) => {
     }).catch(() => { /* ignore */ });
 
     res.json({ success: true, data: setting });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -179,7 +184,8 @@ router.patch('/settings/:id', async (req: Request, res: Response) => {
       },
     }).catch(() => { /* ignore */ });
     res.json({ success: true, data: setting });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -215,7 +221,8 @@ router.post(
         },
       }).catch(() => { /* ignore */ });
       res.json({ success: true, data: { revokedCount: result.count } });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -256,7 +263,8 @@ router.post(
         },
       }).catch(() => { /* ignore */ });
       res.json({ success: true, data: { revokedCount: result.count } });
-    } catch {
+    } catch (err) {
+      logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -471,7 +479,8 @@ router.get('/users', async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, data: users, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -538,7 +547,8 @@ router.patch('/users/:id/role', async (req: Request, res: Response) => {
     }).catch(() => { /* ignore */ });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -580,7 +590,8 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -626,7 +637,8 @@ router.get('/users/:id/audit-logs', async (req: Request, res: Response) => {
       data: { user, logs },
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -674,7 +686,8 @@ router.get('/audit-logs', async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, data: logs, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -682,7 +695,7 @@ router.get('/audit-logs', async (req: Request, res: Response) => {
 // ===== 대시보드 통계 =====
 
 // GET /admin/stats/dashboard - 관리자 통계
-router.get('/stats/dashboard', async (_req: Request, res: Response) => {
+router.get('/stats/dashboard', async (req: Request, res: Response) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -712,7 +725,8 @@ router.get('/stats/dashboard', async (_req: Request, res: Response) => {
         pendingApprovals,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

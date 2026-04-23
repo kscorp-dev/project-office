@@ -13,6 +13,7 @@ import { authorize } from '../middleware/authorize';
 import { validate } from '../middleware/validate';
 import { getWorkMailService } from '../services/workmail.service';
 import prisma from '../config/prisma';
+import { logger } from '../config/logger';
 import { qs } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { encryptMailPassword, generateStrongPassword } from '../utils/mailCrypto';
@@ -54,9 +55,10 @@ router.get('/workmail/health', async (_req: Request, res: Response) => {
       },
     });
   } catch (err) {
+    logger.warn({ err }, 'WorkMail 연결 확인 실패');
     res.status(502).json({
       success: false,
-      error: { code: 'WORKMAIL_UNREACHABLE', message: (err as Error).message },
+      error: { code: 'WORKMAIL_UNREACHABLE', message: 'WorkMail 서비스에 연결할 수 없습니다' },
     });
   }
 });
@@ -434,9 +436,10 @@ router.post('/accounts/:accountId/test-inbox', async (req: Request, res: Respons
 
     res.json({ success: true, data: result });
   } catch (err) {
+    logger.error({ err }, '메일 수신 테스트 실패');
     res.status(500).json({
       success: false,
-      error: { code: 'INTERNAL', message: (err as Error).message || '서버 오류' },
+      error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' },
     });
   }
 });

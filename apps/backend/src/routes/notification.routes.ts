@@ -18,6 +18,7 @@ import {
 } from '../services/notification.service';
 import { registerPushToken, unregisterPushToken } from '../services/push.service';
 import { qs } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -107,9 +108,10 @@ router.post(
       });
       res.status(201).json({ success: true });
     } catch (err) {
+      logger.warn({ err, userId: req.user?.id }, '디바이스 토큰 등록 실패');
       res.status(400).json({
         success: false,
-        error: { code: 'REGISTRATION_FAILED', message: (err as Error).message },
+        error: { code: 'REGISTRATION_FAILED', message: '디바이스 등록에 실패했습니다' },
       });
     }
   },
