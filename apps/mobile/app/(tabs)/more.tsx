@@ -58,16 +58,28 @@ export default function MoreScreen() {
   };
 
   const handleMenuPress = (key: string) => {
-    // 구현된 라우트로 연결
-    if (key === 'meeting') {
-      router.push('/meeting');
+    // key → 파일 기반 라우트 매핑. 모든 대상 화면이 implemented.
+    const ROUTES: Record<string, string> = {
+      meeting: '/meeting',
+      'calendar-sync': '/settings/calendar-sync',
+      organization: '/organization',
+      attendance: '/attendance',
+      calendar: '/calendar',
+      board: '/board',
+      taskorders: '/task-orders',
+      inventory: '/inventory',
+      parking: '/parking',
+      cctv: '/cctv',
+      admin: '/admin',
+      profile: '/profile',
+      settings: '/settings-app',
+    };
+    const target = ROUTES[key];
+    if (!target) {
+      Alert.alert('알 수 없는 메뉴', `${key} 는 지원되지 않습니다.`);
       return;
     }
-    if (key === 'calendar-sync') {
-      router.push('/settings/calendar-sync');
-      return;
-    }
-    Alert.alert('준비 중', `${key} 기능은 준비 중입니다.`);
+    router.push(target as any);
   };
 
   return (
