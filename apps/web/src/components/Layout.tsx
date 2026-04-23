@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useLayoutStore, type SidebarPosition, type ThemeMode } from '../store/layout';
+import { useMailRealtime } from '../store/mailRealtime';
 import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X,
   Camera, Clock, Calendar, Newspaper, ClipboardList, Package, Car,
@@ -63,16 +64,21 @@ function VerticalNav({ compact }: { compact: boolean }) {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onClick={() => { if (item.to === '/mail') useMailRealtime.getState().clearAll(); }}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-2 mx-2 rounded-2xl transition-all duration-200 ${
+                  `relative flex items-center gap-3 px-4 py-2 mx-2 rounded-2xl transition-all duration-200 ${
                     isActive
                       ? 'bg-primary-500 text-white shadow-md shadow-primary-200 dark:shadow-primary-900/30'
                       : 'text-gray-500 dark:text-gray-400 hover:bg-primary-50 dark:hover:bg-primary-500/10 hover:text-primary-700 dark:hover:text-primary-400'
                   }`
                 }
               >
-                <item.icon size={18} />
+                <div className="relative">
+                  <item.icon size={18} />
+                  {item.to === '/mail' && <MailBadge compact={compact} />}
+                </div>
                 {!compact && <span className="text-sm font-medium truncate">{item.label}</span>}
+                {item.to === '/mail' && !compact && <MailInlineBadge />}
               </NavLink>
             ))}
           </div>
@@ -343,6 +349,27 @@ function ThemeQuickToggle(_: { compact?: boolean }) {
     >
       <Icon size={14} />
     </button>
+  );
+}
+
+/* ── 메일 새 알림 점 (사이드바 컴팩트 모드) ── */
+function MailBadge({ compact }: { compact: boolean }) {
+  const count = useMailRealtime((s) => s.unreadDelta);
+  if (count === 0) return null;
+  if (!compact) return null;  // non-compact는 inline 배지 사용
+  return (
+    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800" />
+  );
+}
+
+/* ── 메일 인라인 배지 (사이드바 일반 모드) ── */
+function MailInlineBadge() {
+  const count = useMailRealtime((s) => s.unreadDelta);
+  if (count === 0) return null;
+  return (
+    <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-500 text-white min-w-[18px] text-center">
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }
 

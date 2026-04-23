@@ -218,6 +218,12 @@ router.post('/workmail/link', validate(linkSchema), async (req: Request, res: Re
     linkedUserId: appUser.id,
   });
 
+  // 연결 성공 시 해당 계정의 IMAP IDLE 즉시 시작 (실시간 알림 활성화)
+  try {
+    const { restartMailIdle } = await import('../workers/mailIdle.worker');
+    restartMailIdle(account.id).catch(() => { /* 실패해도 연결 자체는 성공 */ });
+  } catch { /* idle worker 비활성화 환경 */ }
+
   res.status(201).json({
     success: true,
     data: { mailAccountId: account.id, email: wmUser.email },
@@ -319,6 +325,38 @@ router.delete(
     res.json({ success: true, data: { message: '메일박스가 삭제되었습니다' } });
   },
 );
+
+/* ──────────── 메일박스 미연결 User 목록 (생성 시 드롭다운용) ──────────── */
+
+router.get('/linkable-users', async (req: Request, res: Response) => {
+  const search = qs(req.query.search);
+  const users = await prisma.user.findMany({
+    where: {
+      status: 'active',
+      mailAccount: null,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { employeeId: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      employeeId: true,
+      email: true,
+      role: true,
+      department: { select: { name: true } },
+    },
+    orderBy: { name: 'asc' },
+    take: 100,
+  });
+  res.json({ success: true, data: users });
+});
 
 /* ──────────── 감사 로그 조회 ──────────── */
 

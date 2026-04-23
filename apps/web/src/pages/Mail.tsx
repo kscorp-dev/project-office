@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { sanitizeHtml } from '../utils/sanitize';
+import { useMailRealtime } from '../store/mailRealtime';
 
 /* ───────── 타입 ───────── */
 
@@ -124,12 +125,16 @@ export default function MailPage() {
   }, []);
 
   const fetchMessages = useCallback(
-    async (folder: string, page = 1, search = '') => {
+    async (folder: string, page = 1, search = '', forceRefresh = false) => {
       setLoadingMessages(true);
       setErrorMsg(null);
       try {
         const { data } = await api.get('/mail/messages', {
-          params: { folder, page, limit: 20, search: search || undefined },
+          params: {
+            folder, page, limit: 20,
+            search: search || undefined,
+            refresh: forceRefresh ? '1' : undefined,
+          },
         });
         setMessages(data.data || []);
         setMessagesMeta(
@@ -170,18 +175,42 @@ export default function MailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
-  /* ───── 메일 선택 ───── */
+  // 실시간 새 메일 이벤트 → INBOX 자동 갱신 + unread 배지 리셋
+  const lastMailEvent = useMailRealtime((s) => s.lastMailEvent);
+  const clearAll = useMailRealtime((s) => s.clearAll);
+  useEffect(() => {
+    // Mail 탭이 열려있으면 사이드바 배지 클리어
+    clearAll();
+  }, [clearAll]);
+  useEffect(() => {
+    if (lastMailEvent && account && account !== 'loading' && currentFolder === 'INBOX') {
+      // refresh=1 쿼리로 IMAP에서 즉시 fetch
+      fetchMessages('INBOX', 1, '', true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMailEvent]);
+
+  /* ───── 메일 선택 (낙관적 UI — 목록 메타 먼저, 본문은 loading) ───── */
   const handleSelectMail = async (m: MailListItem) => {
+    // 1) 목록의 메타데이터로 상세를 즉시 구성 (0ms — 스켈레톤 대신 실제 메타 표시)
+    setSelectedMail({
+      ...m,
+      html: null,
+      text: null,
+      attachments: [],
+    });
+    // 읽음 처리 낙관적 반영 (UI만)
+    setMessages((prev) => prev.map((x) => (x.uid === m.uid ? { ...x, isSeen: true } : x)));
+
     setLoadingDetail(true);
     try {
       const { data } = await api.get(`/mail/messages/${encodeURIComponent(m.uid)}`, {
         params: { folder: currentFolder },
       });
       setSelectedMail(data.data);
-      // 목록에서 읽음 처리 반영
-      setMessages((prev) => prev.map((x) => (x.uid === m.uid ? { ...x, isSeen: true } : x)));
     } catch (err: any) {
       alert(err?.response?.data?.error?.message || '메일 본문을 불러올 수 없습니다');
+      setSelectedMail(null);
     } finally {
       setLoadingDetail(false);
     }
@@ -215,8 +244,9 @@ export default function MailPage() {
     }
   };
 
+  /** 사용자가 새로고침 버튼을 누를 때는 IMAP 실시간 조회 강제 */
   const handleRefresh = () => {
-    fetchMessages(currentFolder, messagesMeta.page, searchQuery);
+    fetchMessages(currentFolder, messagesMeta.page, searchQuery, true);
   };
 
   /* ───── 렌더링 분기 ───── */
@@ -534,32 +564,34 @@ function MailDetailView({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* 헤더는 항상 즉시 표시 — 목록에서 이미 알고 있는 메타데이터 */}
+        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-3">
+          {mail.subject || '(제목 없음)'}
+        </h2>
+        <div className="flex items-start gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+            {(mail.fromName?.[0] || mail.fromEmail[0] || '?').toUpperCase()}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
+              <span className="font-semibold">{mail.fromName || mail.fromEmail}</span>
+              {mail.fromName && <span className="text-xs text-gray-400">&lt;{mail.fromEmail}&gt;</span>}
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              받는사람: {mail.to.map((t) => t.name || t.email).join(', ')}
+            </p>
+            <p className="text-xs text-gray-400">{formatDate(mail.sentAt)}</p>
+          </div>
+        </div>
+
+        {/* 본문 영역 — loading 중에도 헤더는 위에 계속 보임 */}
         {loading ? (
-          <div className="flex items-center justify-center h-full text-gray-400">
-            <Loader2 size={20} className="animate-spin mr-2" />
-            불러오는 중...
+          <div className="py-12 text-center text-gray-400 dark:text-gray-500">
+            <Loader2 size={20} className="animate-spin mx-auto mb-2" />
+            <p className="text-sm">본문 불러오는 중...</p>
           </div>
         ) : (
           <>
-            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-3">
-              {mail.subject || '(제목 없음)'}
-            </h2>
-            <div className="flex items-start gap-3 mb-6">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-                {(mail.fromName?.[0] || mail.fromEmail[0] || '?').toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                  <span className="font-semibold">{mail.fromName || mail.fromEmail}</span>
-                  {mail.fromName && <span className="text-xs text-gray-400">&lt;{mail.fromEmail}&gt;</span>}
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  받는사람: {mail.to.map((t) => t.name || t.email).join(', ')}
-                </p>
-                <p className="text-xs text-gray-400">{formatDate(mail.sentAt)}</p>
-              </div>
-            </div>
-
             {mail.attachments.length > 0 && (
               <div className="space-y-1.5 mb-4">
                 {mail.attachments.map((att) => (

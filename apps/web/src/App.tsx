@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import MailNotifications from './components/MailNotifications';
 import { useAuthStore } from './store/auth';
 import LoginPage from './pages/Login';
 import RegisterPage from './pages/Register';
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <MailNotifications />
         <Routes>
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />

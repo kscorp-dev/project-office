@@ -103,6 +103,89 @@ function addressesToList(addr?: AddressObject | AddressObject[]): { email: strin
     .map((x) => ({ email: x.address!.toLowerCase(), name: x.name || undefined }));
 }
 
+/* ───────────────────────── IMAP 연결 풀 ───────────────────────── */
+/**
+ * 매 API 호출마다 IMAP 연결/로그인/로그아웃(총 1~2초)을 반복하지 않도록
+ * 사용자별 ImapFlow 클라이언트 하나를 유지한다.
+ * - 유휴 2분이 지나면 자동 로그아웃
+ * - 서버 종료 시 전체 정리 (shutdown() 호출)
+ * - 동시 요청은 ImapFlow 내부의 mailbox lock으로 직렬화
+ */
+interface PoolEntry {
+  client: ImapFlow;
+  lastUsed: number;
+  closing?: boolean;
+}
+const imapPool = new Map<string, PoolEntry>();
+const POOL_IDLE_MS = 2 * 60_000;
+
+async function acquireImap(
+  userId: string,
+  spec: { imapHost: string; imapPort: number; email: string; password: string },
+): Promise<ImapFlow> {
+  const existing = imapPool.get(userId);
+  const now = Date.now();
+
+  if (existing && !existing.closing) {
+    // 유휴 타임아웃 검사
+    if (now - existing.lastUsed > POOL_IDLE_MS) {
+      existing.closing = true;
+      await existing.client.logout().catch(() => { /* ignore */ });
+      imapPool.delete(userId);
+    } else if (existing.client.usable) {
+      existing.lastUsed = now;
+      return existing.client;
+    } else {
+      // 연결 끊김 — 정리 후 재생성
+      imapPool.delete(userId);
+    }
+  }
+
+  const client = new ImapFlow({
+    host: spec.imapHost,
+    port: spec.imapPort,
+    secure: true,
+    auth: { user: spec.email, pass: spec.password },
+    logger: false,
+  });
+  await client.connect();
+
+  // 에러/종료 이벤트 시 풀에서 제거
+  const cleanup = () => {
+    const e = imapPool.get(userId);
+    if (e && e.client === client) imapPool.delete(userId);
+  };
+  client.on('error', cleanup);
+  client.on('close', cleanup);
+
+  imapPool.set(userId, { client, lastUsed: now });
+  return client;
+}
+
+/** 유휴 연결 주기적 정리 (1분마다) */
+const POOL_SWEEP_MS = 60_000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of imapPool.entries()) {
+    if (now - entry.lastUsed > POOL_IDLE_MS && !entry.closing) {
+      entry.closing = true;
+      entry.client.logout().catch(() => { /* ignore */ }).finally(() => {
+        imapPool.delete(userId);
+      });
+    }
+  }
+}, POOL_SWEEP_MS).unref();
+
+/** 서버 종료 시 전체 로그아웃 */
+export async function shutdownMailPool(): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
+  for (const [userId, entry] of imapPool.entries()) {
+    imapPool.delete(userId);
+    tasks.push(entry.client.logout().catch(() => { /* ignore */ }));
+  }
+  await Promise.allSettled(tasks);
+}
+
 /* ───────────────────────── 서비스 본체 ───────────────────────── */
 
 export class MailService {
@@ -115,15 +198,9 @@ export class MailService {
     return { ...acc, password: decryptMailPassword(acc.encryptedPassword) };
   }
 
-  /** IMAP 클라이언트 팩토리 (재사용 안 함 — 매 호출마다 생성/종료) */
-  private createImapClient(account: { imapHost: string; imapPort: number; email: string; password: string }) {
-    return new ImapFlow({
-      host: account.imapHost,
-      port: account.imapPort,
-      secure: true,
-      auth: { user: account.email, pass: account.password },
-      logger: false,
-    });
+  /** 사용자 계정용 IMAP 클라이언트 (풀에서 가져옴 — 재사용) */
+  private async getImapClient(account: { imapHost: string; imapPort: number; email: string; password: string }, userId: string) {
+    return acquireImap(userId, account);
   }
 
   /** SMTP transporter */
@@ -145,10 +222,8 @@ export class MailService {
     let err: string | undefined;
 
     try {
-      const client = this.createImapClient(acc);
-      await client.connect();
+      await this.getImapClient(acc, userId);    // 풀에 영속 연결 확보
       imapOk = true;
-      await client.logout();
     } catch (e) {
       err = `IMAP: ${(e as Error).message}`;
     }
@@ -167,30 +242,25 @@ export class MailService {
   /* ───── 폴더 목록 ───── */
   async listFolders(userId: string): Promise<FolderInfo[]> {
     const acc = await this.getAccount(userId);
-    const client = this.createImapClient(acc);
-    await client.connect();
-    try {
-      const list = await client.list();
-      const folders: FolderInfo[] = [];
-      for (const box of list) {
-        if (box.flags.has('\\Noselect')) continue;
-        try {
-          const status = await client.status(box.path, { messages: true, unseen: true });
-          folders.push({
-            name: box.name,
-            path: box.path,
-            specialUse: box.specialUse,
-            total: status.messages ?? 0,
-            unseen: status.unseen ?? 0,
-          });
-        } catch {
-          // 특정 폴더 status 실패는 무시 (권한 등)
-        }
+    const client = await this.getImapClient(acc, userId);
+    const list = await client.list();
+    const folders: FolderInfo[] = [];
+    for (const box of list) {
+      if (box.flags.has('\\Noselect')) continue;
+      try {
+        const status = await client.status(box.path, { messages: true, unseen: true });
+        folders.push({
+          name: box.name,
+          path: box.path,
+          specialUse: box.specialUse,
+          total: status.messages ?? 0,
+          unseen: status.unseen ?? 0,
+        });
+      } catch {
+        // 특정 폴더 status 실패는 무시 (권한 등)
       }
-      return folders;
-    } finally {
-      await client.logout().catch(() => { /* ignore */ });
     }
+    return folders;
   }
 
   /* ───── 메일 목록 (페이지네이션) ───── */
@@ -203,130 +273,115 @@ export class MailService {
     const page = Math.max(1, options.page ?? 1);
     const limit = Math.min(100, Math.max(1, options.limit ?? 20));
 
-    const client = this.createImapClient(acc);
-    await client.connect();
+    const client = await this.getImapClient(acc, userId);
+    const lock = await client.getMailboxLock(folder);
     try {
-      const lock = await client.getMailboxLock(folder);
-      try {
-        const mbox = client.mailbox as MailboxObject;
-        const total = mbox.exists;
-        if (total === 0) return { items: [], total: 0 };
+      const mbox = client.mailbox as MailboxObject;
+      const total = mbox.exists;
+      if (total === 0) return { items: [], total: 0 };
 
-        // 검색 (subject/from) 또는 전체
-        let uids: number[];
-        if (options.search) {
-          const res = await client.search({ or: [{ subject: options.search }, { from: options.search }] });
-          uids = (res || []).reverse(); // 최신 순
-        } else {
-          // 전체 UID 중 최신 페이지만 fetch
-          const allSeq = `${Math.max(1, total - page * limit + 1)}:${Math.max(1, total - (page - 1) * limit)}`;
-          uids = [];
-          for await (const msg of client.fetch(allSeq, { uid: true })) {
-            uids.push(msg.uid);
-          }
-          uids.reverse();
+      // 검색 (subject/from) 또는 전체
+      let uids: number[];
+      if (options.search) {
+        const res = await client.search({ or: [{ subject: options.search }, { from: options.search }] });
+        uids = (res || []).reverse(); // 최신 순
+      } else {
+        // 전체 UID 중 최신 페이지만 fetch
+        const allSeq = `${Math.max(1, total - page * limit + 1)}:${Math.max(1, total - (page - 1) * limit)}`;
+        uids = [];
+        for await (const msg of client.fetch(allSeq, { uid: true })) {
+          uids.push(msg.uid);
         }
-
-        const actualTotal = options.search ? uids.length : total;
-        const startIdx = options.search ? (page - 1) * limit : 0;
-        const sliceUids = uids.slice(startIdx, startIdx + limit);
-        if (sliceUids.length === 0) return { items: [], total: actualTotal };
-
-        // ENVELOPE + FLAGS + BODYSTRUCTURE 가져오기
-        const items: MailListItem[] = [];
-        for await (const msg of client.fetch(sliceUids, {
-          envelope: true,
-          flags: true,
-          bodyStructure: true,
-          size: true,
-          uid: true,
-        }, { uid: true })) {
-          items.push(this.mapFetchToListItem(msg));
-        }
-        items.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
-        return { items, total: actualTotal };
-      } finally {
-        lock.release();
+        uids.reverse();
       }
+
+      const actualTotal = options.search ? uids.length : total;
+      const startIdx = options.search ? (page - 1) * limit : 0;
+      const sliceUids = uids.slice(startIdx, startIdx + limit);
+      if (sliceUids.length === 0) return { items: [], total: actualTotal };
+
+      // ENVELOPE + FLAGS + BODYSTRUCTURE 가져오기
+      const items: MailListItem[] = [];
+      for await (const msg of client.fetch(sliceUids, {
+        envelope: true,
+        flags: true,
+        bodyStructure: true,
+        size: true,
+        uid: true,
+      }, { uid: true })) {
+        items.push(this.mapFetchToListItem(msg));
+      }
+      items.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+      return { items, total: actualTotal };
     } finally {
-      await client.logout().catch(() => { /* ignore */ });
+      lock.release();
     }
   }
 
   /* ───── 메일 상세 (본문 + 첨부 메타) ───── */
   async getMessage(userId: string, folder: string, uid: string): Promise<MailDetail> {
     const acc = await this.getAccount(userId);
-    const client = this.createImapClient(acc);
-    await client.connect();
+    const client = await this.getImapClient(acc, userId);
+    const lock = await client.getMailboxLock(folder);
     try {
-      const lock = await client.getMailboxLock(folder);
-      try {
-        const raw = await client.download(uid, undefined, { uid: true });
-        if (!raw) throw new AppError(404, 'NOT_FOUND', '메일을 찾을 수 없습니다');
+      const raw = await client.download(uid, undefined, { uid: true });
+      if (!raw) throw new AppError(404, 'NOT_FOUND', '메일을 찾을 수 없습니다');
 
-        const stream = raw.content;
-        const parsed: ParsedMail = await simpleParser(stream);
+      const stream = raw.content;
+      const parsed: ParsedMail = await simpleParser(stream);
 
-        // 메타
-        const fetched = await client.fetchOne(uid, {
-          envelope: true,
-          flags: true,
-          size: true,
-          uid: true,
-        }, { uid: true });
-        if (!fetched) throw new AppError(404, 'NOT_FOUND', '메일 메타를 읽을 수 없습니다');
+      // 메타
+      const fetched = await client.fetchOne(uid, {
+        envelope: true,
+        flags: true,
+        size: true,
+        uid: true,
+      }, { uid: true });
+      if (!fetched) throw new AppError(404, 'NOT_FOUND', '메일 메타를 읽을 수 없습니다');
 
-        const listItem = this.mapFetchToListItem(fetched);
+      const listItem = this.mapFetchToListItem(fetched);
 
-        // 읽음 처리
-        await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true }).catch(() => { /* ignore */ });
+      // 읽음 처리
+      await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true }).catch(() => { /* ignore */ });
 
-        return {
-          ...listItem,
-          isSeen: true,
-          html: parsed.html ? sanitizeMailHtml(parsed.html) : null,
-          text: parsed.text ?? null,
-          attachments: (parsed.attachments || []).map((a, idx) => ({
-            filename: a.filename || `attachment-${idx}`,
-            contentType: a.contentType,
-            size: a.size,
-            contentId: a.contentId,
-            cid: a.cid,
-            index: idx,
-          })),
-        };
-      } finally {
-        lock.release();
-      }
+      return {
+        ...listItem,
+        isSeen: true,
+        html: parsed.html ? sanitizeMailHtml(parsed.html) : null,
+        text: parsed.text ?? null,
+        attachments: (parsed.attachments || []).map((a, idx) => ({
+          filename: a.filename || `attachment-${idx}`,
+          contentType: a.contentType,
+          size: a.size,
+          contentId: a.contentId,
+          cid: a.cid,
+          index: idx,
+        })),
+      };
     } finally {
-      await client.logout().catch(() => { /* ignore */ });
+      lock.release();
     }
   }
 
   /* ───── 첨부파일 스트림 (다운로드 프록시) ───── */
   async getAttachment(userId: string, folder: string, uid: string, index: number) {
     const acc = await this.getAccount(userId);
-    const client = this.createImapClient(acc);
-    await client.connect();
+    const client = await this.getImapClient(acc, userId);
+    const lock = await client.getMailboxLock(folder);
     try {
-      const lock = await client.getMailboxLock(folder);
-      try {
-        const raw = await client.download(uid, undefined, { uid: true });
-        if (!raw) throw new AppError(404, 'NOT_FOUND', '메일을 찾을 수 없습니다');
-        const parsed = await simpleParser(raw.content);
-        const att = parsed.attachments?.[index];
-        if (!att) throw new AppError(404, 'NOT_FOUND', '첨부파일을 찾을 수 없습니다');
-        return {
-          filename: att.filename || `attachment-${index}`,
-          contentType: att.contentType,
-          content: att.content,  // Buffer
-          size: att.size,
-        };
-      } finally {
-        lock.release();
-      }
+      const raw = await client.download(uid, undefined, { uid: true });
+      if (!raw) throw new AppError(404, 'NOT_FOUND', '메일을 찾을 수 없습니다');
+      const parsed = await simpleParser(raw.content);
+      const att = parsed.attachments?.[index];
+      if (!att) throw new AppError(404, 'NOT_FOUND', '첨부파일을 찾을 수 없습니다');
+      return {
+        filename: att.filename || `attachment-${index}`,
+        contentType: att.contentType,
+        content: att.content,  // Buffer
+        size: att.size,
+      };
     } finally {
-      await client.logout().catch(() => { /* ignore */ });
+      lock.release();
     }
   }
 
@@ -338,41 +393,31 @@ export class MailService {
     flags: { seen?: boolean; flagged?: boolean },
   ): Promise<void> {
     const acc = await this.getAccount(userId);
-    const client = this.createImapClient(acc);
-    await client.connect();
+    const client = await this.getImapClient(acc, userId);
+    const lock = await client.getMailboxLock(folder);
     try {
-      const lock = await client.getMailboxLock(folder);
-      try {
-        const add: string[] = [], remove: string[] = [];
-        if (flags.seen === true) add.push('\\Seen');
-        if (flags.seen === false) remove.push('\\Seen');
-        if (flags.flagged === true) add.push('\\Flagged');
-        if (flags.flagged === false) remove.push('\\Flagged');
+      const add: string[] = [], remove: string[] = [];
+      if (flags.seen === true) add.push('\\Seen');
+      if (flags.seen === false) remove.push('\\Seen');
+      if (flags.flagged === true) add.push('\\Flagged');
+      if (flags.flagged === false) remove.push('\\Flagged');
 
-        if (add.length) await client.messageFlagsAdd(uid, add, { uid: true });
-        if (remove.length) await client.messageFlagsRemove(uid, remove, { uid: true });
-      } finally {
-        lock.release();
-      }
+      if (add.length) await client.messageFlagsAdd(uid, add, { uid: true });
+      if (remove.length) await client.messageFlagsRemove(uid, remove, { uid: true });
     } finally {
-      await client.logout().catch(() => { /* ignore */ });
+      lock.release();
     }
   }
 
   /* ───── 폴더 이동 ───── */
   async moveMessage(userId: string, fromFolder: string, toFolder: string, uid: string): Promise<void> {
     const acc = await this.getAccount(userId);
-    const client = this.createImapClient(acc);
-    await client.connect();
+    const client = await this.getImapClient(acc, userId);
+    const lock = await client.getMailboxLock(fromFolder);
     try {
-      const lock = await client.getMailboxLock(fromFolder);
-      try {
-        await client.messageMove(uid, toFolder, { uid: true });
-      } finally {
-        lock.release();
-      }
+      await client.messageMove(uid, toFolder, { uid: true });
     } finally {
-      await client.logout().catch(() => { /* ignore */ });
+      lock.release();
     }
   }
 
@@ -414,25 +459,8 @@ export class MailService {
       attachments: params.attachments,
     });
 
-    // Sent 폴더에 저장 (WorkMail은 자동으로 Sent 저장 안 함)
-    try {
-      const client = this.createImapClient(acc);
-      await client.connect();
-      try {
-        const sentFolder = await this.resolveSpecialFolder(client, '\\Sent') || 'Sent';
-        const raw = info.response || '';
-        // nodemailer가 RFC822를 `message` 속성으로 제공하진 않음 → 간단히 재구성
-        if (info.messageId) {
-          // 간단 append (source가 info.response는 SMTP 응답 텍스트)
-          // 실제로는 nodemailer streamTransport로 메시지 생성 필요 —
-          // 여기선 Sent 저장을 best-effort로 처리
-        }
-      } finally {
-        await client.logout().catch(() => { /* ignore */ });
-      }
-    } catch {
-      // Sent 저장 실패해도 전송 자체는 성공으로 간주
-    }
+    // Sent 폴더 저장은 WorkMail SMTP가 기본적으로 처리함 (Sent Items).
+    // 추가 APPEND는 nodemailer streamTransport 재구성이 필요해 best-effort로 스킵.
 
     return { messageId: info.messageId || '' };
   }

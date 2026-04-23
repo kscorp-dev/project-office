@@ -4,6 +4,7 @@ import {
   Search, RefreshCw, ChevronLeft, ChevronRight, Edit2, Check, X,
   UserCheck, UserX, LogIn, FileCheck, UserPlus, Eye, EyeOff,
   Mail, Cloud, Wifi, WifiOff, AlertCircle,
+  Plus, MoreVertical, KeyRound, HardDrive, Trash2, Copy, Link2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -74,11 +75,20 @@ interface CreateUserForm {
   departmentId: string;
   position: string;
   phone: string;
+
+  // 메일박스 생성 옵션
+  createMailbox: boolean;
+  mailboxUsername: string;
+  mailboxQuotaGB: number;
+  mailboxPasswordMode: 'auto' | 'custom';
+  mailboxCustomPassword: string;
 }
 
 const EMPTY_USER_FORM: CreateUserForm = {
   employeeId: '', name: '', email: '', password: '',
   role: 'user', departmentId: '', position: '', phone: '',
+  createMailbox: false, mailboxUsername: '', mailboxQuotaGB: 10,
+  mailboxPasswordMode: 'auto', mailboxCustomPassword: '',
 };
 
 type TabKey = 'modules' | 'users' | 'settings' | 'logs' | 'mail';
@@ -118,6 +128,25 @@ interface WorkMailUser {
   state: string;
   role: string;
   enabledDate?: string;
+  linkedUser?: { userId: string; userName: string; employeeId: string } | null;
+  mailAccountId?: string | null;
+}
+
+interface LinkableUser {
+  id: string;
+  name: string;
+  employeeId: string;
+  email: string;
+  role: string;
+  department?: { name: string } | null;
+}
+
+interface CreateMailboxResult {
+  workmailUserId: string;
+  email: string;
+  mailAccountId: string | null;
+  temporaryPassword: string | null;
+  hint: string | null;
 }
 
 const ROLE_MAP: Record<string, { label: string; color: string }> = {
@@ -181,6 +210,12 @@ export default function AdminConsolePage() {
   const [mailHealthLoading, setMailHealthLoading] = useState(false);
   const [mailUsers, setMailUsers] = useState<WorkMailUser[]>([]);
   const [mailUsersLoading, setMailUsersLoading] = useState(false);
+
+  // Mail — create / row actions / result popup
+  const [showCreateMailbox, setShowCreateMailbox] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<WorkMailUser | null>(null);
+  const [createResult, setCreateResult] = useState<CreateMailboxResult | null>(null);
+  const [rowMenuOpen, setRowMenuOpen] = useState<string | null>(null);  // workmailUserId
 
   useEffect(() => {
     fetchStats();
@@ -316,6 +351,63 @@ export default function AdminConsolePage() {
     }
   };
 
+  const handleMailRowResetPassword = async (u: WorkMailUser) => {
+    if (!confirm(`${u.email ?? u.name}의 비밀번호를 재설정하시겠습니까?\n(자동으로 강력한 비밀번호가 생성됩니다)`)) return;
+    setRowMenuOpen(null);
+    try {
+      const res = await api.post(`/admin/mail/workmail/users/${u.userId}/reset-password`, {});
+      const tempPw = res.data?.data?.temporaryPassword;
+      if (tempPw) {
+        alert(`비밀번호가 재설정되었습니다.\n\n임시 비밀번호: ${tempPw}\n\n이 비밀번호는 여기서만 확인 가능합니다. 반드시 복사해 전달하세요.`);
+      } else {
+        alert('비밀번호가 재설정되었습니다.');
+      }
+      fetchMailUsers();
+    } catch (err: any) {
+      alert(err?.response?.data?.error?.message || '재설정 실패');
+    }
+  };
+
+  const handleMailRowQuota = async (u: WorkMailUser) => {
+    const input = prompt(`${u.email ?? u.name}의 쿼터를 MB 단위로 입력하세요\n(100 ~ 51200, 즉 100MB ~ 50GB)`, '10240');
+    if (!input) return;
+    setRowMenuOpen(null);
+    const quotaMB = parseInt(input, 10);
+    if (!Number.isFinite(quotaMB) || quotaMB < 100 || quotaMB > 51200) {
+      alert('쿼터는 100 ~ 51200 MB 범위여야 합니다');
+      return;
+    }
+    try {
+      await api.patch(`/admin/mail/workmail/users/${u.userId}/quota`, { quotaMB });
+      alert(`쿼터가 ${quotaMB}MB로 변경되었습니다`);
+      fetchMailUsers();
+    } catch (err: any) {
+      alert(err?.response?.data?.error?.message || '쿼터 변경 실패');
+    }
+  };
+
+  const handleMailRowDelete = async (u: WorkMailUser) => {
+    if (!confirm(`${u.email ?? u.name} 메일박스를 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없으며 메일 데이터가 모두 사라집니다.`)) return;
+    setRowMenuOpen(null);
+    try {
+      await api.delete(`/admin/mail/workmail/users/${u.userId}`);
+      alert('삭제 완료');
+      fetchMailUsers();
+    } catch (err: any) {
+      alert(err?.response?.data?.error?.message || '삭제 실패');
+    }
+  };
+
+  const copyTempPassword = async () => {
+    if (!createResult?.temporaryPassword) return;
+    try {
+      await navigator.clipboard.writeText(createResult.temporaryPassword);
+      alert('비밀번호가 클립보드에 복사되었습니다');
+    } catch {
+      // fallback — 선택 + 복사 안내만
+    }
+  };
+
   const openCreateUser = () => {
     setCreateForm(EMPTY_USER_FORM);
     setCreateError('');
@@ -333,6 +425,10 @@ export default function AdminConsolePage() {
       setCreateError('비밀번호는 8자 이상이어야 합니다');
       return;
     }
+    if (createForm.createMailbox && createForm.mailboxPasswordMode === 'custom' && createForm.mailboxCustomPassword.length < 8) {
+      setCreateError('메일 비밀번호는 8자 이상이어야 합니다');
+      return;
+    }
     setCreateLoading(true);
     setCreateError('');
     try {
@@ -347,10 +443,35 @@ export default function AdminConsolePage() {
       if (createForm.position) payload.position = createForm.position;
       if (createForm.phone) payload.phone = createForm.phone;
 
-      await api.post('/admin/users', payload);
+      // 메일박스 자동 생성 옵션
+      if (createForm.createMailbox) {
+        payload.createMailbox = true;
+        payload.mailboxUsername = (createForm.mailboxUsername || createForm.employeeId).toLowerCase();
+        payload.mailboxQuotaMB = Math.round(createForm.mailboxQuotaGB * 1024);
+        if (createForm.mailboxPasswordMode === 'custom' && createForm.mailboxCustomPassword) {
+          payload.mailboxPassword = createForm.mailboxCustomPassword;
+        }
+      }
+
+      const { data } = await api.post('/admin/users', payload);
       setShowCreateUser(false);
       fetchUsers();
       fetchStats();
+
+      // 메일박스 생성 결과가 있으면 표시
+      if (data.mailbox) {
+        setCreateResult({
+          workmailUserId: data.mailbox.workmailUserId,
+          email: data.mailbox.email,
+          mailAccountId: data.mailbox.mailAccountId,
+          temporaryPassword: data.mailbox.temporaryPassword,
+          hint: data.mailbox.temporaryPassword
+            ? '이 비밀번호는 이 창을 닫으면 다시 볼 수 없습니다. 안전한 곳에 저장하세요.'
+            : null,
+        });
+      } else if (data.mailboxError) {
+        alert('사용자는 생성됐지만 메일박스 생성 실패:\n' + data.mailboxError);
+      }
     } catch (err: any) {
       setCreateError(err.response?.data?.error?.message || '직원 등록 중 오류가 발생했습니다');
     } finally {
@@ -876,6 +997,95 @@ export default function AdminConsolePage() {
                   />
                 </div>
               </div>
+
+              {/* ─── 메일박스 생성 옵션 ─── */}
+              <div className="border-t border-gray-100 dark:border-slate-700 pt-3 mt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={createForm.createMailbox}
+                    onChange={(e) => setCreateForm({ ...createForm, createMailbox: e.target.checked })}
+                    className="w-4 h-4 accent-primary-600"
+                  />
+                  <Mail size={14} className="text-primary-600" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    회사 메일 계정도 함께 생성 (WorkMail)
+                  </span>
+                </label>
+
+                {createForm.createMailbox && (
+                  <div className="mt-3 pl-6 space-y-3 border-l-2 border-primary-100 dark:border-primary-900/30">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                          메일 사용자명
+                        </label>
+                        <input
+                          type="text"
+                          value={createForm.mailboxUsername}
+                          onChange={(e) => setCreateForm({ ...createForm, mailboxUsername: e.target.value.toLowerCase() })}
+                          placeholder={createForm.employeeId.toLowerCase() || 'hong'}
+                          className="input-field"
+                        />
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {(createForm.mailboxUsername || createForm.employeeId || 'hong').toLowerCase()}@ks-corporation.co.kr
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                          저장공간 (GB)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={createForm.mailboxQuotaGB}
+                          onChange={(e) => setCreateForm({ ...createForm, mailboxQuotaGB: Number(e.target.value) || 10 })}
+                          className="input-field"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                        WorkMail 비밀번호
+                      </label>
+                      <div className="flex gap-3 items-center mb-2 text-sm">
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={createForm.mailboxPasswordMode === 'auto'}
+                            onChange={() => setCreateForm({ ...createForm, mailboxPasswordMode: 'auto' })}
+                          />
+                          자동 생성 (권장)
+                        </label>
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={createForm.mailboxPasswordMode === 'custom'}
+                            onChange={() => setCreateForm({ ...createForm, mailboxPasswordMode: 'custom' })}
+                          />
+                          직접 입력
+                        </label>
+                      </div>
+                      {createForm.mailboxPasswordMode === 'custom' && (
+                        <input
+                          type="text"
+                          value={createForm.mailboxCustomPassword}
+                          onChange={(e) => setCreateForm({ ...createForm, mailboxCustomPassword: e.target.value })}
+                          placeholder="8자 이상"
+                          className="input-field"
+                        />
+                      )}
+                    </div>
+
+                    <p className="text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                      <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+                      메일박스 생성 시 앱 사용자와 자동 연결되어 직원이 로그인하면 메일을 바로 사용할 수 있습니다.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
@@ -888,7 +1098,7 @@ export default function AdminConsolePage() {
                 className="btn-primary flex items-center gap-1.5"
               >
                 {createLoading ? <RefreshCw size={14} className="animate-spin" /> : <UserPlus size={14} />}
-                등록
+                {createForm.createMailbox ? '등록 + 메일박스 생성' : '등록'}
               </button>
             </div>
           </div>
@@ -981,6 +1191,14 @@ export default function AdminConsolePage() {
                   메일 계정 ({mailUsers.length}명)
                 </h3>
               </div>
+              <button
+                onClick={() => setShowCreateMailbox(true)}
+                className="btn-primary flex items-center gap-1.5 py-1.5 px-3 text-sm"
+                disabled={!mailHealth?.connected}
+                title={mailHealth?.connected ? '메일박스 생성' : 'WorkMail 연결 후 이용 가능'}
+              >
+                <Plus size={14} /> 메일박스 생성
+              </button>
             </div>
 
             {mailUsersLoading ? (
@@ -1000,9 +1218,10 @@ export default function AdminConsolePage() {
                     <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700">
                       <th className="py-2 px-3 font-medium">이메일</th>
                       <th className="py-2 px-3 font-medium">표시명</th>
-                      <th className="py-2 px-3 font-medium">역할</th>
+                      <th className="py-2 px-3 font-medium">앱 연결</th>
                       <th className="py-2 px-3 font-medium">상태</th>
                       <th className="py-2 px-3 font-medium">활성화일</th>
+                      <th className="py-2 px-3 font-medium text-right">작업</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-slate-700/60">
@@ -1012,10 +1231,15 @@ export default function AdminConsolePage() {
                           {u.email || <span className="text-gray-400">—</span>}
                         </td>
                         <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{u.displayName}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300">
-                            {u.role}
-                          </span>
+                        <td className="py-2.5 px-3 text-xs">
+                          {u.linkedUser ? (
+                            <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
+                              <Link2 size={12} /> {u.linkedUser.userName}
+                              <span className="text-gray-400 ml-1">({u.linkedUser.employeeId})</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">미연결</span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3">
                           <span
@@ -1033,12 +1257,55 @@ export default function AdminConsolePage() {
                         <td className="py-2.5 px-3 text-xs text-gray-500 dark:text-gray-400">
                           {u.enabledDate ? new Date(u.enabledDate).toLocaleString('ko-KR') : '—'}
                         </td>
+                        <td className="py-2.5 px-3 text-right relative">
+                          <button
+                            onClick={() => setRowMenuOpen(rowMenuOpen === u.userId ? null : u.userId)}
+                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-500"
+                            disabled={u.state !== 'ENABLED'}
+                          >
+                            <MoreVertical size={14} />
+                          </button>
+                          {rowMenuOpen === u.userId && (
+                            <div className="absolute right-3 top-full mt-1 z-20 w-48 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg py-1">
+                              {!u.linkedUser && (
+                                <>
+                                  <button
+                                    onClick={() => { setRowMenuOpen(null); setLinkTarget(u); }}
+                                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 text-primary-700 dark:text-primary-400 font-medium"
+                                  >
+                                    <Link2 size={14} /> 앱 사용자와 연결
+                                  </button>
+                                  <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
+                                </>
+                              )}
+                              <button
+                                onClick={() => handleMailRowResetPassword(u)}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                              >
+                                <KeyRound size={14} /> 비밀번호 재설정
+                              </button>
+                              <button
+                                onClick={() => handleMailRowQuota(u)}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 flex items-center gap-2 text-gray-700 dark:text-gray-200"
+                              >
+                                <HardDrive size={14} /> 쿼터 변경
+                              </button>
+                              <div className="border-t border-gray-100 dark:border-slate-700 my-1" />
+                              <button
+                                onClick={() => handleMailRowDelete(u)}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 text-red-600 dark:text-red-400"
+                              >
+                                <Trash2 size={14} /> 메일박스 삭제
+                              </button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-                  ℹ️ Phase 5-B에서 계정 생성/삭제/쿼터 변경 UI가 추가됩니다. 현재는 연결 상태 확인 전용입니다.
+                  ℹ️ 메일박스 삭제는 되돌릴 수 없습니다. 비활성화만 원한다면 비밀번호 재설정 후 사용자에게 비번을 공유하지 마세요.
                 </p>
               </div>
             )}
@@ -1131,6 +1398,456 @@ export default function AdminConsolePage() {
           )}
         </div>
       )}
+
+      {/* ─── 메일박스 생성 모달 ─── */}
+      {showCreateMailbox && (
+        <CreateMailboxModal
+          onClose={() => setShowCreateMailbox(false)}
+          onCreated={(result) => {
+            setShowCreateMailbox(false);
+            setCreateResult(result);
+            fetchMailUsers();
+          }}
+        />
+      )}
+
+      {/* ─── 기존 WorkMail 계정 → 앱 User 연결 모달 ─── */}
+      {linkTarget && (
+        <LinkMailboxModal
+          target={linkTarget}
+          onClose={() => setLinkTarget(null)}
+          onLinked={() => {
+            setLinkTarget(null);
+            fetchMailUsers();
+          }}
+        />
+      )}
+
+      {/* ─── 생성 결과 (임시 비번 노출) 모달 ─── */}
+      {createResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCreateResult(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-3">
+              <Check size={20} className="text-green-600" />
+              <h3 className="font-bold text-gray-800 dark:text-gray-100">메일박스 생성 완료</h3>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="text-xs text-gray-500 dark:text-gray-400">이메일</label>
+                <div className="font-mono text-gray-800 dark:text-gray-200">{createResult.email}</div>
+              </div>
+              {createResult.temporaryPassword && (
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">임시 비밀번호 (1회만 표시)</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-gray-100 dark:bg-slate-900 px-3 py-2 rounded-lg font-mono text-sm text-gray-800 dark:text-gray-200 break-all">
+                      {createResult.temporaryPassword}
+                    </code>
+                    <button
+                      onClick={copyTempPassword}
+                      className="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 hover:bg-primary-200"
+                      title="복사"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-2 flex items-start gap-1">
+                    <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+                    {createResult.hint || '이 비밀번호는 이 창을 닫으면 다시 볼 수 없습니다. 안전한 곳에 저장하세요.'}
+                  </p>
+                </div>
+              )}
+              {createResult.mailAccountId && (
+                <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400">
+                  <Link2 size={12} /> 앱 사용자와 연결됨 — 로그인 시 메일 바로 사용 가능
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end mt-5">
+              <button onClick={() => setCreateResult(null)} className="btn-primary">
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════
+   메일박스 생성 모달
+   ═══════════════════════════════════ */
+function CreateMailboxModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (result: CreateMailboxResult) => void;
+}) {
+  const [form, setForm] = useState({
+    username: '',
+    displayName: '',
+    firstName: '',
+    lastName: '',
+    linkUserId: '',
+    customPassword: '',
+    useAutoPassword: true,
+    hiddenFromGAL: false,
+  });
+  const [linkable, setLinkable] = useState<LinkableUser[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get('/admin/mail/linkable-users').then(({ data }) => setLinkable(data.data || []));
+  }, []);
+
+  // 연결 유저 선택 시 자동 채우기
+  const handleLinkUser = (userId: string) => {
+    const u = linkable.find((x) => x.id === userId);
+    setForm((f) => ({
+      ...f,
+      linkUserId: userId,
+      displayName: u?.name || f.displayName,
+      // 이메일 로컬파트 자동 추출 (예: hong@kscorp.kr → hong)
+      username: u?.email ? u.email.split('@')[0].toLowerCase() : f.username,
+    }));
+  };
+
+  const validate = (): string | null => {
+    if (!/^[a-z0-9._-]{1,64}$/.test(form.username)) {
+      return '사용자명은 영소문자/숫자/./_/- 만 허용됩니다 (최대 64자)';
+    }
+    if (!form.displayName.trim()) return '표시명을 입력하세요';
+    if (!form.useAutoPassword) {
+      if (form.customPassword.length < 8) return '비밀번호는 8자 이상이어야 합니다';
+    }
+    return null;
+  };
+
+  const handleSubmit = async () => {
+    const err = validate();
+    if (err) { setError(err); return; }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        username: form.username,
+        displayName: form.displayName,
+        hiddenFromGAL: form.hiddenFromGAL,
+      };
+      if (form.firstName) body.firstName = form.firstName;
+      if (form.lastName) body.lastName = form.lastName;
+      if (form.linkUserId) body.linkUserId = form.linkUserId;
+      if (!form.useAutoPassword && form.customPassword) body.password = form.customPassword;
+
+      const { data } = await api.post('/admin/mail/workmail/users', body);
+      onCreated(data.data);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || '생성 실패');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <Mail size={18} className="text-primary-600" />
+            <h3 className="font-bold text-gray-800 dark:text-gray-100">메일박스 생성</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {/* 기존 User 연결 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              연결할 사용자 (선택)
+            </label>
+            <select
+              value={form.linkUserId}
+              onChange={(e) => handleLinkUser(e.target.value)}
+              className="input-field w-full"
+            >
+              <option value="">연결 안 함 (외부 용도)</option>
+              {linkable.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.employeeId}) {u.department ? `— ${u.department.name}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              선택하면 해당 직원이 로그인 시 메일을 바로 사용할 수 있습니다. 비밀번호도 앱에 자동 저장됩니다.
+            </p>
+          </div>
+
+          {/* 기본 정보 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">사용자명 *</label>
+              <input
+                type="text"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
+                className="input-field w-full"
+                placeholder="hong"
+              />
+              <p className="text-xs text-gray-400 mt-0.5">{form.username || 'hong'}@ks-corporation.co.kr</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">표시명 *</label>
+              <input
+                type="text"
+                value={form.displayName}
+                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                className="input-field w-full"
+                placeholder="홍길동"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">성 (선택)</label>
+              <input
+                type="text"
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                className="input-field w-full"
+                placeholder="홍"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이름 (선택)</label>
+              <input
+                type="text"
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                className="input-field w-full"
+                placeholder="길동"
+              />
+            </div>
+          </div>
+
+          {/* 비밀번호 옵션 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">비밀번호</label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={form.useAutoPassword}
+                  onChange={() => setForm({ ...form, useAutoPassword: true })}
+                />
+                <span className="text-sm">자동 생성 (권장 — 20자 강력한 비밀번호)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={!form.useAutoPassword}
+                  onChange={() => setForm({ ...form, useAutoPassword: false })}
+                />
+                <span className="text-sm">직접 입력</span>
+              </label>
+              {!form.useAutoPassword && (
+                <input
+                  type="text"
+                  value={form.customPassword}
+                  onChange={(e) => setForm({ ...form, customPassword: e.target.value })}
+                  placeholder="8자 이상"
+                  className="input-field w-full"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 옵션 */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.hiddenFromGAL}
+              onChange={(e) => setForm({ ...form, hiddenFromGAL: e.target.checked })}
+            />
+            <span className="text-sm text-gray-700 dark:text-gray-300">전체 주소록에서 숨김</span>
+          </label>
+
+          {error && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-gray-100 dark:border-slate-700 flex justify-end gap-2">
+          <button onClick={onClose} className="btn-secondary" disabled={submitting}>
+            취소
+          </button>
+          <button onClick={handleSubmit} className="btn-primary" disabled={submitting}>
+            {submitting ? '생성 중...' : '메일박스 생성'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════
+   기존 WorkMail 계정 → 앱 User 연결 모달 (방법 A)
+   ═══════════════════════════════════ */
+function LinkMailboxModal({
+  target,
+  onClose,
+  onLinked,
+}: {
+  target: WorkMailUser;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const [linkable, setLinkable] = useState<LinkableUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get('/admin/mail/linkable-users').then(({ data }) => setLinkable(data.data || []));
+  }, []);
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!selectedUserId) { setError('연결할 앱 사용자를 선택하세요'); return; }
+    if (!password.trim()) { setError('현재 WorkMail 비밀번호를 입력하세요'); return; }
+
+    setSubmitting(true);
+    try {
+      await api.post('/admin/mail/workmail/link', {
+        userId: selectedUserId,
+        workmailUserId: target.userId,
+        password: password.trim(),
+      });
+      onLinked();
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || '연결 실패');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedUser = linkable.find((u) => u.id === selectedUserId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <Link2 size={18} className="text-primary-600" />
+            <h3 className="font-bold text-gray-800 dark:text-gray-100">앱 사용자와 연결</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* 대상 메일 정보 */}
+          <div className="rounded-xl bg-gray-50 dark:bg-slate-900/40 px-3 py-2.5">
+            <div className="text-xs text-gray-500 dark:text-gray-400">연결할 메일박스</div>
+            <div className="font-mono text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+              {target.email || '—'}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {target.displayName}
+            </div>
+          </div>
+
+          {/* 연결할 앱 사용자 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              연결할 앱 사용자 <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="input-field w-full"
+            >
+              <option value="">선택하세요</option>
+              {linkable.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.employeeId}) {u.department ? `— ${u.department.name}` : ''}
+                </option>
+              ))}
+            </select>
+            {selectedUser && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                계정 이메일: {selectedUser.email}
+              </p>
+            )}
+          </div>
+
+          {/* 현재 비밀번호 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              현재 WorkMail 비밀번호 <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="SOGo 웹메일 로그인 시 사용하는 비밀번호"
+                className="input-field w-full pr-10"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+              비밀번호는 AES-256-GCM으로 암호화되어 DB에 저장됩니다. 저장 후에는 복호화 키가 있어야만 복원 가능합니다.
+            </p>
+          </div>
+
+          {/* 경고 */}
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
+            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+            <div className="text-xs">
+              비밀번호가 틀리면 앱에서 IMAP/SMTP 연결이 실패합니다. 비밀번호를 모를 때는
+              먼저 <b>⋮ → 비밀번호 재설정</b>으로 새 비번을 만든 후 다시 이 창에서 연결하세요.
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-gray-100 dark:border-slate-700 flex justify-end gap-2">
+          <button onClick={onClose} className="btn-secondary" disabled={submitting}>
+            취소
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="btn-primary flex items-center gap-1.5"
+            disabled={submitting || !selectedUserId || !password.trim()}
+          >
+            {submitting ? <RefreshCw size={14} className="animate-spin" /> : <Link2 size={14} />}
+            {submitting ? '연결 중...' : '연결하기'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { api } from '../services/api';
+import { useMailRealtime } from '../store/mailRealtime';
 import { Responsive, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem } from 'react-grid-layout';
 type Layouts = Record<string, LayoutItem[]>;
@@ -40,6 +42,7 @@ const WIDGET_DEFS: WidgetDef[] = [
   { id: 'approval',   title: '전자결재',    icon: FileCheck,     iconColor: 'text-primary-600', minW: 3, minH: 3, defaultW: 5, defaultH: 5 },
   { id: 'taskorders', title: '작업지시서',  icon: ClipboardList, iconColor: 'text-amber-500',   minW: 3, minH: 3, defaultW: 5, defaultH: 5 },
   { id: 'board',      title: '최근 게시글', icon: Newspaper,     iconColor: 'text-rose-400',    minW: 3, minH: 3, defaultW: 5, defaultH: 4 },
+  { id: 'mail',       title: '받은 메일',   icon: Mail,          iconColor: 'text-sky-500',     minW: 3, minH: 3, defaultW: 5, defaultH: 4 },
   { id: 'attendance', title: '근무 체크',   icon: Clock,         iconColor: 'text-primary-500', minW: 2, minH: 3, defaultW: 3, defaultH: 5 },
   { id: 'memo',       title: '메모',        icon: Pencil,        iconColor: 'text-primary-400', minW: 2, minH: 2, defaultW: 3, defaultH: 3 },
   { id: 'cctv',       title: 'CCTV',        icon: Camera,        iconColor: 'text-slate-600',   minW: 2, minH: 3, defaultW: 3, defaultH: 4 },
@@ -55,6 +58,7 @@ function getDefaultLayouts(): Layouts {
     { i: 'approval',   x: 4,  y: 0,  w: 5, h: 5 },
     { i: 'taskorders', x: 4,  y: 5,  w: 5, h: 5 },
     { i: 'board',      x: 4,  y: 10, w: 5, h: 4 },
+    { i: 'mail',       x: 4,  y: 14, w: 5, h: 4 },
     { i: 'attendance', x: 9,  y: 0,  w: 3, h: 5 },
     { i: 'memo',       x: 9,  y: 5,  w: 3, h: 3 },
     { i: 'cctv',       x: 9,  y: 8,  w: 3, h: 4 },
@@ -138,7 +142,7 @@ function MiniCalendar() {
 /* ══════════════════════════════════════════
    위젯 콘텐츠 렌더러
    ══════════════════════════════════════════ */
-function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setCheckedIn }: any) {
+function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setCheckedIn, mailItems, mailError, mailLoading, mailTotal, onMailRefresh }: any) {
   const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   const dateStr = now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
@@ -238,6 +242,79 @@ function WidgetContent({ id, navigate, user, now, memo, setMemo, checkedIn, setC
         </div>
       );
 
+    case 'mail':
+      return (
+        <div className="space-y-1">
+          {mailError === '계정 미연결' ? (
+            <div className="text-center py-5 text-gray-400 dark:text-gray-500">
+              <Mail size={24} className="mx-auto mb-2 opacity-40" />
+              <p className="text-xs">메일 계정이 연결되지 않았습니다</p>
+              <p className="text-[11px] opacity-70 mt-1">관리자에게 문의하세요</p>
+            </div>
+          ) : mailError ? (
+            <div className="text-center py-5 text-gray-400 dark:text-gray-500">
+              <Mail size={24} className="mx-auto mb-2 opacity-40" />
+              <p className="text-xs">{mailError}</p>
+              <button
+                onClick={onMailRefresh}
+                className="mt-2 text-[11px] text-primary-600 hover:underline"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : mailLoading && mailItems.length === 0 ? (
+            <div className="text-center py-5 text-gray-300 dark:text-gray-600 text-xs">
+              불러오는 중...
+            </div>
+          ) : mailItems.length === 0 ? (
+            <div className="text-center py-5 text-gray-300 dark:text-gray-600">
+              <Mail size={24} className="mx-auto mb-2" />
+              <p className="text-xs">받은 메일이 없습니다</p>
+            </div>
+          ) : (
+            <>
+              {(mailItems as Array<{ uid: string; subject: string; fromEmail: string; fromName?: string; sentAt: string; isSeen: boolean; isFlagged: boolean }>).map((m) => {
+                const dt = new Date(m.sentAt);
+                const today = new Date();
+                const when = dt.toDateString() === today.toDateString()
+                  ? dt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+                  : dt.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+                return (
+                  <button
+                    key={m.uid}
+                    onClick={() => navigate('/mail')}
+                    className={`w-full flex items-start gap-2 px-2 py-1.5 rounded-lg transition-colors text-left
+                      ${!m.isSeen
+                        ? 'bg-sky-50/40 dark:bg-sky-900/10 hover:bg-sky-50 dark:hover:bg-sky-900/20'
+                        : 'hover:bg-gray-50 dark:hover:bg-slate-700/40'}`}
+                  >
+                    {!m.isSeen && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mt-1.5 flex-shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs truncate ${!m.isSeen ? 'font-bold text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`}>
+                          {m.fromName || m.fromEmail}
+                        </span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">{when}</span>
+                      </div>
+                      <p className={`text-xs truncate ${!m.isSeen ? 'text-gray-800 dark:text-gray-200 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {m.subject || '(제목 없음)'}
+                      </p>
+                    </div>
+                    {m.isFlagged && <span className="text-yellow-400 text-xs flex-shrink-0">★</span>}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => navigate('/mail')}
+                className="w-full mt-2 flex items-center justify-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline py-1"
+              >
+                전체 보기 ({mailTotal}) <ArrowRight size={11} />
+              </button>
+            </>
+          )}
+        </div>
+      );
+
     case 'attendance':
       return (
         <>
@@ -298,6 +375,55 @@ export default function DashboardPage() {
   const now = useClock();
   const [memo, setMemo] = useState('');
   const [checkedIn, setCheckedIn] = useState(false);
+
+  // 메일 위젯 상태
+  const [mailItems, setMailItems] = useState<Array<{
+    uid: string;
+    subject: string;
+    fromEmail: string;
+    fromName?: string;
+    sentAt: string;
+    isSeen: boolean;
+    isFlagged: boolean;
+    hasAttachment: boolean;
+  }>>([]);
+  const [mailError, setMailError] = useState<string | null>(null);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailTotal, setMailTotal] = useState(0);
+
+  const fetchMailWidget = useCallback(async () => {
+    setMailLoading(true);
+    setMailError(null);
+    try {
+      // 캐시 우선 (즉시 응답) — 없으면 실시간
+      const { data } = await api.get('/mail/messages', { params: { folder: 'INBOX', limit: 5 } });
+      setMailItems(data.data || []);
+      setMailTotal(data.meta?.total ?? 0);
+    } catch (err: any) {
+      const code = err?.response?.data?.error?.code;
+      if (code === 'MAIL_ACCOUNT_NOT_LINKED') {
+        setMailError('계정 미연결');
+      } else {
+        setMailError('메일을 불러올 수 없습니다');
+      }
+      setMailItems([]);
+    } finally {
+      setMailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMailWidget();
+    // 5분마다 자동 새로고침 (fallback — 소켓 끊겼을 때)
+    const iv = setInterval(fetchMailWidget, 5 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [fetchMailWidget]);
+
+  // 실시간 소켓 이벤트 → 위젯 즉시 refetch
+  const mailLastEvent = useMailRealtime((s) => s.lastMailEvent);
+  useEffect(() => {
+    if (mailLastEvent > 0) fetchMailWidget();
+  }, [mailLastEvent, fetchMailWidget]);
   const [editing, setEditing] = useState(false);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); } catch { return []; }
@@ -515,6 +641,11 @@ export default function DashboardPage() {
                     setMemo={setMemo}
                     checkedIn={checkedIn}
                     setCheckedIn={setCheckedIn}
+                    mailItems={mailItems}
+                    mailError={mailError}
+                    mailLoading={mailLoading}
+                    mailTotal={mailTotal}
+                    onMailRefresh={fetchMailWidget}
                   />
                 </div>
               )}

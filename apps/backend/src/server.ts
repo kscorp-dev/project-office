@@ -36,6 +36,7 @@ import mailRoutes from './routes/mail.routes';
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
 import { setupMeetingSocket } from './websocket/meeting';
+import { setupMailSocket } from './websocket/mail';
 
 const app = express();
 const httpServer = createServer(app);
@@ -138,11 +139,14 @@ app.use(errorHandler);
 // WebSocket
 setupMessengerSocket(io);
 setupMeetingSocket(io);
+setupMailSocket(io);
 
 // Socket.IO 인스턴스를 app에 저장 (라우트에서 접근 가능)
 app.set('io', io);
 
-import { startMailSyncScheduler } from './workers/mailSync.worker';
+import { startMailSyncScheduler, runMailSyncOnce } from './workers/mailSync.worker';
+import { startAllMailIdle, stopAllMailIdle } from './workers/mailIdle.worker';
+import { shutdownMailPool } from './services/mail.service';
 
 httpServer.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
@@ -153,7 +157,28 @@ httpServer.listen(config.port, () => {
   // 환경변수 DISABLE_MAIL_SYNC=1이면 비활성화 (테스트/CI용)
   if (process.env.DISABLE_MAIL_SYNC !== '1') {
     startMailSyncScheduler();
+    // 서버 기동 후 즉시 1회 실행 → 캐시를 빠르게 채움 (2초 지연 후 비동기)
+    setTimeout(() => {
+      runMailSyncOnce().catch((err) => logger.warn({ err: (err as Error).message }, 'Initial mail sync failed'));
+    }, 2000);
+  }
+
+  // IMAP IDLE 실시간 감시 시작 (DISABLE_MAIL_IDLE=1이면 비활성화)
+  if (process.env.DISABLE_MAIL_IDLE !== '1') {
+    setTimeout(() => {
+      startAllMailIdle().catch((err) => logger.warn({ err: (err as Error).message }, 'Initial mail idle start failed'));
+    }, 3000);
   }
 });
+
+// Graceful shutdown — IMAP 풀 + IDLE 워커 정리
+const shutdown = async (signal: string) => {
+  logger.info({ signal }, 'Shutdown requested');
+  await Promise.allSettled([stopAllMailIdle(), shutdownMailPool()]);
+  httpServer.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 export { app, io };

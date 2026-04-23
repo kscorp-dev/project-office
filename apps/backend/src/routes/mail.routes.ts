@@ -72,7 +72,11 @@ router.get('/folders', async (req: Request, res: Response) => {
   res.json({ success: true, data: folders });
 });
 
-/* ────────── 메일 목록 ────────── */
+/* ────────── 메일 목록 ──────────
+ * 기본 동작: DB 캐시 우선 응답 (수 ms) + 백그라운드에서 IMAP 갱신 (비동기)
+ * ?refresh=1: IMAP 동기 호출 → 최신 결과 반환 + 캐시 업데이트
+ * ?search=...: 캐시 스킵, 항상 IMAP 실시간 검색
+ */
 
 router.get('/messages', async (req: Request, res: Response) => {
   const folder = qsOpt(req.query.folder) || 'INBOX';
@@ -81,25 +85,143 @@ router.get('/messages', async (req: Request, res: Response) => {
     maxLimit: 100,
   });
   const search = qsOpt(req.query.search);
+  const forceRefresh = qsOpt(req.query.refresh) === '1';
 
+  const userId = req.user!.id;
   const svc = getMailService();
-  const { items, total } = await svc.listMessages(req.user!.id, {
-    folder,
-    page: pagination.page,
-    limit: pagination.limit,
-    search,
-  });
 
+  // 검색은 항상 IMAP 실시간
+  if (search) {
+    const { items, total } = await svc.listMessages(userId, {
+      folder, page: pagination.page, limit: pagination.limit, search,
+    });
+    res.json({
+      success: true, data: items,
+      meta: {
+        total, page: pagination.page, limit: pagination.limit,
+        totalPages: Math.max(1, Math.ceil(total / pagination.limit)),
+        source: 'imap',
+      },
+    });
+    return;
+  }
+
+  // 강제 새로고침: 동기 IMAP 호출
+  if (forceRefresh) {
+    const { items, total } = await svc.listMessages(userId, {
+      folder, page: pagination.page, limit: pagination.limit,
+    });
+    res.json({
+      success: true, data: items,
+      meta: {
+        total, page: pagination.page, limit: pagination.limit,
+        totalPages: Math.max(1, Math.ceil(total / pagination.limit)),
+        source: 'imap',
+      },
+    });
+    return;
+  }
+
+  // 기본: 캐시 반환 + 백그라운드 refresh
+  const acc = await prisma.mailAccount.findUnique({ where: { userId } });
+  if (!acc) throw new AppError(404, 'MAIL_ACCOUNT_NOT_LINKED', '메일 계정이 연결되지 않았습니다');
+
+  const [cacheItems, cacheTotal] = await Promise.all([
+    prisma.mailMessageCache.findMany({
+      where: { accountId: acc.id, folder },
+      orderBy: { sentAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.limit,
+    }),
+    prisma.mailMessageCache.count({ where: { accountId: acc.id, folder } }),
+  ]);
+
+  // 캐시가 비어있으면 동기 IMAP (첫 진입 경험)
+  if (cacheItems.length === 0 && pagination.page === 1) {
+    try {
+      const { items, total } = await svc.listMessages(userId, { folder, page: 1, limit: pagination.limit });
+      res.json({
+        success: true, data: items,
+        meta: {
+          total, page: 1, limit: pagination.limit,
+          totalPages: Math.max(1, Math.ceil(total / pagination.limit)),
+          source: 'imap',
+        },
+      });
+      return;
+    } catch (err) {
+      // IMAP 실패 시에도 빈 배열 반환 (사용자 경험 유지)
+      res.json({ success: true, data: [], meta: { total: 0, page: 1, limit: pagination.limit, totalPages: 1, source: 'empty' } });
+      return;
+    }
+  }
+
+  // 캐시 있으면 즉시 응답 + 백그라운드 refresh
   res.json({
     success: true,
-    data: items,
+    data: cacheItems.map((m) => ({
+      uid: m.uid.toString(),
+      messageId: m.messageId,
+      subject: m.subject,
+      fromEmail: m.fromEmail,
+      fromName: m.fromName,
+      to: m.toJson,
+      cc: m.ccJson,
+      snippet: m.snippet,
+      sentAt: m.sentAt.toISOString(),
+      isSeen: m.isSeen,
+      isFlagged: m.isFlagged,
+      hasAttachment: m.hasAttachment,
+      size: m.size,
+    })),
     meta: {
-      total,
+      total: cacheTotal,
       page: pagination.page,
       limit: pagination.limit,
-      totalPages: Math.max(1, Math.ceil(total / pagination.limit)),
+      totalPages: Math.max(1, Math.ceil(cacheTotal / pagination.limit)),
+      source: 'cache',
+      cachedAt: acc.lastSyncAt,
     },
   });
+
+  // 백그라운드 갱신 (응답 반환 후 실행, 클라이언트는 대기 안 함)
+  svc.listMessages(userId, { folder, page: pagination.page, limit: pagination.limit })
+    .then(async (fresh) => {
+      // mailMessageCache upsert (헤더 최신화)
+      const ops = fresh.items.map((m) =>
+        prisma.mailMessageCache.upsert({
+          where: { accountId_folder_uid: { accountId: acc.id, folder, uid: BigInt(m.uid) } },
+          update: {
+            isSeen: m.isSeen,
+            isFlagged: m.isFlagged,
+            cachedAt: new Date(),
+          },
+          create: {
+            accountId: acc.id,
+            folder,
+            uid: BigInt(m.uid),
+            messageId: m.messageId || `nomsgid-${m.uid}`,
+            subject: m.subject || null,
+            fromEmail: m.fromEmail,
+            fromName: m.fromName || null,
+            toJson: m.to as any,
+            ccJson: (m.cc as any) ?? undefined,
+            snippet: m.snippet || null,
+            sentAt: new Date(m.sentAt),
+            isSeen: m.isSeen,
+            isFlagged: m.isFlagged,
+            hasAttachment: m.hasAttachment,
+            size: m.size,
+          },
+        }),
+      );
+      await Promise.allSettled(ops);
+      await prisma.mailAccount.update({
+        where: { id: acc.id },
+        data: { lastSyncAt: new Date(), lastSyncError: null },
+      });
+    })
+    .catch(() => { /* 백그라운드 실패 조용히 무시 */ });
 });
 
 /* ────────── 메일 상세 ────────── */
