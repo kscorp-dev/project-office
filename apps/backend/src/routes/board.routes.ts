@@ -6,6 +6,7 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('board'));
@@ -19,7 +20,8 @@ router.get('/boards', authenticate, async (_req, res: Response) => {
       orderBy: { sortOrder: 'asc' },
     });
     res.json({ success: true, data: boards });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -36,7 +38,8 @@ router.post('/boards', authenticate, authorize('super_admin', 'admin'), async (r
       },
     });
     res.status(201).json({ success: true, data: board });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -80,7 +83,8 @@ router.get('/boards/:boardId/posts', authenticate, async (req: Request, res: Res
     ]);
 
     res.json({ success: true, data: posts, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -126,7 +130,8 @@ router.get('/posts/:id', authenticate, async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, data: post });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -161,7 +166,8 @@ router.post('/boards/:boardId/posts', authenticate, validate(postSchema), async 
     });
 
     res.status(201).json({ success: true, data: post });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -199,7 +205,8 @@ router.patch('/posts/:id', authenticate, async (req: Request, res: Response) => 
 
     const updated = await prisma.post.findUnique({ where: { id: postId } });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -228,7 +235,8 @@ router.delete('/posts/:id', authenticate, async (req: Request, res: Response) =>
     }
 
     res.json({ success: true, data: { message: '게시글이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -255,7 +263,8 @@ router.post('/posts/:postId/comments', authenticate, validate(commentSchema), as
       },
     });
     res.status(201).json({ success: true, data: comment });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -275,7 +284,8 @@ router.delete('/comments/:id', authenticate, async (req: Request, res: Response)
 
     await prisma.comment.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '댓글이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

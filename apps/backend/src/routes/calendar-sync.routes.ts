@@ -78,7 +78,8 @@ router.get('/subscriptions', authenticate, async (req: Request, res: Response) =
       success: true,
       data: rows.map((r) => ({ ...r, feedUrl: buildFeedUrl(req, r.token) })),
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -245,7 +246,8 @@ router.get('/google/status', authenticate, async (req: Request, res: Response) =
         ...status,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -273,7 +275,8 @@ router.delete('/google', authenticate, async (req: Request, res: Response) => {
   try {
     await disconnectGoogle(req.user!.id);
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

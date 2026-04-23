@@ -81,7 +81,8 @@ async function syncFolder(client: ImapFlow, accountId: string, folder: string): 
   let lock;
   try {
     lock = await client.getMailboxLock(folder);
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     return 0; // 폴더 없으면 스킵
   }
 

@@ -41,7 +41,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         totalPages: Math.ceil(result.total / result.limit),
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -51,7 +52,8 @@ router.get('/unread-count', authenticate, async (req: Request, res: Response) =>
   try {
     const count = await countUnread(req.user!.id);
     res.json({ success: true, data: { count } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -68,7 +70,8 @@ router.patch('/:id/read', authenticate, async (req: Request, res: Response) => {
       return;
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -78,7 +81,8 @@ router.post('/mark-all-read', authenticate, async (req: Request, res: Response) 
   try {
     const count = await markAllAsRead(req.user!.id);
     res.json({ success: true, data: { updated: count } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -122,7 +126,8 @@ router.delete('/devices/:deviceId', authenticate, async (req: Request, res: Resp
   try {
     await unregisterPushToken(req.user!.id, qs(req.params.deviceId));
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

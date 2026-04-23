@@ -43,7 +43,8 @@ function tryLoadPrettyTransport(): boolean {
   try {
     require.resolve('pino-pretty');
     return true;
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     return false;
   }
 }

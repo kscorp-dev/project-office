@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { qs, qsOpt } from '../utils/query';
 import { wouldCreateCycle as checkCycle } from '../utils/departmentTree';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -41,7 +42,8 @@ router.get('/', authenticate, async (_req: Request, res: Response) => {
     // 트리 구조로 변환
     const tree = buildTree(departments);
     res.json({ success: true, data: tree });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -55,7 +57,8 @@ router.get('/flat', authenticate, async (_req: Request, res: Response) => {
       orderBy: [{ depth: 'asc' }, { sortOrder: 'asc' }],
     });
     res.json({ success: true, data: departments });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -83,7 +86,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: dept });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -116,7 +120,8 @@ router.post('/', authenticate, authorize('super_admin', 'admin'), validate(creat
 
     await createAuditLog({ req, action: 'department_create', resourceType: 'department', resourceId: dept.id });
     res.status(201).json({ success: true, data: dept });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -187,7 +192,8 @@ router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(u
 
     await createAuditLog({ req, action: 'department_update', resourceType: 'department', resourceId: updated.id });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -222,7 +228,8 @@ router.delete('/:id', authenticate, authorize('super_admin', 'admin'), async (re
 
     await createAuditLog({ req, action: 'department_delete', resourceType: 'department', resourceId: qs(req.params.id) });
     res.json({ success: true, data: { message: '부서가 비활성화되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });

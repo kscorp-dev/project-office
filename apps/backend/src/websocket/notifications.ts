@@ -31,7 +31,8 @@ export function setupNotificationSocket(io: SocketIOServer): Namespace {
       const decoded = jwt.verify(token, config.jwt.accessSecret) as JwtPayload;
       (socket as NotifSocket).data.user = decoded;
       next();
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       next(new Error('INVALID_TOKEN'));
     }
   });

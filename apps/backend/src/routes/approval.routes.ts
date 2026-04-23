@@ -15,6 +15,7 @@ import { AppError } from '../services/auth.service';
 import { qs, qsOpt } from '../utils/query';
 import { config } from '../config';
 import { approvalFileFilter } from '../utils/fileFilter';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('approval'));
@@ -29,7 +30,8 @@ router.get('/templates', authenticate, async (_req: Request, res: Response) => {
       orderBy: { sortOrder: 'asc' },
     });
     res.json({ success: true, data: templates });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -77,7 +79,8 @@ router.get('/documents', authenticate, async (req: Request, res: Response) => {
 
     const result = await approvalService.getDocuments(req.user!.id, box, page, limit);
     res.json({ success: true, data: result.documents, meta: result.meta });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -172,7 +175,8 @@ router.get('/count', authenticate, async (req: Request, res: Response) => {
       },
     });
     res.json({ success: true, data: { pending: pendingCount } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -322,7 +326,8 @@ router.get('/documents/:id/attachments', authenticate, async (req: Request, res:
       orderBy: { createdAt: 'asc' },
     });
     res.json({ success: true, data: rows });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -361,7 +366,8 @@ router.get('/documents/:id/attachments/:attId/file', authenticate, async (req: R
       `attachment; filename*=UTF-8''${encodeURIComponent(att.fileName)}`,
     );
     res.sendFile(absPath);
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -396,7 +402,8 @@ router.delete('/documents/:id/attachments/:attId', authenticate, async (req: Req
     await prisma.approvalAttachment.delete({ where: { id: attId } });
     await createAuditLog({ req, action: 'approval_attachment_delete', resourceType: 'approval', resourceId: documentId });
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

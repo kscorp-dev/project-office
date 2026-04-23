@@ -6,6 +6,7 @@ import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('inventory'));
@@ -25,7 +26,8 @@ router.get('/categories', authenticate, async (_req, res: Response) => {
       orderBy: { sortOrder: 'asc' },
     });
     res.json({ success: true, data: categories });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -40,7 +42,8 @@ router.post('/categories', authenticate, authorize('super_admin', 'admin', 'dept
       },
     });
     res.status(201).json({ success: true, data: category });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -109,7 +112,8 @@ router.get('/items', authenticate, async (req: Request, res: Response) => {
       data: filteredItems,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -135,7 +139,8 @@ router.get('/items/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
     res.json({ success: true, data: item });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -154,7 +159,8 @@ router.post('/items', authenticate, authorize('super_admin', 'admin', 'dept_admi
       include: { category: { select: { id: true, name: true } } },
     });
     res.status(201).json({ success: true, data: item });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -167,7 +173,8 @@ router.patch('/items/:id', authenticate, authorize('super_admin', 'admin', 'dept
       data: req.body,
     });
     res.json({ success: true, data: item });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -177,7 +184,8 @@ router.delete('/items/:id', authenticate, authorize('super_admin', 'admin'), asy
   try {
     await prisma.inventoryItem.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     res.json({ success: true, data: { message: '자재가 비활성화되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -293,7 +301,8 @@ router.get('/transactions', authenticate, async (req: Request, res: Response) =>
     ]);
 
     res.json({ success: true, data: transactions, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -332,7 +341,8 @@ router.get('/stats/summary', authenticate, async (_req, res: Response) => {
         todayTransactions: todayTx,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -420,7 +430,8 @@ router.get('/stats/stock-trend', authenticate, async (req: Request, res: Respons
       success: true,
       data: { labels, series: series.slice(0, 10) },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

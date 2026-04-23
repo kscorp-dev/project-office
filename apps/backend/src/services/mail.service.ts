@@ -13,6 +13,7 @@ import sanitizeHtml from 'sanitize-html';
 import prisma from '../config/prisma';
 import { decryptMailPassword } from '../utils/mailCrypto';
 import { AppError } from './auth.service';
+import { logger } from '../config/logger';
 
 /* ───────────────────────── 타입 ───────────────────────── */
 
@@ -383,7 +384,8 @@ export class MailService {
           total: status.messages ?? 0,
           unseen: status.unseen ?? 0,
         });
-      } catch {
+      } catch (err) {
+        logger.warn({ err }, 'Internal error');
         // 특정 폴더 status 실패는 무시 (권한 등)
       }
     }

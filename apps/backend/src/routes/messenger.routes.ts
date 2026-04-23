@@ -13,6 +13,7 @@ import { config } from '../config';
 import { AppError } from '../services/auth.service';
 import { qs, qsOpt } from '../utils/query';
 import { messengerFileFilter } from '../utils/fileFilter';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('messenger'));
@@ -91,7 +92,8 @@ router.get('/rooms', authenticate, async (req: Request, res: Response) => {
     }));
 
     res.json({ success: true, data: roomsWithUnread });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -142,7 +144,8 @@ router.post('/rooms', authenticate, validate(createRoomSchema), async (req: Requ
     });
 
     res.status(201).json({ success: true, data: room });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -189,7 +192,8 @@ router.get('/rooms/:id/messages', authenticate, async (req: Request, res: Respon
       data: messages.reverse(),
       meta: { hasMore: messages.length === limit },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -246,7 +250,8 @@ router.post('/rooms/:id/messages', authenticate, validate(sendMessageSchema), as
     });
 
     res.status(201).json({ success: true, data: message });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -336,7 +341,8 @@ router.get('/unread', authenticate, async (req: Request, res: Response) => {
     `;
     const totalUnread = Number(result[0]?.total ?? 0);
     res.json({ success: true, data: { unread: totalUnread } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -410,7 +416,8 @@ router.patch(
       }
 
       res.json({ success: true, data: updated });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -459,7 +466,8 @@ router.delete('/rooms/:roomId/messages/:msgId', authenticate, async (req: Reques
     }
 
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

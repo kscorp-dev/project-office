@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
+import { logger } from '../config/logger';
 
 /**
  * Origin/Referer 기반 CSRF 방어 (depth-in-defense)
@@ -29,7 +30,8 @@ function normalizeOrigin(url: string | undefined): string | null {
   try {
     const u = new URL(url);
     return `${u.protocol}//${u.host}`;
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     return null;
   }
 }

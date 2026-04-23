@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import prisma from '../config/prisma';
 import { JwtPayload } from '../middleware/authenticate';
+import { logger } from '../config/logger';
 
 interface AuthSocket extends Socket {
   data: { user: JwtPayload };
@@ -20,7 +21,8 @@ export function setupMessengerSocket(io: SocketIOServer) {
       const decoded = jwt.verify(token, config.jwt.accessSecret) as JwtPayload;
       socket.data.user = decoded;
       next();
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       next(new Error('INVALID_TOKEN'));
     }
   });

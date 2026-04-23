@@ -8,6 +8,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -21,7 +22,8 @@ router.get('/', async (_req: Request, res: Response) => {
       select: { name: true, isEnabled: true },
     });
     res.json({ success: true, data: modules });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

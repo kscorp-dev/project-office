@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/authenticate';
 import { validate } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { config } from '../config';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -108,7 +109,8 @@ router.post('/logout', authenticate, async (req: Request, res: Response) => {
     await authService.logout(req.user!.id, req.body.refreshToken);
     await createAuditLog({ req, action: 'logout' });
     res.json({ success: true, data: { message: '로그아웃 되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -141,7 +143,8 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
       },
     }));
     res.json({ success: true, data: user });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -243,7 +246,8 @@ router.post('/forgot-password', validate(forgotSchema), async (req: Request, res
   try {
     await requestPasswordReset(req.body.email);
     res.json({ success: true }); // 존재 여부 누출 방지
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.json({ success: true });
   }
 });

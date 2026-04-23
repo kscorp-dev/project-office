@@ -20,6 +20,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { validate } from '../middleware/validate';
 import { qs } from '../utils/query';
+import { logger } from '../config/logger';
 import {
   grantAnnualLeaveForUser,
   grantMonthlyLeaveForUser,
@@ -43,7 +44,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       orderBy: { date: 'asc' },
     });
     res.json({ success: true, data: rows });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -131,7 +133,8 @@ router.delete(
     try {
       await prisma.holiday.delete({ where: { id: qs(req.params.id) } });
       res.json({ success: true });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '공휴일을 찾을 수 없습니다' } });
     }
   },
@@ -163,7 +166,8 @@ router.post(
         skipDuplicates: req.body.skipDuplicates,
       });
       res.json({ success: true, data: { inserted: result.count } });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -182,7 +186,8 @@ router.post(
       const force = !!req.body.force;
       const result = await runAnnualAccrualBatch(year, { force });
       res.json({ success: true, data: result });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -197,7 +202,8 @@ router.post(
     try {
       const result = await runMonthlyAccrualBatch(new Date());
       res.json({ success: true, data: result });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -218,7 +224,8 @@ router.post(
         return;
       }
       res.json({ success: true, data: result });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },

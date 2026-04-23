@@ -9,6 +9,7 @@ import { qs, qsOpt } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { recordAttendance } from '../services/attendance.service';
 import { AppError } from '../services/auth.service';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('attendance'));
@@ -69,7 +70,8 @@ router.get('/today', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: { checkIn, checkOut, workHours } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -96,7 +98,8 @@ router.get('/monthly', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: records });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -169,7 +172,8 @@ router.get('/vacations', authenticate, async (req: Request, res: Response) => {
       data: vacations,
       meta: buildMeta(pagination, total),
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -200,7 +204,8 @@ router.patch('/vacations/:id/approve', authenticate, authorize('super_admin', 'a
     });
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -220,7 +225,8 @@ router.get('/balance', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: balance });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

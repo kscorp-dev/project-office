@@ -13,6 +13,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { config } from '../config';
+import { logger } from '../config/logger';
 
 // ── 타입 ──
 
@@ -217,7 +218,8 @@ function parseMinutesJson(raw: string): MinutesStructured {
             .filter((a: ActionItem) => a.assignee && a.task)
         : [],
     };
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     // 파싱 실패 시 빈 구조 + 원문을 summary에 넣어 사람이 수동 정리하도록
     return {
       summary: `(자동 파싱 실패 — 원문 참조)\n\n${raw.slice(0, 2000)}`,

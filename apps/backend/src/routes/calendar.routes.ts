@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('calendar'));
@@ -54,7 +55,8 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: events });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -92,7 +94,8 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
     }
 
     res.status(201).json({ success: true, data: event });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -138,7 +141,8 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
     }
 
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -160,7 +164,8 @@ router.delete('/events/:id', authenticate, async (req: Request, res: Response) =
     });
 
     res.json({ success: true, data: { message: '일정이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -194,7 +199,8 @@ router.post(
         data: { exceptionDates: next },
       });
       res.json({ success: true, data: updated });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -232,7 +238,8 @@ router.patch(
         });
       }
       res.json({ success: true });
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
     }
   },
@@ -266,7 +273,8 @@ router.get('/categories', authenticate, async (req: Request, res: Response) => {
       orderBy: [{ isDefault: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     });
     res.json({ success: true, data: rows });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -284,7 +292,8 @@ router.post('/categories', authenticate, validate(categorySchema), async (req: R
       },
     });
     res.status(201).json({ success: true, data: created });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -317,7 +326,8 @@ router.patch('/categories/:id', authenticate, validate(categorySchema.partial())
       },
     });
     res.json({ success: true, data: updated });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -343,7 +353,8 @@ router.delete('/categories/:id', authenticate, async (req: Request, res: Respons
     // 이 카테고리를 사용하는 이벤트들은 categoryId=null로 자동 (onDelete: SetNull)
     await prisma.calendarCategory.delete({ where: { id: cat.id } });
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

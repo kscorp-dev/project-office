@@ -413,7 +413,8 @@ router.get('/accounts', async (_req: Request, res: Response) => {
       },
     });
     res.json({ success: true, data: accounts });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

@@ -60,7 +60,8 @@ function parseOnvifEndpoint(rtspUrl: string, overridePort?: number): { hostname:
       hostname: url.hostname,
       port: overridePort ?? parseInt(process.env.ONVIF_DEFAULT_PORT || '80', 10),
     };
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     return { hostname: 'localhost', port: 80 };
   }
 }
@@ -75,7 +76,8 @@ function resolvePtzPassword(encryptedOrPlain: string | null): string | undefined
   if (isHexEncrypted) {
     try {
       return decryptMailPassword(encryptedOrPlain);
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Internal error');
       // 복호화 실패 시 평문으로 시도 (키가 바뀐 경우)
       return encryptedOrPlain;
     }

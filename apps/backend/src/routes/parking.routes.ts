@@ -7,6 +7,7 @@ import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { webhookAuth } from '../middleware/webhookAuth';
 import { qs, qsOpt } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 router.use(checkModule('parking'));
@@ -32,7 +33,8 @@ router.get('/zones', authenticate, async (_req, res: Response) => {
       orderBy: { createdAt: 'asc' },
     });
     res.json({ success: true, data: zones });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -41,7 +43,8 @@ router.post('/zones', authenticate, authorize('super_admin', 'admin'), validate(
   try {
     const zone = await prisma.parkingZone.create({ data: req.body });
     res.status(201).json({ success: true, data: zone });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -53,7 +56,8 @@ router.patch('/zones/:id', authenticate, authorize('super_admin', 'admin'), asyn
       data: req.body,
     });
     res.json({ success: true, data: zone });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -65,7 +69,8 @@ router.delete('/zones/:id', authenticate, authorize('super_admin', 'admin'), asy
       data: { isActive: false },
     });
     res.json({ success: true, data: { message: '구역이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -91,7 +96,8 @@ router.post('/zones/:zoneId/lines', authenticate, authorize('super_admin', 'admi
       data: { ...req.body, zoneId: qs(req.params.zoneId) },
     });
     res.status(201).json({ success: true, data: line });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -103,7 +109,8 @@ router.delete('/lines/:id', authenticate, authorize('super_admin', 'admin'), asy
       data: { isActive: false },
     });
     res.json({ success: true, data: { message: '라인이 삭제되었습니다' } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -134,7 +141,8 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, data: { events, total, limit: take, offset: skip } });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -161,7 +169,8 @@ router.post('/events/webhook', webhookAuth('PARKING_WEBHOOK_SECRET'), async (req
       },
     });
     res.status(201).json({ success: true, data: event });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
@@ -194,7 +203,8 @@ router.get('/events/stats', authenticate, async (_req, res: Response) => {
         recentEvents,
       },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

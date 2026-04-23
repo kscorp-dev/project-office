@@ -7,6 +7,7 @@ import { validate, validateQuery } from '../middleware/validate';
 import { createAuditLog } from '../middleware/auditLog';
 import { AppError } from '../services/auth.service';
 import { qs, qsOpt } from '../utils/query';
+import { logger } from '../config/logger';
 
 const router = Router();
 
@@ -77,7 +78,8 @@ router.get('/', authenticate, validateQuery(listUsersQuery), async (req: Request
       data: users,
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -101,7 +103,8 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, data: user });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
@@ -139,7 +142,8 @@ router.patch('/:id', authenticate, authorize('super_admin', 'admin'), validate(u
     });
 
     res.json({ success: true, data: user });
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다' } });
   }
 });
