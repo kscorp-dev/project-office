@@ -88,6 +88,21 @@ export const config = {
     },
   },
 
+  /** Google Calendar 양방향 동기화 (v0.18.0) */
+  google: {
+    clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+    /** OAuth callback URI — Google Cloud Console의 승인된 리디렉션 URI와 일치해야 함 */
+    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+      `${process.env.PUBLIC_BASE_URL || 'http://localhost:3000'}/api/calendar-sync/google/callback`,
+    get enabled(): boolean {
+      return (
+        (process.env.GOOGLE_OAUTH_CLIENT_ID || '').length > 0 &&
+        (process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').length > 0
+      );
+    },
+  },
+
   /** 시스템 이메일 발송 (초대 / 비밀번호 재설정 / 알림 요약) */
   systemMail: {
     host: process.env.SYSTEM_MAIL_SMTP_HOST || '',

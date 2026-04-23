@@ -32,6 +32,13 @@ import {
   renderIcsForSubscription,
   saveSubscriptionEtag,
 } from '../services/calendar-sync.service';
+import {
+  getAuthorizationUrl,
+  handleOAuthCallback,
+  disconnectGoogle,
+  pullEventsFromGoogle,
+  getSyncStatus,
+} from '../services/google-calendar.service';
 import { config } from '../config';
 
 const router = Router();
@@ -175,6 +182,97 @@ router.get('/feed/:tokenFile', feedLimiter, async (req: Request, res: Response) 
     res.send(ics);
   } catch (err) {
     res.status(500).type('text/plain').send('Internal server error');
+  }
+});
+
+// ===== Google Calendar OAuth 양방향 (v0.18.0 Phase 2) =====
+
+// GET /calendar-sync/google/auth-url — 동의 화면 URL 생성
+router.get('/google/auth-url', authenticate, (req: Request, res: Response) => {
+  try {
+    if (!config.google.enabled) {
+      res.status(503).json({
+        success: false,
+        error: {
+          code: 'GOOGLE_NOT_CONFIGURED',
+          message: '서버에 Google OAuth가 설정되지 않았습니다 (GOOGLE_OAUTH_CLIENT_ID/SECRET 필요)',
+        },
+      });
+      return;
+    }
+    const url = getAuthorizationUrl(req.user!.id);
+    res.json({ success: true, data: { url } });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+      return;
+    }
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /calendar-sync/google/callback?code=...&state=<userId>
+// 공개 엔드포인트 — state로 사용자 식별 (CSRF는 state에 HMAC 추가로 강화 가능)
+router.get('/google/callback', async (req: Request, res: Response) => {
+  try {
+    const code = qs(req.query.code);
+    const state = qs(req.query.state);
+    if (!code || !state) {
+      res.status(400).send('잘못된 요청입니다');
+      return;
+    }
+    await handleOAuthCallback(code, state);
+    // 성공 시 웹 앱의 설정 페이지로 리다이렉트
+    const webUrl = config.systemMail.webUrl || 'http://localhost:5173';
+    res.redirect(`${webUrl}/settings/calendar-sync?google=connected`);
+  } catch (err) {
+    const webUrl = config.systemMail.webUrl || 'http://localhost:5173';
+    const msg = err instanceof AppError ? err.message : '연동 실패';
+    res.redirect(`${webUrl}/settings/calendar-sync?google=error&message=${encodeURIComponent(msg)}`);
+  }
+});
+
+// GET /calendar-sync/google/status — 내 연동 상태
+router.get('/google/status', authenticate, async (req: Request, res: Response) => {
+  try {
+    const status = await getSyncStatus(req.user!.id);
+    res.json({
+      success: true,
+      data: {
+        connected: !!status && status.isActive,
+        enabled: config.google.enabled,
+        ...status,
+      },
+    });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /calendar-sync/google/sync — 수동 증분 동기화 (Google → 로컬)
+router.post('/google/sync', authenticate, async (req: Request, res: Response) => {
+  try {
+    const result = await pullEventsFromGoogle(req.user!.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+      return;
+    }
+    res.status(500).json({
+      success: false,
+      error: { code: 'SYNC_FAILED', message: (err as Error).message || '동기화 실패' },
+    });
+  }
+});
+
+// DELETE /calendar-sync/google — 연동 해제
+router.delete('/google', authenticate, async (req: Request, res: Response) => {
+  try {
+    await disconnectGoogle(req.user!.id);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
 

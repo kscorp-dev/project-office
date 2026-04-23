@@ -1,6 +1,6 @@
 {
   "name": "@project-office/mobile",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -16,6 +16,7 @@
     "axios": "^1.7.0",
     "expo": "~52.0.0",
     "expo-av": "~15.0.0",
+    "expo-calendar": "~14.0.6",
     "expo-camera": "~16.0.0",
     "expo-constants": "~17.0.8",
     "expo-local-authentication": "~15.0.0",

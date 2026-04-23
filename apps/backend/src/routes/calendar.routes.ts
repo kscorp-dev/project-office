@@ -75,6 +75,13 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
       },
     });
 
+    // Google Calendar로 push sync (비동기, 실패해도 응답 정상)
+    if (event.scope === 'personal') {
+      import('../services/google-calendar.service').then(({ pushEventToGoogle }) => {
+        pushEventToGoogle(req.user!.id, event).catch(() => {});
+      });
+    }
+
     res.status(201).json({ success: true, data: event });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -99,6 +106,14 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
         ...(endDate ? { endDate: new Date(endDate) } : {}),
       },
     });
+
+    // Google Calendar에 변경 반영 (creator의 연동이 있을 때)
+    if (updated.scope === 'personal') {
+      import('../services/google-calendar.service').then(({ pushEventToGoogle }) => {
+        pushEventToGoogle(updated.creatorId, updated).catch(() => {});
+      });
+    }
+
     res.json({ success: true, data: updated });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
@@ -115,6 +130,12 @@ router.delete('/events/:id', authenticate, async (req: Request, res: Response) =
     }
 
     await prisma.calendarEvent.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
+
+    // Google에서도 삭제
+    import('../services/google-calendar.service').then(({ deleteEventOnGoogle }) => {
+      deleteEventOnGoogle(event.creatorId, event.id).catch(() => {});
+    });
+
     res.json({ success: true, data: { message: '일정이 삭제되었습니다' } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

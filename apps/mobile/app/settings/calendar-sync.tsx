@@ -18,6 +18,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants/theme';
 import { api } from '../../src/services/api';
+import { useDeviceCalendar } from '../../src/hooks/useDeviceCalendar';
 
 type Scope = 'personal' | 'personal_dept' | 'all';
 
@@ -122,6 +123,9 @@ export default function CalendarSyncScreen() {
             Android: URL 복사 → Google Calendar 웹에서 "URL로 추가"
           </Text>
         </View>
+
+        {/* Phase 3: 기기 캘린더 즉시 저장 */}
+        <NativeCalendarSection />
 
         {loading && (
           <View style={styles.loading}>
@@ -514,4 +518,129 @@ const styles = StyleSheet.create({
   },
   reminderChipText: { fontSize: 12, color: COLORS.gray[700] },
   reminderChipTextActive: { color: COLORS.white, fontWeight: '600' },
+
+  /* Native Calendar 섹션 */
+  nativeBox: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.gray[200],
+  },
+  nativeTitle: { fontWeight: '700', fontSize: 14, color: COLORS.gray[800], marginBottom: 4 },
+  nativeDesc: { fontSize: 12, color: COLORS.gray[600], marginBottom: 10, lineHeight: 17 },
+  nativeBtn: {
+    backgroundColor: COLORS.primary[500],
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  nativeBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
+  nativeStats: {
+    backgroundColor: COLORS.gray[50],
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+  },
+  nativeStatsText: { fontSize: 12, color: COLORS.gray[700] },
 });
+
+/* ───────── Native Calendar (EventKit / CalendarContract) — Phase 3 ───────── */
+
+function NativeCalendarSection() {
+  const { available, platform, saveEventsToDevice } = useDeviceCalendar();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ saved: number; failed: number; total: number } | null>(null);
+
+  const handleImport = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      // 내 일정 + 휴가 + 회의를 백엔드에서 가져와서 네이티브에 저장
+      const [evRes, vacRes, meetRes] = await Promise.all([
+        api.get('/calendar/events').catch(() => ({ data: { data: [] } })),
+        api.get('/attendance/vacations').catch(() => ({ data: { data: [] } })),
+        api.get('/meeting').catch(() => ({ data: { data: [] } })),
+      ]);
+
+      const events = [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(evRes.data.data as any[]).map((e) => ({
+          title: e.title,
+          startDate: new Date(e.startDate),
+          endDate: new Date(e.endDate),
+          allDay: e.allDay,
+          location: e.location || undefined,
+          notes: e.description || undefined,
+          alarmsMinutes: [10],
+        })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(vacRes.data.data as any[])
+          .filter((v) => v.status === 'approved')
+          .map((v) => ({
+            title: `휴가 (${v.type})`,
+            startDate: new Date(v.startDate),
+            endDate: new Date(v.endDate),
+            allDay: true,
+            notes: v.reason || undefined,
+            alarmsMinutes: [60],
+          })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(meetRes.data.data as any[])
+          .filter((m) => m.scheduledAt && m.status !== 'cancelled' && m.status !== 'ended')
+          .map((m) => ({
+            title: `[회의] ${m.title}`,
+            startDate: new Date(m.scheduledAt),
+            endDate: new Date(new Date(m.scheduledAt).getTime() + 60 * 60 * 1000),
+            allDay: false,
+            notes: m.description || undefined,
+            alarmsMinutes: [5, 10],
+          })),
+      ];
+
+      const res = await saveEventsToDevice(events);
+      setResult({ saved: res.saved, failed: res.failed, total: events.length });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!available) {
+    return (
+      <View style={styles.nativeBox}>
+        <Text style={styles.nativeTitle}>📲 이 기기 캘린더에 즉시 저장</Text>
+        <Text style={styles.nativeDesc}>
+          이 환경에서는 사용할 수 없습니다. EAS Dev Client 또는 Production 빌드에서 동작합니다.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.nativeBox}>
+      <Text style={styles.nativeTitle}>📲 이 기기 캘린더에 즉시 저장</Text>
+      <Text style={styles.nativeDesc}>
+        Project Office의 내 일정·휴가·회의를 {platform === 'ios' ? 'iPhone' : 'Android'} 캘린더에 바로 저장합니다.
+        ICS 구독과 달리 즉시 반영되며, 오프라인에서도 확인 가능합니다.
+      </Text>
+      <TouchableOpacity
+        onPress={handleImport}
+        disabled={busy}
+        style={[styles.nativeBtn, busy && { opacity: 0.6 }]}
+      >
+        <Text style={styles.nativeBtnText}>
+          {busy ? '저장 중...' : '지금 가져오기'}
+        </Text>
+      </TouchableOpacity>
+      {result && (
+        <View style={styles.nativeStats}>
+          <Text style={styles.nativeStatsText}>
+            저장 완료: {result.saved}개 · 실패: {result.failed}개 · 전체 {result.total}개
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}

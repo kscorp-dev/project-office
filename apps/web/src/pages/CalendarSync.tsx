@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import {
   Calendar, Plus, X, Copy, RefreshCw, Trash2,
   Power, PowerOff, CheckCircle2, ExternalLink, AlertCircle, Clock, Users,
+  Chrome, Link2, Unlink, Loader2,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -123,6 +124,9 @@ export default function CalendarSyncPage() {
           <AlertCircle size={16} /> {error}
         </div>
       )}
+
+      {/* Google Calendar 양방향 연동 */}
+      <GoogleCalendarSection />
 
       {/* 사용 방법 */}
       <details className="bg-primary-50 border border-primary-200 rounded-xl p-4 mb-4">
@@ -397,6 +401,198 @@ function CreateSubscriptionModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* ───────── Google Calendar 양방향 연동 ───────── */
+
+interface GoogleStatus {
+  connected: boolean;
+  enabled: boolean;
+  externalAccountId?: string;
+  externalCalendarId?: string;
+  lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+function GoogleCalendarSection() {
+  const [status, setStatus] = useState<GoogleStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ imported: number; updated: number; deleted: number } | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/calendar-sync/google/status');
+      setStatus(data.data);
+    } catch {
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // OAuth 콜백 후 URL 파라미터 처리
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google') === 'connected') {
+      setToast({ type: 'success', message: 'Google Calendar가 연결되었습니다!' });
+      // URL 정리
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('google') === 'error') {
+      setToast({
+        type: 'error',
+        message: `연결 실패: ${params.get('message') || '알 수 없는 오류'}`,
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const handleConnect = async () => {
+    try {
+      const { data } = await api.get('/calendar-sync/google/auth-url');
+      window.location.href = data.data.url;
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: { message?: string } } } };
+      setToast({
+        type: 'error',
+        message: err.response?.data?.error?.message || 'Google 연결 URL을 가져올 수 없습니다',
+      });
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data } = await api.post('/calendar-sync/google/sync');
+      setSyncResult(data.data);
+      await load();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: { message?: string } } } };
+      setToast({
+        type: 'error',
+        message: err.response?.data?.error?.message || '동기화 실패',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm('Google Calendar 연동을 해제합니다. 계속할까요?')) return;
+    try {
+      await api.delete('/calendar-sync/google');
+      setToast({ type: 'success', message: '연동이 해제되었습니다' });
+      await load();
+    } catch (e: unknown) {
+      const err = e as Error;
+      setToast({ type: 'error', message: err.message });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="border rounded-xl p-4 mb-4 flex items-center gap-2 text-gray-500">
+        <Loader2 size={16} className="animate-spin" /> Google 연동 상태 확인 중...
+      </div>
+    );
+  }
+
+  if (!status?.enabled) {
+    return (
+      <div className="border border-gray-200 rounded-xl p-4 mb-4 bg-gray-50">
+        <div className="flex items-center gap-2 text-gray-500 text-sm">
+          <Chrome size={16} /> Google Calendar 양방향 연동은 서버 설정이 필요합니다
+          <span className="text-xs text-gray-400 ml-auto">관리자 문의</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl p-4 mb-4 bg-white">
+      {toast && (
+        <div
+          className={`mb-3 px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
+            toast.type === 'success'
+              ? 'bg-green-50 text-green-700 border border-green-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}
+        >
+          {toast.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-auto"><X size={14} /></button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-3">
+        <Chrome className="text-primary-600" size={24} />
+        <div>
+          <h2 className="font-bold text-gray-900">Google Calendar 양방향 연동</h2>
+          <p className="text-xs text-gray-500">
+            Project Office 일정이 Google에 자동 반영 · "지금 동기화"로 Google → Project Office도 가져오기
+          </p>
+        </div>
+      </div>
+
+      {status.connected ? (
+        <>
+          <div className="bg-primary-50 border border-primary-200 rounded-lg p-3 mb-3 text-sm">
+            <div className="flex items-center gap-2 text-primary-800 font-medium">
+              <Link2 size={14} /> 연결됨: {status.externalAccountId}
+            </div>
+            <div className="text-xs text-primary-700 mt-1">
+              {status.lastSyncedAt
+                ? `마지막 동기화: ${new Date(status.lastSyncedAt).toLocaleString('ko-KR')}`
+                : '아직 동기화된 적 없음'}
+            </div>
+            {status.lastSyncError && (
+              <div className="text-xs text-red-600 mt-1">⚠ {status.lastSyncError}</div>
+            )}
+          </div>
+
+          {syncResult && (
+            <div className="text-xs text-gray-600 mb-3 bg-gray-50 rounded p-2">
+              마지막 결과: 가져옴 {syncResult.imported} · 수정 {syncResult.updated} · 삭제 {syncResult.deleted}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="btn-primary text-sm flex items-center gap-1"
+            >
+              {syncing ? (
+                <><Loader2 size={14} className="animate-spin" /> 동기화 중...</>
+              ) : (
+                <><RefreshCw size={14} /> 지금 동기화</>
+              )}
+            </button>
+            <button
+              onClick={handleDisconnect}
+              className="btn-secondary text-sm flex items-center gap-1 text-red-600 border-red-300 hover:bg-red-50"
+            >
+              <Unlink size={14} /> 연동 해제
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          onClick={handleConnect}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Chrome size={16} />
+          Google 계정으로 연동
+        </button>
+      )}
     </div>
   );
 }
