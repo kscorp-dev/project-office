@@ -33,6 +33,7 @@ import adminRoutes from './routes/admin.routes';
 import mailAdminRoutes from './routes/mail-admin.routes';
 import mailRoutes from './routes/mail.routes';
 import notificationRoutes from './routes/notification.routes';
+import holidayRoutes from './routes/holiday.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -131,6 +132,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin/mail', mailAdminRoutes);
 app.use('/api/mail', mailRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/holidays', holidayRoutes);
 
 // 404 Handler
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
@@ -151,6 +153,7 @@ app.set('io', io);
 import { startMailSyncScheduler, runMailSyncOnce } from './workers/mailSync.worker';
 import { startAllMailIdle, stopAllMailIdle } from './workers/mailIdle.worker';
 import { shutdownMailPool } from './services/mail.service';
+import { startVacationAccrualScheduler, stopVacationAccrualScheduler } from './workers/vacationAccrual.worker';
 
 httpServer.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
@@ -173,11 +176,15 @@ httpServer.listen(config.port, () => {
       startAllMailIdle().catch((err) => logger.warn({ err: (err as Error).message }, 'Initial mail idle start failed'));
     }, 3000);
   }
+
+  // 연차 자동 부여 스케줄러 (매년 1/1 01:00 KST + 매월 1일 01:30 KST)
+  startVacationAccrualScheduler();
 });
 
 // Graceful shutdown — IMAP 풀 + IDLE 워커 정리
 const shutdown = async (signal: string) => {
   logger.info({ signal }, 'Shutdown requested');
+  stopVacationAccrualScheduler();
   await Promise.allSettled([stopAllMailIdle(), shutdownMailPool()]);
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();

@@ -344,4 +344,127 @@ router.get('/unread', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// ===== 메시지 수정 / 삭제 (SEND-008/009) =====
+//
+// 정책:
+//   - 발신자 본인만 수정/삭제 가능
+//   - 수정: 발송 후 1시간 이내, 텍스트 타입만 (파일/이미지는 수정 불가)
+//   - 삭제: 발송 후 24시간 이내 하드리밋(관리자는 언제든), soft delete (isDeleted=true)
+//   - WebSocket으로 같은 방의 모든 참가자에게 브로드캐스트
+
+const MESSAGE_EDIT_WINDOW_MS = 60 * 60 * 1000;       // 1시간
+const MESSAGE_DELETE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24시간
+
+const editMessageSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
+// PATCH /messenger/rooms/:roomId/messages/:msgId — 메시지 수정
+router.patch(
+  '/rooms/:roomId/messages/:msgId',
+  authenticate,
+  validate(editMessageSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const roomId = qs(req.params.roomId);
+      const msgId = qs(req.params.msgId);
+
+      const msg = await prisma.message.findUnique({ where: { id: msgId } });
+      if (!msg || msg.roomId !== roomId) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '메시지를 찾을 수 없습니다' } });
+        return;
+      }
+      if (msg.senderId !== req.user!.id) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '본인의 메시지만 수정할 수 있습니다' } });
+        return;
+      }
+      if (msg.isDeleted) {
+        res.status(400).json({ success: false, error: { code: 'DELETED', message: '삭제된 메시지는 수정할 수 없습니다' } });
+        return;
+      }
+      if (msg.type !== 'text') {
+        res.status(400).json({ success: false, error: { code: 'INVALID_TYPE', message: '텍스트 메시지만 수정 가능합니다' } });
+        return;
+      }
+      if (Date.now() - msg.createdAt.getTime() > MESSAGE_EDIT_WINDOW_MS) {
+        res.status(400).json({ success: false, error: { code: 'WINDOW_EXCEEDED', message: '수정 가능 시간(1시간)이 지났습니다' } });
+        return;
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: msgId },
+        data: { content: req.body.content, isEdited: true },
+        include: {
+          sender: { select: { id: true, name: true, profileImage: true } },
+        },
+      });
+
+      // WebSocket 브로드캐스트 (io는 app.locals에 저장돼 있지만, 각 네임스페이스에서 emit)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const io = req.app.get('io') as any;
+      if (io) {
+        io.of('/messenger').to(roomId).emit('message:edited', {
+          messageId: updated.id,
+          roomId,
+          content: updated.content,
+          isEdited: true,
+          updatedAt: updated.updatedAt,
+        });
+      }
+
+      res.json({ success: true, data: updated });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// DELETE /messenger/rooms/:roomId/messages/:msgId — 메시지 삭제 (soft)
+router.delete('/rooms/:roomId/messages/:msgId', authenticate, async (req: Request, res: Response) => {
+  try {
+    const roomId = qs(req.params.roomId);
+    const msgId = qs(req.params.msgId);
+
+    const msg = await prisma.message.findUnique({ where: { id: msgId } });
+    if (!msg || msg.roomId !== roomId) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '메시지를 찾을 수 없습니다' } });
+      return;
+    }
+
+    const isOwner = msg.senderId === req.user!.id;
+    const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '본인의 메시지만 삭제할 수 있습니다' } });
+      return;
+    }
+    if (msg.isDeleted) {
+      res.status(400).json({ success: false, error: { code: 'ALREADY_DELETED', message: '이미 삭제된 메시지입니다' } });
+      return;
+    }
+    if (isOwner && !isAdmin && Date.now() - msg.createdAt.getTime() > MESSAGE_DELETE_WINDOW_MS) {
+      res.status(400).json({ success: false, error: { code: 'WINDOW_EXCEEDED', message: '삭제 가능 시간(24시간)이 지났습니다. 관리자에게 문의하세요' } });
+      return;
+    }
+
+    await prisma.message.update({
+      where: { id: msgId },
+      data: { isDeleted: true, content: '' }, // 내용 제거 (soft-delete)
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const io = req.app.get('io') as any;
+    if (io) {
+      io.of('/messenger').to(roomId).emit('message:deleted', {
+        messageId: msgId,
+        roomId,
+        deletedBy: req.user!.id,
+      });
+    }
+
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
 export default router;

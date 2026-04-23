@@ -39,6 +39,8 @@ model User {
   lastLoginAt    DateTime?  @map("last_login_at")
   loginFailCount Int        @default(0) @map("login_fail_count")
   lockedUntil    DateTime?  @map("locked_until")
+  /// 입사일 (연차 자동 부여 계산 기준 — 근로기준법 근속년수)
+  hireDate       DateTime?  @db.Date @map("hire_date")
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
@@ -109,6 +111,10 @@ model User {
   notifications        Notification[]          @relation("NotificationRecipient")
   sentNotifications    Notification[]          @relation("NotificationActor")
 
+  // 초대 / 비밀번호 재설정 토큰 (v0.15.0)
+  authTokens           AuthToken[]             @relation("UserAuthTokens")
+  issuedAuthTokens     AuthToken[]             @relation("IssuedAuthTokens")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -154,6 +160,38 @@ model UserDevice {
   @@unique([userId, deviceId])
   @@index([userId])
   @@map("user_devices")
+}
+
+/// 사용자 초대 / 비밀번호 재설정 범용 토큰
+/// - type=invite: 관리자가 가입 링크를 발송, 수신자가 비번 설정 후 계정 활성화
+/// - type=password_reset: 본인이 요청, 새 비번 설정
+/// - 만료 + 단일 사용 (usedAt 설정되면 재사용 불가)
+enum AuthTokenType {
+  invite
+  password_reset
+}
+
+model AuthToken {
+  id         String         @id @default(uuid())
+  token      String         @unique                         // URL-safe random (32바이트)
+  type       AuthTokenType
+  email      String                                          // 수신자 이메일 (invite는 신규, reset은 기존)
+  userId     String?        @map("user_id")                 // invite는 null (아직 user 없음), reset은 기존 user
+  /// invite 시 관리자가 미리 지정한 메타 (employeeId, name, role, departmentId 등)
+  invitePayload Json?       @map("invite_payload")
+  createdById String        @map("created_by_id")           // 발급한 주체 (초대: 관리자, 재설정: 본인 or 시스템)
+  expiresAt  DateTime       @map("expires_at")
+  usedAt     DateTime?      @map("used_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  user      User?  @relation("UserAuthTokens", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User   @relation("IssuedAuthTokens", fields: [createdById], references: [id])
+
+  @@index([token])
+  @@index([email, type])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_tokens")
 }
 
 model PasswordHistory {
@@ -546,11 +584,43 @@ model VacationBalance {
   totalDays   Float  @default(15) @map("total_days")
   usedDays    Float  @default(0)  @map("used_days")
   remainDays  Float  @default(15) @map("remain_days")
+  /// 해당 연도의 연차 산정 기준 (근로기준법: 근속1년 미만은 월차, 1년~3년은 15일, 이후 2년마다 +1)
+  tenureYears Float? @map("tenure_years")
+  grantedAt   DateTime? @map("granted_at")   // 자동 부여 시점
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   user User @relation("VacationBalances", fields: [userId], references: [id])
 
   @@unique([userId, year])
   @@map("vacation_balances")
+}
+
+/// 공휴일 / 회사 휴무일 모델
+/// - 근태·휴가 일수 계산 시 제외
+/// - isCompanyHoliday=true 는 법정 공휴일 외에 회사가 지정한 휴무 (창립기념일, 단축근무 등)
+enum HolidayType {
+  legal           // 법정 공휴일 (설날, 추석 등)
+  substitute      // 대체공휴일
+  company         // 회사 지정 휴무
+  event           // 기념일 (정상 근무 — 일수 계산엔 제외 X, 참고용)
+}
+
+model Holiday {
+  id           String       @id @default(uuid())
+  date         DateTime     @db.Date                          // 날짜 (하루 단위)
+  name         String                                          // "설날", "창립기념일" 등
+  type         HolidayType  @default(legal)
+  /// 연차/주52시간 계산에서 제외 여부 (event 는 false, 나머지는 true 기본)
+  excludeFromWorkdays Boolean @default(true) @map("exclude_from_workdays")
+  note         String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@unique([date, name])
+  @@index([date])
+  @@index([type])
+  @@map("holidays")
 }
 
 // ===== 캘린더 =====
@@ -1171,12 +1241,35 @@ model Document {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  folder   DocumentFolder? @relation(fields: [folderId], references: [id])
-  uploader User            @relation("UploadedDocuments", fields: [uploaderId], references: [id])
+  folder   DocumentFolder?  @relation(fields: [folderId], references: [id])
+  uploader User             @relation("UploadedDocuments", fields: [uploaderId], references: [id])
+  versions DocumentVersion[]
 
   @@index([folderId])
   @@index([uploaderId])
   @@map("documents")
+}
+
+/// 문서 버전 이력 (VER-001~005)
+/// - 현재 버전은 Document 자체에 저장, 이전 버전들을 DocumentVersion에 누적
+/// - 파일 업데이트 시 기존 파일은 version N → DocumentVersion row로 복사, Document의 version +1
+model DocumentVersion {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  version     Int                                          // 해당 버전 번호
+  fileName    String   @map("file_name")
+  filePath    String   @map("file_path")
+  fileSize    BigInt   @map("file_size")
+  mimeType    String   @map("mime_type")
+  uploaderId  String   @map("uploader_id")
+  changeNote  String?  @map("change_note")                 // 변경 사유/주석
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt(sort: Desc)])
+  @@map("document_versions")
 }
 
 // ===== 관리콘솔 (SystemSetting) =====

@@ -87,4 +87,22 @@ export const config = {
       return (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
     },
   },
+
+  /** 시스템 이메일 발송 (초대 / 비밀번호 재설정 / 알림 요약) */
+  systemMail: {
+    host: process.env.SYSTEM_MAIL_SMTP_HOST || '',
+    port: parseInt(process.env.SYSTEM_MAIL_SMTP_PORT || '465', 10),
+    user: process.env.SYSTEM_MAIL_USER || '',
+    pass: process.env.SYSTEM_MAIL_PASS || '',
+    from: process.env.SYSTEM_MAIL_FROM || 'Project Office <no-reply@localhost>',
+    /** 웹 앱 URL (초대/재설정 링크 생성에 사용) */
+    webUrl: process.env.WEB_URL || 'http://localhost:5173',
+    /** 미설정이면 이메일을 실제로 보내지 않고 로그만 찍음 (개발 모드) */
+    get enabled(): boolean {
+      return (
+        (process.env.SYSTEM_MAIL_SMTP_HOST || '').trim().length > 0 &&
+        (process.env.SYSTEM_MAIL_USER || '').trim().length > 0
+      );
+    },
+  },
 } as const;

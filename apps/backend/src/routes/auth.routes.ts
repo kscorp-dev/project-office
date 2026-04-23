@@ -146,4 +146,143 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// ===== 초대 / 비밀번호 재설정 =====
+
+import {
+  createInvite,
+  verifyInvite,
+  acceptInvite,
+  requestPasswordReset,
+  verifyPasswordResetToken,
+  resetPasswordWithToken,
+} from '../services/auth-token.service';
+import { authorize } from '../middleware/authorize';
+
+const inviteSchema = z.object({
+  email: z.string().email(),
+  employeeId: z.string().min(1).max(50),
+  name: z.string().min(1).max(50),
+  role: z.enum(['user', 'dept_admin', 'admin', 'super_admin']).optional(),
+  position: z.string().max(50).optional(),
+  departmentId: z.string().uuid().optional(),
+  phone: z.string().regex(/^01[0-9]\d{7,8}$/).optional(),
+  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+// POST /auth/invite (관리자) — 사용자 초대 이메일 발송
+router.post(
+  '/invite',
+  authenticate,
+  authorize('super_admin', 'admin'),
+  validate(inviteSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await createInvite({
+        email: req.body.email,
+        employeeId: req.body.employeeId,
+        name: req.body.name,
+        role: req.body.role,
+        position: req.body.position,
+        departmentId: req.body.departmentId,
+        phone: req.body.phone,
+        hireDate: req.body.hireDate ? new Date(`${req.body.hireDate}T00:00:00Z`) : undefined,
+        createdById: req.user!.id,
+      });
+      await createAuditLog({ req, action: 'user_create', resourceType: 'user', resourceId: req.body.email });
+      res.status(201).json({ success: true, data: { tokenId: result.tokenId, expiresAt: result.expiresAt } });
+    } catch (err) {
+      if (err instanceof AppError) {
+        res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+        return;
+      }
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// GET /auth/invite/:token — 초대 토큰 검증 (가입 페이지에서 미리 정보 표시)
+router.get('/invite/:token', async (req: Request, res: Response) => {
+  try {
+    const info = await verifyInvite(String(req.params.token));
+    res.json({ success: true, data: info });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+      return;
+    }
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /auth/invite/:token/accept — 비번 설정하고 계정 활성화
+const acceptSchema = z.object({
+  password: z.string().min(8).max(100)
+    .regex(/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*])/, '영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다'),
+});
+router.post(
+  '/invite/:token/accept',
+  registerLimiter,
+  validate(acceptSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await acceptInvite(String(req.params.token), req.body.password);
+      res.status(201).json({ success: true, data: result });
+    } catch (err) {
+      if (err instanceof AppError) {
+        res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+        return;
+      }
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// POST /auth/forgot-password — 비번 재설정 메일 발송 (존재하든 말든 204 반환)
+const forgotSchema = z.object({ email: z.string().email() });
+router.post('/forgot-password', validate(forgotSchema), async (req: Request, res: Response) => {
+  try {
+    await requestPasswordReset(req.body.email);
+    res.json({ success: true }); // 존재 여부 누출 방지
+  } catch {
+    res.json({ success: true });
+  }
+});
+
+// GET /auth/reset-password/:token — 재설정 토큰 검증
+router.get('/reset-password/:token', async (req: Request, res: Response) => {
+  try {
+    const info = await verifyPasswordResetToken(String(req.params.token));
+    res.json({ success: true, data: { email: info.email } });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+      return;
+    }
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /auth/reset-password/:token — 새 비번 설정
+const resetSchema = z.object({
+  password: z.string().min(8).max(100)
+    .regex(/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*])/, '영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다'),
+});
+router.post(
+  '/reset-password/:token',
+  registerLimiter,
+  validate(resetSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await resetPasswordWithToken(String(req.params.token), req.body.password);
+      res.json({ success: true, data: result });
+    } catch (err) {
+      if (err instanceof AppError) {
+        res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
+        return;
+      }
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
 export default router;
