@@ -20,6 +20,7 @@ const eventSchema = z.object({
   categoryId: z.string().uuid().optional().nullable(),
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).default('none'),
   repeatUntil: z.string().datetime().optional().nullable(),
+  exceptionDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   scope: z.enum(['personal', 'department', 'company']).default('personal'),
   attendeeIds: z.array(z.string().uuid()).optional(),
 });
@@ -44,7 +45,9 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
       },
       include: {
         creator: { select: { id: true, name: true } },
-        attendees: { include: { user: { select: { id: true, name: true } } } },
+        attendees: {
+          include: { user: { select: { id: true, name: true } } },
+        },
         category: { select: { id: true, name: true, color: true } },
       },
       orderBy: { startDate: 'asc' },
@@ -74,7 +77,9 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
       },
       include: {
         creator: { select: { id: true, name: true } },
-        attendees: { include: { user: { select: { id: true, name: true } } } },
+        attendees: {
+          include: { user: { select: { id: true, name: true } } },
+        },
         category: { select: { id: true, name: true, color: true } },
       },
     });
@@ -159,6 +164,79 @@ router.delete('/events/:id', authenticate, async (req: Request, res: Response) =
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
+
+// ───── 반복 이벤트의 특정 인스턴스 삭제 (v0.21.0) ─────
+// POST /events/:id/exception { date: 'YYYY-MM-DD' }
+// → exceptionDates 배열에 date 추가 → 클라이언트 expand 시 제외됨
+router.post(
+  '/events/:id/exception',
+  authenticate,
+  validate(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  async (req: Request, res: Response) => {
+    try {
+      const event = await prisma.calendarEvent.findUnique({ where: { id: qs(req.params.id) } });
+      if (!event) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '일정을 찾을 수 없습니다' } });
+        return;
+      }
+      if (event.creatorId !== req.user!.id && !['super_admin', 'admin'].includes(req.user!.role)) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '권한이 없습니다' } });
+        return;
+      }
+      if (event.repeat === 'none') {
+        res.status(400).json({ success: false, error: { code: 'NOT_REPEATING', message: '반복 이벤트가 아닙니다' } });
+        return;
+      }
+      const date = req.body.date as string;
+      const next = Array.from(new Set([...(event.exceptionDates || []), date]));
+      const updated = await prisma.calendarEvent.update({
+        where: { id: event.id },
+        data: { exceptionDates: next },
+      });
+      res.json({ success: true, data: updated });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// ───── 참석자 응답 (수락/거절) ─────
+// PATCH /events/:id/attendance { status: 'accepted' | 'declined' | 'pending' }
+// → 본인의 EventAttendee.status 업데이트. 참석자가 아니면 자동 추가
+router.patch(
+  '/events/:id/attendance',
+  authenticate,
+  validate(z.object({ status: z.enum(['accepted', 'declined', 'pending']) })),
+  async (req: Request, res: Response) => {
+    try {
+      const eventId = qs(req.params.id);
+      const userId = req.user!.id;
+      const event = await prisma.calendarEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '일정을 찾을 수 없습니다' } });
+        return;
+      }
+
+      const existing = await prisma.eventAttendee.findUnique({
+        where: { eventId_userId: { eventId, userId } },
+      });
+
+      if (existing) {
+        await prisma.eventAttendee.update({
+          where: { id: existing.id },
+          data: { status: req.body.status },
+        });
+      } else {
+        await prisma.eventAttendee.create({
+          data: { eventId, userId, status: req.body.status },
+        });
+      }
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
 
 /* ═══════════════════════════════════════════════
    캘린더 카테고리 (v0.20.0)

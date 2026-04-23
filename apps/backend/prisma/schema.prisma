@@ -693,6 +693,9 @@ model CalendarEvent {
   repeat      EventRepeat @default(none)
   /// 반복 종료일 (null = 무제한 반복)
   repeatUntil DateTime?   @map("repeat_until")
+  /// 반복 이벤트에서 제외된 날짜들 ("이 날짜만 삭제" 사용)
+  /// YYYY-MM-DD 문자열 배열로 저장 (timezone 이슈 최소화)
+  exceptionDates String[] @default([]) @map("exception_dates")
   scope       String      @default("personal") // personal, department, company
   creatorId   String      @map("creator_id")
   departmentId String?    @map("department_id")

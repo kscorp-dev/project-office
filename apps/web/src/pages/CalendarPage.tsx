@@ -29,6 +29,8 @@ interface CalendarCategory {
 
 type RepeatKind = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
+type AttendeeStatus = 'pending' | 'accepted' | 'declined';
+
 interface CalendarEvent {
   id: string; title: string; description?: string;
   startDate: string; endDate: string;
@@ -37,9 +39,12 @@ interface CalendarEvent {
   category?: { id: string; name: string; color: string } | null;
   repeat: RepeatKind;
   repeatUntil?: string | null;
+  exceptionDates?: string[]; // YYYY-MM-DD
   scope: 'personal' | 'department' | 'company';
   creator: { id: string; name: string };
-  attendees: { user: { id: string; name: string } }[];
+  attendees: { id?: string; status?: AttendeeStatus; user: { id: string; name: string } }[];
+  /** 반복 가상 인스턴스일 때 원본 이벤트의 진짜 id */
+  originalId?: string;
 }
 
 interface UserLite { id: string; name: string; employeeId: string; department?: { name?: string | null } | null }
@@ -98,6 +103,19 @@ export default function CalendarPage() {
   const [eventForm, setEventForm] = useState<{ mode: FormMode; open: boolean; form: EventFormState } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  // 반복 이벤트 삭제 옵션 다이얼로그
+  const [deleteDialog, setDeleteDialog] = useState<{ event: CalendarEvent } | null>(null);
+
+  // 현재 로그인 사용자 (참석자 응답용)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/auth/me');
+        setCurrentUserId(res.data?.data?.id ?? null);
+      } catch { /* 비로그인 시 무시 */ }
+    })();
+  }, []);
 
   // ── 뷰 범위 계산 ──
   const viewRange = useMemo(() => {
@@ -271,7 +289,7 @@ export default function CalendarPage() {
     e.stopPropagation();
     mouseMovedRef.current = false;
     setMovingEvent({
-      eventId: ev.id,
+      eventId: ev.originalId ?? ev.id,   // 반복 인스턴스도 원본 id로 이동 (전체 시리즈 shift)
       originalStart: new Date(ev.startDate),
       originalEnd: new Date(ev.endDate),
       targetDate: null,
@@ -285,7 +303,7 @@ export default function CalendarPage() {
     e.stopPropagation();
     mouseMovedRef.current = false;
     setResizingEvent({
-      eventId: ev.id,
+      eventId: ev.originalId ?? ev.id,   // 반복 인스턴스도 원본 id로 리사이즈 (전체 시리즈 duration 변경)
       originalEnd: new Date(ev.endDate),
       targetDate: null,
     });
@@ -329,7 +347,7 @@ export default function CalendarPage() {
       mode: 'edit',
       open: true,
       form: {
-        id: ev.id,
+        id: ev.originalId ?? ev.id,  // 편집은 항상 원본 이벤트에 적용
         title: ev.title,
         description: ev.description || '',
         startDate: toLocalInput(new Date(ev.startDate)),
@@ -384,14 +402,92 @@ export default function CalendarPage() {
     }
   };
 
-  const handleDeleteEvent = async (id: string) => {
+  const handleDeleteEvent = async (ev: CalendarEvent) => {
+    // 반복 인스턴스 → 사용자에게 "이 날짜만 / 전체" 선택 다이얼로그 노출
+    if (ev.originalId && ev.repeat !== 'none') {
+      setDeleteDialog({ event: ev });
+      return;
+    }
     if (!confirm('이 일정을 삭제할까요?')) return;
     try {
-      await api.delete(`/calendar/events/${id}`);
+      await api.delete(`/calendar/events/${ev.originalId ?? ev.id}`);
       setSelectedEvent(null);
       setEventForm(null);
       fetchEvents();
     } catch { alert('삭제 실패'); }
+  };
+
+  const deleteRepeatThisOnly = async (ev: CalendarEvent) => {
+    const realId = ev.originalId ?? ev.id;
+    const dayStr = ev.startDate.slice(0, 10); // YYYY-MM-DD
+    try {
+      await api.post(`/calendar/events/${realId}/exception`, { date: dayStr });
+      setDeleteDialog(null);
+      setSelectedEvent(null);
+      setEventForm(null);
+      fetchEvents();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      alert(e.response?.data?.error?.message || '삭제 실패');
+    }
+  };
+
+  const deleteRepeatAll = async (ev: CalendarEvent) => {
+    const realId = ev.originalId ?? ev.id;
+    try {
+      await api.delete(`/calendar/events/${realId}`);
+      setDeleteDialog(null);
+      setSelectedEvent(null);
+      setEventForm(null);
+      fetchEvents();
+    } catch { alert('삭제 실패'); }
+  };
+
+  // ── TimeGridView drag/resize 커밋 ──
+  const handleTimeGridMove = async (ev: CalendarEvent, newStart: Date, newEnd: Date) => {
+    const realId = ev.originalId ?? ev.id;
+    try {
+      await api.patch(`/calendar/events/${realId}`, {
+        startDate: newStart.toISOString(),
+        endDate: newEnd.toISOString(),
+      });
+      fetchEvents();
+    } catch { /* ignore */ }
+  };
+  const handleTimeGridResize = async (ev: CalendarEvent, newEnd: Date) => {
+    const realId = ev.originalId ?? ev.id;
+    try {
+      await api.patch(`/calendar/events/${realId}`, {
+        endDate: newEnd.toISOString(),
+      });
+      fetchEvents();
+    } catch { /* ignore */ }
+  };
+
+  // 참석자 응답 (수락/거절/대기)
+  const handleAttendanceChange = async (ev: CalendarEvent, status: AttendeeStatus) => {
+    const realId = ev.originalId ?? ev.id;
+    try {
+      await api.patch(`/calendar/events/${realId}/attendance`, { status });
+      fetchEvents();
+      // 모달 표시 중이면 상태 업데이트
+      if (selectedEvent && (selectedEvent.originalId ?? selectedEvent.id) === realId) {
+        if (currentUserId) {
+          const nextAttendees = (selectedEvent.attendees ?? []).some((a) => a.user.id === currentUserId)
+            ? selectedEvent.attendees.map((a) =>
+              a.user.id === currentUserId ? { ...a, status } : a,
+            )
+            : [
+              ...(selectedEvent.attendees ?? []),
+              { status, user: { id: currentUserId, name: '나' } },
+            ];
+          setSelectedEvent({ ...selectedEvent, attendees: nextAttendees });
+        }
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      alert(e.response?.data?.error?.message || '응답 저장 실패');
+    }
   };
 
   const toggleCategoryFilter = (id: string) => {
@@ -502,14 +598,16 @@ export default function CalendarPage() {
             range={viewRange}
             events={visibleEvents}
             days={7}
-            onCellClick={(date, hour) => {
-              const d = new Date(date); d.setHours(hour, 0, 0, 0);
-              const e = new Date(d); e.setHours(hour + 1, 0, 0, 0);
+            onCellClick={(date, hour, minute) => {
+              const d = new Date(date); d.setHours(hour, minute, 0, 0);
+              const e = new Date(d); e.setHours(hour + 1, minute, 0, 0);
               openCreateForm({
                 startDate: toLocalInput(d), endDate: toLocalInput(e), allDay: false,
               });
             }}
             onEventClick={(ev) => setSelectedEvent(ev)}
+            onEventMove={handleTimeGridMove}
+            onEventResize={handleTimeGridResize}
           />
         )}
         {viewMode === 'day' && (
@@ -517,14 +615,16 @@ export default function CalendarPage() {
             range={viewRange}
             events={visibleEvents}
             days={1}
-            onCellClick={(date, hour) => {
-              const d = new Date(date); d.setHours(hour, 0, 0, 0);
-              const e = new Date(d); e.setHours(hour + 1, 0, 0, 0);
+            onCellClick={(date, hour, minute) => {
+              const d = new Date(date); d.setHours(hour, minute, 0, 0);
+              const e = new Date(d); e.setHours(hour + 1, minute, 0, 0);
               openCreateForm({
                 startDate: toLocalInput(d), endDate: toLocalInput(e), allDay: false,
               });
             }}
             onEventClick={(ev) => setSelectedEvent(ev)}
+            onEventMove={handleTimeGridMove}
+            onEventResize={handleTimeGridResize}
           />
         )}
       </div>
@@ -533,9 +633,11 @@ export default function CalendarPage() {
       {selectedEvent && (
         <EventDetailModal
           event={selectedEvent}
+          currentUserId={currentUserId}
           onClose={() => setSelectedEvent(null)}
           onEdit={() => openEditForm(selectedEvent)}
-          onDelete={() => handleDeleteEvent(selectedEvent.id)}
+          onDelete={() => handleDeleteEvent(selectedEvent)}
+          onAttendanceChange={(status) => handleAttendanceChange(selectedEvent, status)}
         />
       )}
       {eventForm?.open && (
@@ -546,7 +648,23 @@ export default function CalendarPage() {
           onChange={(form) => setEventForm({ ...eventForm, form })}
           onSubmit={handleSaveEvent}
           onClose={() => setEventForm(null)}
-          onDelete={eventForm.mode === 'edit' && eventForm.form.id ? () => handleDeleteEvent(eventForm.form.id!) : undefined}
+          onDelete={eventForm.mode === 'edit' && eventForm.form.id ? async () => {
+            if (!confirm('이 일정을 삭제할까요? (반복 이벤트라면 전체가 삭제됩니다)')) return;
+            try {
+              await api.delete(`/calendar/events/${eventForm.form.id}`);
+              setEventForm(null);
+              setSelectedEvent(null);
+              fetchEvents();
+            } catch { alert('삭제 실패'); }
+          } : undefined}
+        />
+      )}
+      {deleteDialog && (
+        <RepeatDeleteDialog
+          event={deleteDialog.event}
+          onThisOnly={() => deleteRepeatThisOnly(deleteDialog.event)}
+          onAll={() => deleteRepeatAll(deleteDialog.event)}
+          onClose={() => setDeleteDialog(null)}
         />
       )}
       {showCategoryManager && (
@@ -699,19 +817,86 @@ function MonthView({
 }
 
 // ─────────────────── 주/일간 시간 그리드 ───────────────────
+//
+// v0.21.0+ 확장:
+//   - 이벤트는 absolute positioning (시작 분·길이 그대로 반영)
+//   - 겹침 이벤트는 column 분할 알고리즘으로 나란히 표시
+//   - 이벤트 본문 드래그 → 시간 이동 (30분 스냅)
+//   - 이벤트 하단 핸들 드래그 → 종료 시간 리사이즈 (30분 스냅)
+
+const HOUR_HEIGHT = 48; // h-12
+const SNAP_MS = 30 * 60 * 1000; // 30분
+
+interface TimeLayout {
+  event: CalendarEvent;
+  col: number;       // 이 이벤트의 column index
+  totalCols: number; // 겹치는 이벤트군 내 max column 수
+  startMs: number;   // clamped to day bounds
+  endMs: number;
+}
+
+function computeDayLayouts(
+  events: CalendarEvent[],
+  dayStart: Date,
+  dayEnd: Date,
+): TimeLayout[] {
+  const dayStartMs = dayStart.getTime();
+  const dayEndMs = dayEnd.getTime();
+  const candidates = events.filter((e) => {
+    if (e.allDay) return false;
+    const s = new Date(e.startDate).getTime();
+    const en = new Date(e.endDate).getTime();
+    return s < dayEndMs && en > dayStartMs;
+  });
+  const sorted = [...candidates].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+  );
+  // Greedy column assignment
+  const columnEnds: number[] = [];
+  const layouts: TimeLayout[] = [];
+  for (const e of sorted) {
+    const s = Math.max(new Date(e.startDate).getTime(), dayStartMs);
+    const en = Math.min(new Date(e.endDate).getTime(), dayEndMs);
+    let col = -1;
+    for (let c = 0; c < columnEnds.length; c++) {
+      if (columnEnds[c] <= s) { col = c; break; }
+    }
+    if (col === -1) {
+      col = columnEnds.length;
+      columnEnds.push(en);
+    } else {
+      columnEnds[col] = en;
+    }
+    layouts.push({ event: e, col, totalCols: 0, startMs: s, endMs: en });
+  }
+  // Compute totalCols by scanning overlaps per layout
+  for (const l of layouts) {
+    let maxCol = l.col;
+    for (const o of layouts) {
+      if (o === l) continue;
+      if (o.startMs < l.endMs && o.endMs > l.startMs) {
+        if (o.col > maxCol) maxCol = o.col;
+      }
+    }
+    l.totalCols = maxCol + 1;
+  }
+  return layouts;
+}
 
 function TimeGridView({
-  range, events, days, onCellClick, onEventClick,
+  range, events, days, onCellClick, onEventClick, onEventMove, onEventResize,
 }: {
   range: { start: Date; end: Date };
   events: CalendarEvent[];
   days: 1 | 7;
-  onCellClick: (date: Date, hour: number) => void;
+  onCellClick: (date: Date, hour: number, minute: number) => void;
   onEventClick: (ev: CalendarEvent) => void;
+  onEventMove: (ev: CalendarEvent, newStart: Date, newEnd: Date) => void | Promise<void>;
+  onEventResize: (ev: CalendarEvent, newEnd: Date) => void | Promise<void>;
 }) {
   const dayList = useMemo(() => {
     const arr: Date[] = [];
-    const d = new Date(range.start);
+    const d = new Date(range.start); d.setHours(0, 0, 0, 0);
     for (let i = 0; i < days; i++) {
       arr.push(new Date(d));
       d.setDate(d.getDate() + 1);
@@ -724,26 +909,7 @@ function TimeGridView({
   const today = new Date();
   const isToday = (d: Date) => d.toDateString() === today.toDateString();
 
-  // 각 날짜 × 시간대별 이벤트 (시간 지정)
-  const eventsByHour = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
-    for (const e of events) {
-      if (e.allDay) continue;
-      const start = new Date(e.startDate);
-      const end = new Date(e.endDate);
-      // 표시 범위 내 각 "시작 시간 슬롯"
-      const cursor = new Date(start);
-      while (cursor < end) {
-        const key = `${dateKey(cursor)}-${cursor.getHours()}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(e);
-        cursor.setHours(cursor.getHours() + 1);
-      }
-    }
-    return map;
-  }, [events]);
-
-  // 전일 이벤트는 상단 밴드에
+  // 전일 이벤트는 상단 밴드
   const allDayByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const e of events) {
@@ -761,8 +927,90 @@ function TimeGridView({
     return map;
   }, [events]);
 
+  // 각 날짜별 timed 레이아웃
+  const layoutsByDay = useMemo(() => {
+    const map = new Map<string, TimeLayout[]>();
+    for (const d of dayList) {
+      const s = new Date(d); s.setHours(0, 0, 0, 0);
+      const e = new Date(s); e.setDate(e.getDate() + 1);
+      map.set(dateKey(s), computeDayLayouts(events, s, e));
+    }
+    return map;
+  }, [dayList, events]);
+
+  // ── 드래그 상태 ──
+  type DragKind = 'move' | 'resize';
+  const [drag, setDrag] = useState<{
+    eventId: string;      // 이벤트의 렌더용 id (가상 포함)
+    kind: DragKind;
+    initialStartMs: number;
+    initialEndMs: number;
+    deltaMs: number;      // 30분 단위로 스냅된 오프셋
+  } | null>(null);
+  const dragStartY = useRef<number>(0);
+
+  useEffect(() => {
+    if (!drag) return;
+    const handleMove = (e: MouseEvent) => {
+      const raw = e.clientY - dragStartY.current;
+      const msPerPx = (60 * 60 * 1000) / HOUR_HEIGHT;
+      const rawMs = raw * msPerPx;
+      const snapped = Math.round(rawMs / SNAP_MS) * SNAP_MS;
+      setDrag((d) => (d ? { ...d, deltaMs: snapped } : null));
+    };
+    const handleUp = async () => {
+      if (!drag) return;
+      const current = drag;
+      setDrag(null);
+      if (current.deltaMs === 0) return;
+      // 가상 id → 실제 event 찾기
+      const ev = events.find((x) => x.id === current.eventId);
+      if (!ev) return;
+      if (current.kind === 'move') {
+        const ns = new Date(current.initialStartMs + current.deltaMs);
+        const ne = new Date(current.initialEndMs + current.deltaMs);
+        await onEventMove(ev, ns, ne);
+      } else {
+        const ne = new Date(current.initialEndMs + current.deltaMs);
+        // 종료 < 시작 방지
+        if (ne.getTime() <= current.initialStartMs) return;
+        await onEventResize(ev, ne);
+      }
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [drag, events, onEventMove, onEventResize]);
+
+  const startDrag = (ev: CalendarEvent, kind: DragKind, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragStartY.current = e.clientY;
+    setDrag({
+      eventId: ev.id,
+      kind,
+      initialStartMs: new Date(ev.startDate).getTime(),
+      initialEndMs: new Date(ev.endDate).getTime(),
+      deltaMs: 0,
+    });
+  };
+
+  // 클릭 위치를 "분 단위" 로 변환 (30분 스냅)
+  const handleColumnClick = (day: Date, e: React.MouseEvent<HTMLDivElement>) => {
+    if (drag) return; // 드래그 끝난 직후 클릭 무시
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const totalMin = Math.round((offsetY / HOUR_HEIGHT) * 60 / 30) * 30;
+    const hour = Math.floor(totalMin / 60);
+    const minute = totalMin % 60;
+    onCellClick(day, Math.min(23, Math.max(0, hour)), minute);
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[70vh]">
+    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[78vh]">
       {/* 헤더 */}
       <div
         className="grid bg-gray-50 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700"
@@ -815,48 +1063,133 @@ function TimeGridView({
         })}
       </div>
 
-      {/* 시간대 그리드 */}
+      {/* 시간대 그리드 (absolute positioning) */}
       <div className="flex-1 overflow-y-auto">
         <div
-          className="grid"
+          className="grid relative"
           style={{ gridTemplateColumns: `60px repeat(${days}, 1fr)` }}
         >
-          {hours.map((hour) => (
-            <>
+          {/* 왼쪽 시간 레이블 */}
+          <div className="border-r border-gray-200 dark:border-slate-700">
+            {hours.map((hour) => (
               <div
                 key={`h-${hour}`}
-                className="text-[10px] text-gray-400 text-right pr-2 pt-1 border-b border-gray-100 dark:border-slate-700 h-12"
+                className="text-[10px] text-gray-400 text-right pr-2 pt-0.5 border-b border-gray-100 dark:border-slate-700"
+                style={{ height: HOUR_HEIGHT }}
               >
                 {String(hour).padStart(2, '0')}:00
               </div>
-              {dayList.map((d, i) => {
-                const key = `${dateKey(d)}-${hour}`;
-                const list = eventsByHour.get(key) || [];
-                return (
+            ))}
+          </div>
+
+          {/* 각 날짜 열 */}
+          {dayList.map((d, i) => {
+            const key = dateKey(d);
+            const layouts = layoutsByDay.get(key) || [];
+            const dayStartMs = new Date(d).setHours(0, 0, 0, 0);
+            return (
+              <div
+                key={`col-${i}`}
+                className="relative border-l border-gray-200 dark:border-slate-700 cursor-pointer"
+                style={{ height: HOUR_HEIGHT * 24 }}
+                onClick={(e) => handleColumnClick(d, e)}
+              >
+                {/* 시간선 */}
+                {hours.map((h) => (
                   <div
-                    key={`c-${hour}-${i}`}
-                    onClick={() => onCellClick(d, hour)}
-                    className={`border-l border-b border-gray-100 dark:border-slate-700 h-12 p-0.5 cursor-pointer hover:bg-primary-50/40 dark:hover:bg-slate-700/40 relative space-y-0.5 overflow-hidden`}
-                  >
-                    {list.map((ev, j) => {
-                      const color = ev.color || ev.category?.color || '#6b7280';
-                      return (
-                        <div
-                          key={`${ev.id}-${j}`}
-                          onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
-                          className="text-[10px] px-1 py-0.5 rounded text-white truncate cursor-pointer hover:opacity-85"
-                          style={{ backgroundColor: color }}
-                          title={ev.title}
-                        >
-                          {new Date(ev.startDate).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} {ev.title}
+                    key={`line-${h}`}
+                    className="absolute left-0 right-0 border-b border-gray-100 dark:border-slate-700 hover:bg-primary-50/30 dark:hover:bg-slate-700/20"
+                    style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+                  />
+                ))}
+
+                {/* 오늘 현재시각 가이드 */}
+                {isToday(d) && (() => {
+                  const now = new Date();
+                  const top = (now.getHours() + now.getMinutes() / 60) * HOUR_HEIGHT;
+                  return (
+                    <div
+                      className="absolute left-0 right-0 z-10 pointer-events-none flex items-center"
+                      style={{ top }}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 -ml-1" />
+                      <span className="flex-1 h-[1px] bg-red-500" />
+                    </div>
+                  );
+                })()}
+
+                {/* 이벤트 */}
+                {layouts.map((L) => {
+                  const ev = L.event;
+                  const color = ev.color || ev.category?.color || '#6b7280';
+                  const isDragging = drag?.eventId === ev.id;
+                  // 시작/끝 (드래그 중이면 프리뷰 delta 적용)
+                  let sMs = L.startMs, eMs = L.endMs;
+                  if (isDragging && drag) {
+                    if (drag.kind === 'move') {
+                      sMs = L.startMs + drag.deltaMs;
+                      eMs = L.endMs + drag.deltaMs;
+                    } else {
+                      eMs = Math.max(L.startMs + SNAP_MS, L.endMs + drag.deltaMs);
+                    }
+                  }
+                  const top = ((sMs - dayStartMs) / (60 * 60 * 1000)) * HOUR_HEIGHT;
+                  const height = Math.max(16, ((eMs - sMs) / (60 * 60 * 1000)) * HOUR_HEIGHT);
+                  const width = 100 / L.totalCols;
+                  const left = (L.col * 100) / L.totalCols;
+                  return (
+                    <div
+                      key={`${ev.id}-${L.col}`}
+                      onClick={(e) => { e.stopPropagation(); if (!drag) onEventClick(ev); }}
+                      onMouseDown={(e) => startDrag(ev, 'move', e)}
+                      className={`absolute rounded shadow-sm text-white cursor-grab active:cursor-grabbing overflow-hidden transition-opacity group/tev ${
+                        isDragging ? 'opacity-70 z-20 ring-2 ring-primary-400' : 'hover:opacity-90 z-[1]'
+                      }`}
+                      style={{
+                        top: `${top}px`,
+                        height: `${height}px`,
+                        left: `calc(${left}% + 2px)`,
+                        width: `calc(${width}% - 4px)`,
+                        backgroundColor: color,
+                      }}
+                      title={`${ev.title}\n${new Date(sMs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} ~ ${new Date(eMs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`}
+                    >
+                      <div className="px-1.5 py-0.5 text-[10px] font-semibold leading-tight">
+                        {ev.repeat !== 'none' && <Repeat size={8} className="inline mr-0.5 opacity-80" />}
+                        {ev.title}
+                      </div>
+                      {height > 32 && (
+                        <div className="px-1.5 text-[9px] opacity-85 leading-tight">
+                          {new Date(sMs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                          {' ~ '}
+                          {new Date(eMs).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                         </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </>
-          ))}
+                      )}
+                      {/* 리사이즈 핸들 */}
+                      <div
+                        onMouseDown={(e) => startDrag(ev, 'resize', e)}
+                        className="absolute left-0 right-0 bottom-0 h-1.5 cursor-ns-resize opacity-0 group-hover/tev:opacity-100 bg-white/50 hover:bg-white/80"
+                        title="드래그로 기간 연장"
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* 드래그 시 전역 안내 배지 (선택 이벤트 기준) */}
+                {drag && drag.deltaMs !== 0 && (() => {
+                  const deltaMin = drag.deltaMs / 60_000;
+                  const sign = deltaMin > 0 ? '+' : '';
+                  // 첫 번째 day column에만 배지 렌더
+                  if (i !== 0) return null;
+                  return (
+                    <div className="absolute top-1 right-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded pointer-events-none z-30">
+                      {drag.kind === 'move' ? '이동' : '리사이즈'} {sign}{deltaMin}분
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -866,18 +1199,35 @@ function TimeGridView({
 // ─────────────────── 모달 — 상세 ───────────────────
 
 function EventDetailModal({
-  event, onClose, onEdit, onDelete,
+  event, currentUserId, onClose, onEdit, onDelete, onAttendanceChange,
 }: {
   event: CalendarEvent;
+  currentUserId: string | null;
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onAttendanceChange: (status: AttendeeStatus) => void;
 }) {
   const color = event.color || event.category?.color || '#6b7280';
+
+  // 내가 참석자인지 & 현재 상태
+  const myAttendance = currentUserId
+    ? (event.attendees ?? []).find((a) => a.user.id === currentUserId)
+    : undefined;
+  const amAttendee = !!myAttendance;
+  const amCreator = !!currentUserId && currentUserId === event.creator?.id;
+  const myStatus = myAttendance?.status ?? 'pending';
+
+  const statusBadge = (s: AttendeeStatus) => {
+    if (s === 'accepted') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">수락</span>;
+    if (s === 'declined') return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">거절</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300">대기</span>;
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="px-5 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-800 z-10">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
             <h3 className="font-bold truncate">{event.title}</h3>
@@ -926,9 +1276,14 @@ function EventDetailModal({
           {event.attendees && event.attendees.length > 0 && (
             <div className="flex items-start gap-2">
               <Users size={14} className="text-gray-400 mt-0.5 shrink-0" />
-              <span className="text-gray-700 dark:text-gray-300">
-                {event.attendees.map((a) => a.user.name).join(', ')}
-              </span>
+              <div className="flex-1 flex flex-wrap gap-1.5 text-gray-700 dark:text-gray-300">
+                {event.attendees.map((a, i) => (
+                  <span key={a.id ?? `${a.user.id}-${i}`} className="flex items-center gap-1 bg-gray-50 dark:bg-slate-700/40 px-2 py-0.5 rounded-full">
+                    <span className="text-xs">{a.user.name}</span>
+                    {statusBadge(a.status ?? 'pending')}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
           {event.description && (
@@ -936,9 +1291,104 @@ function EventDetailModal({
               {event.description}
             </div>
           )}
+
+          {/* 참석자 응답 UI (본인이 참석자이거나 생성자일 때) */}
+          {(amAttendee || amCreator) && currentUserId && (
+            <div className="pt-3 border-t border-gray-100 dark:border-slate-700">
+              <div className="text-xs text-gray-500 mb-1.5">내 참석 여부</div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onAttendanceChange('accepted')}
+                  className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
+                    myStatus === 'accepted'
+                      ? 'bg-emerald-500 text-white border-emerald-500'
+                      : 'bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  ✓ 수락
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAttendanceChange('pending')}
+                  className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
+                    myStatus === 'pending'
+                      ? 'bg-gray-500 text-white border-gray-500'
+                      : 'bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  ? 미정
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAttendanceChange('declined')}
+                  className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
+                    myStatus === 'declined'
+                      ? 'bg-red-500 text-white border-red-500'
+                      : 'bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  ✕ 거절
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="pt-3 text-xs text-gray-400 flex items-center justify-between border-t border-gray-100 dark:border-slate-700">
             <span>{SCOPE_LABEL[event.scope]} · {event.creator?.name ?? ''}</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────── 모달 — 반복 삭제 옵션 ───────────────────
+
+function RepeatDeleteDialog({
+  event, onThisOnly, onAll, onClose,
+}: {
+  event: CalendarEvent;
+  onThisOnly: () => void;
+  onAll: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+          <h3 className="font-bold flex items-center gap-1.5">
+            <Repeat size={16} className="text-primary-600" /> 반복 일정 삭제
+          </h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"><X size={14} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3 text-sm">
+          <p className="text-gray-700 dark:text-gray-300">
+            <strong>{event.title}</strong>은(는) 반복 일정입니다.<br />
+            어떻게 삭제할까요?
+          </p>
+          <div className="text-xs text-gray-500">
+            {fmtDate(event.startDate)}
+          </div>
+          <div className="space-y-1.5 pt-2">
+            <button
+              onClick={onThisOnly}
+              className="w-full text-left px-4 py-2.5 rounded-lg border border-gray-200 dark:border-slate-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+            >
+              <div className="font-medium text-sm">📅 이 날짜만 삭제</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">나머지 반복은 유지됩니다</div>
+            </button>
+            <button
+              onClick={onAll}
+              className="w-full text-left px-4 py-2.5 rounded-lg border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              <div className="font-medium text-sm text-red-600 dark:text-red-400">🗑 전체 반복 삭제</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">모든 날짜의 반복이 제거됩니다</div>
+            </button>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-700 flex justify-end">
+          <button onClick={onClose} className="btn-secondary text-xs">취소</button>
         </div>
       </div>
     </div>
@@ -1369,6 +1819,8 @@ function fmtDateTime(iso: string): string {
  * - 원본 이벤트는 1개 (DB에 저장된 것)
  * - 반복이 'daily/weekly/monthly/yearly'이면 시작일로부터 rangeEnd까지 복제
  * - repeatUntil이 있으면 그 전까지
+ * - exceptionDates(YYYY-MM-DD)에 포함된 날짜는 제외 (이 날짜만 삭제)
+ * - 가상 인스턴스에는 originalId 주입 → 삭제/수정 시 원본 id로 해석
  */
 function expandRepeatedEvents(
   events: CalendarEvent[],
@@ -1377,13 +1829,17 @@ function expandRepeatedEvents(
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   for (const ev of events) {
-    if (ev.repeat === 'none' || !ev.repeat) { out.push(ev); continue; }
+    if (ev.repeat === 'none' || !ev.repeat) {
+      out.push({ ...ev, originalId: ev.id });
+      continue;
+    }
 
     const start = new Date(ev.startDate);
     const end = new Date(ev.endDate);
     const durationMs = end.getTime() - start.getTime();
     const until = ev.repeatUntil ? new Date(ev.repeatUntil) : rangeEnd;
     const hardEnd = until < rangeEnd ? until : rangeEnd;
+    const exceptions = new Set(ev.exceptionDates ?? []);
 
     // 시작일 이후부터 hardEnd까지 각 반복 인스턴스 생성
     const cursor = new Date(start);
@@ -1391,11 +1847,13 @@ function expandRepeatedEvents(
     while (cursor <= hardEnd && safetyCounter < 500) {
       const instStart = new Date(cursor);
       const instEnd = new Date(cursor.getTime() + durationMs);
-      // rangeStart 이후인 것만 렌더 대상
-      if (instEnd >= rangeStart) {
+      const dayStr = dateKey(instStart);
+      // exceptionDates에 해당되지 않고 rangeStart 이후인 것만 렌더 대상
+      if (!exceptions.has(dayStr) && instEnd >= rangeStart) {
         out.push({
           ...ev,
-          id: `${ev.id}__r${safetyCounter}`, // 가상 id (편집 시 원본 id로 파싱 필요)
+          id: `${ev.id}__r${safetyCounter}`, // 가상 id
+          originalId: ev.id,                  // 실제 DB id
           startDate: instStart.toISOString(),
           endDate: instEnd.toISOString(),
         });
