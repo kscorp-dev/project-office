@@ -123,6 +123,27 @@ async function main() {
     });
   }
 
+  // 캘린더 기본 카테고리 (전역, ownerId=null, isDefault=true)
+  const defaultCategories = [
+    { name: '회의',   color: '#3b82f6', sortOrder: 1 }, // blue
+    { name: '개인',   color: '#22c55e', sortOrder: 2 }, // green
+    { name: '휴가',   color: '#f59e0b', sortOrder: 3 }, // amber
+    { name: '출장',   color: '#8b5cf6', sortOrder: 4 }, // violet
+    { name: '마감',   color: '#ef4444', sortOrder: 5 }, // red
+    { name: '기타',   color: '#6b7280', sortOrder: 6 }, // gray
+  ];
+
+  for (const cat of defaultCategories) {
+    const existing = await prisma.calendarCategory.findFirst({
+      where: { ownerId: null, name: cat.name },
+    });
+    if (!existing) {
+      await prisma.calendarCategory.create({
+        data: { ...cat, ownerId: null, isDefault: true },
+      });
+    }
+  }
+
   // 테스트 사용자 추가
   const testUsers = [
     { employeeId: 'user01', email: 'user01@kscorp.com', name: '김철수', role: UserRole.user, position: '사원', deptCode: 'DEV' },

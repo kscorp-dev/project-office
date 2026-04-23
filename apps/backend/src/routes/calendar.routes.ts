@@ -17,6 +17,7 @@ const eventSchema = z.object({
   allDay: z.boolean().default(false),
   location: z.string().max(200).optional(),
   color: z.string().max(7).optional(),
+  categoryId: z.string().uuid().optional().nullable(),
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).default('none'),
   scope: z.enum(['personal', 'department', 'company']).default('personal'),
   attendeeIds: z.array(z.string().uuid()).optional(),
@@ -43,6 +44,7 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
       include: {
         creator: { select: { id: true, name: true } },
         attendees: { include: { user: { select: { id: true, name: true } } } },
+        category: { select: { id: true, name: true, color: true } },
       },
       orderBy: { startDate: 'asc' },
     });
@@ -72,6 +74,7 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
       include: {
         creator: { select: { id: true, name: true } },
         attendees: { include: { user: { select: { id: true, name: true } } } },
+        category: { select: { id: true, name: true, color: true } },
       },
     });
 
@@ -137,6 +140,116 @@ router.delete('/events/:id', authenticate, async (req: Request, res: Response) =
     });
 
     res.json({ success: true, data: { message: '일정이 삭제되었습니다' } });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   캘린더 카테고리 (v0.20.0)
+   ═══════════════════════════════════════════════
+   - GET  /categories  : 전역 + 본인 카테고리 조회
+   - POST /categories  : 개인 카테고리 생성
+   - PATCH /:id        : 이름/색상 변경 (본인 것 or 관리자)
+   - DELETE /:id       : 삭제 (isDefault 금지, 본인 것 or 관리자)
+*/
+
+const categorySchema = z.object({
+  name: z.string().min(1).max(50),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, '#RRGGBB 형식이어야 합니다'),
+  sortOrder: z.number().int().min(0).max(999).optional(),
+});
+
+// GET /calendar/categories
+router.get('/categories', authenticate, async (req: Request, res: Response) => {
+  try {
+    const rows = await prisma.calendarCategory.findMany({
+      where: {
+        OR: [
+          { ownerId: null },         // 전역
+          { ownerId: req.user!.id }, // 내 것
+        ],
+      },
+      orderBy: [{ isDefault: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+    });
+    res.json({ success: true, data: rows });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /calendar/categories (개인 카테고리 생성)
+router.post('/categories', authenticate, validate(categorySchema), async (req: Request, res: Response) => {
+  try {
+    const created = await prisma.calendarCategory.create({
+      data: {
+        name: req.body.name,
+        color: req.body.color,
+        sortOrder: req.body.sortOrder ?? 0,
+        ownerId: req.user!.id,
+        isDefault: false,
+      },
+    });
+    res.status(201).json({ success: true, data: created });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// PATCH /calendar/categories/:id
+router.patch('/categories/:id', authenticate, validate(categorySchema.partial()), async (req: Request, res: Response) => {
+  try {
+    const cat = await prisma.calendarCategory.findUnique({ where: { id: qs(req.params.id) } });
+    if (!cat) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '카테고리를 찾을 수 없습니다' } });
+      return;
+    }
+    // 권한: 전역 카테고리는 관리자만, 개인 카테고리는 소유자만
+    const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+    if (cat.ownerId === null && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '기본 카테고리는 관리자만 수정할 수 있습니다' } });
+      return;
+    }
+    if (cat.ownerId !== null && cat.ownerId !== req.user!.id && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '본인 카테고리만 수정할 수 있습니다' } });
+      return;
+    }
+
+    const updated = await prisma.calendarCategory.update({
+      where: { id: cat.id },
+      data: {
+        ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body.color !== undefined ? { color: req.body.color } : {}),
+        ...(req.body.sortOrder !== undefined ? { sortOrder: req.body.sortOrder } : {}),
+      },
+    });
+    res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// DELETE /calendar/categories/:id (isDefault=true는 삭제 불가)
+router.delete('/categories/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const cat = await prisma.calendarCategory.findUnique({ where: { id: qs(req.params.id) } });
+    if (!cat) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '카테고리를 찾을 수 없습니다' } });
+      return;
+    }
+    if (cat.isDefault) {
+      res.status(400).json({ success: false, error: { code: 'DEFAULT_CATEGORY', message: '기본 카테고리는 삭제할 수 없습니다' } });
+      return;
+    }
+    const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+    if (cat.ownerId !== req.user!.id && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '본인 카테고리만 삭제할 수 있습니다' } });
+      return;
+    }
+
+    // 이 카테고리를 사용하는 이벤트들은 categoryId=null로 자동 (onDelete: SetNull)
+    await prisma.calendarCategory.delete({ where: { id: cat.id } });
+    res.json({ success: true });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

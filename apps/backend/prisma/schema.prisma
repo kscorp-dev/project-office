@@ -75,6 +75,7 @@ model User {
   // 캘린더
   calendarEvents      CalendarEvent[]      @relation("CalendarEvents")
   eventAttendees      EventAttendee[]      @relation("EventAttendees")
+  calendarCategories  CalendarCategory[]   @relation("OwnedCalendarCategories")
 
   // 게시판
   authoredPosts       Post[]               @relation("AuthoredPosts")
@@ -686,7 +687,9 @@ model CalendarEvent {
   endDate     DateTime    @map("end_date")
   allDay      Boolean     @default(false) @map("all_day")
   location    String?
+  /// 카테고리 색상을 덮어쓰는 개별 색 (없으면 category.color 사용)
   color       String?     @default("#3b82f6")
+  categoryId  String?     @map("category_id")
   repeat      EventRepeat @default(none)
   scope       String      @default("personal") // personal, department, company
   creatorId   String      @map("creator_id")
@@ -695,14 +698,38 @@ model CalendarEvent {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  creator      User            @relation("CalendarEvents", fields: [creatorId], references: [id])
+  creator      User                       @relation("CalendarEvents", fields: [creatorId], references: [id])
+  category     CalendarCategory?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   attendees    EventAttendee[]
   externalMaps CalendarEventExternalMap[] @relation("EventExternalMaps")
 
   @@index([creatorId])
   @@index([startDate, endDate])
   @@index([scope])
+  @@index([categoryId])
   @@map("calendar_events")
+}
+
+/// 캘린더 카테고리 (색상 + 이름)
+/// - ownerId가 null: 전역 기본 카테고리 (seed로 생성)
+/// - ownerId가 not null: 해당 사용자가 추가로 만든 개인 카테고리
+/// - color: 16진수 컬러 코드 (#RRGGBB)
+/// - isDefault: 시스템 시드 카테고리 (삭제 방지)
+model CalendarCategory {
+  id        String   @id @default(uuid())
+  name      String
+  color     String                                  // #RRGGBB
+  ownerId   String?  @map("owner_id")               // null = 전역 / not null = 개인
+  isDefault Boolean  @default(false) @map("is_default")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner  User?           @relation("OwnedCalendarCategories", fields: [ownerId], references: [id], onDelete: Cascade)
+  events CalendarEvent[]
+
+  @@index([ownerId])
+  @@map("calendar_categories")
 }
 
 model EventAttendee {
