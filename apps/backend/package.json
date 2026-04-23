@@ -1,6 +1,6 @@
 {
   "name": "@project-office/backend",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Project Office Backend API Server",
   "main": "dist/server.js",
   "scripts": {

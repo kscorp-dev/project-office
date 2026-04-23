@@ -57,7 +57,11 @@ export default function MoreScreen() {
   };
 
   const handleMenuPress = (key: string) => {
-    // TODO: 각 기능 페이지 연결
+    // 구현된 라우트로 연결
+    if (key === 'meeting') {
+      router.push('/meeting');
+      return;
+    }
     Alert.alert('준비 중', `${key} 기능은 준비 중입니다.`);
   };
 

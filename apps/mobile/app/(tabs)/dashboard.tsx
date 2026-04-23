@@ -12,7 +12,7 @@ const QUICK_MENU = [
   { key: 'attend',   label: '근태',     emoji: '⏰',  route: '/(tabs)/more' },
   { key: 'board',    label: '게시판',   emoji: '📰',  route: '/(tabs)/more' },
   { key: 'parking',  label: '주차관리', emoji: '🚗',  route: '/(tabs)/more' },
-  { key: 'meeting',  label: '화상회의', emoji: '🎥',  route: '/(tabs)/more' },
+  { key: 'meeting',  label: '화상회의', emoji: '🎥',  route: '/meeting' },
 ];
 
 export default function DashboardScreen() {
