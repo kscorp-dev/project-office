@@ -1,6 +1,10 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  ActivityIndicator, RefreshControl, Alert,
+} from 'react-native';
 import { COLORS } from '../../src/constants/theme';
+import api from '../../src/services/api';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'mine';
 
@@ -11,35 +15,83 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'mine', label: '내 기안' },
 ];
 
-interface ApprovalItem {
+interface ApprovalDoc {
   id: string;
   title: string;
-  author: string;
-  date: string;
-  status: 'pending' | 'approved' | 'rejected';
-  type: string;
+  status: 'draft' | 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  submittedAt?: string | null;
+  drafter?: { id: string; name: string };
+  template?: { name: string; category?: string };
 }
 
-const DEMO: ApprovalItem[] = [
-  { id: '1', title: '출장 경비 정산 (서울-부산)', author: '이대리', date: '4/9', status: 'pending', type: '경비' },
-  { id: '2', title: '사무용품 구매 요청', author: '최사원', date: '4/8', status: 'pending', type: '구매' },
-  { id: '3', title: '연차 사용 신청 (4/21)', author: '나', date: '4/7', status: 'approved', type: '휴가' },
-  { id: '4', title: '프로젝트 예산 증액 요청', author: '박과장', date: '4/5', status: 'rejected', type: '예산' },
-];
-
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  draft:    { bg: '#f3f4f6', text: '#6b7280', label: '임시' },
   pending:  { bg: '#fef9c3', text: '#a16207', label: '대기' },
   approved: { bg: '#dcfce7', text: '#15803d', label: '승인' },
   rejected: { bg: '#fef2f2', text: '#dc2626', label: '반려' },
 };
 
+/** 탭 → 백엔드 box 값 매핑 */
+const TAB_TO_BOX: Record<Tab, 'pending' | 'drafts' | 'approved'> = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'approved', // 완료함에서 status=rejected 만 필터
+  mine: 'drafts',
+};
+
 export default function ApprovalScreen() {
   const [tab, setTab] = useState<Tab>('pending');
+  const [docs, setDocs] = useState<ApprovalDoc[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
 
-  const filtered = DEMO.filter((d) => {
-    if (tab === 'mine') return d.author === '나';
-    return d.status === tab;
-  });
+  const fetchDocs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const box = TAB_TO_BOX[tab];
+      const res = await api.get(`/approvals/documents?box=${box}&limit=50`);
+      let list: ApprovalDoc[] = res.data?.data ?? [];
+      if (tab === 'approved') list = list.filter((d) => d.status === 'approved');
+      if (tab === 'rejected') list = list.filter((d) => d.status === 'rejected');
+      setDocs(list);
+    } catch (err: any) {
+      Alert.alert('오류', err.response?.data?.error?.message || '문서 조회 실패');
+      setDocs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [tab]);
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const res = await api.get('/approvals/count');
+      const c = res.data?.data ?? {};
+      setCounts({
+        pending: c.pending ?? 0,
+        approved: c.approved ?? 0,
+        rejected: c.rejected ?? 0,
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  useEffect(() => { fetchCounts(); }, [fetchCounts]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchDocs(), fetchCounts()]);
+    setRefreshing(false);
+  };
+
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
 
   return (
     <View style={styles.container}>
@@ -56,12 +108,12 @@ export default function ApprovalScreen() {
         ))}
       </View>
 
-      {/* 통계 */}
+      {/* 통계 (백엔드 count 기준) */}
       <View style={styles.statsRow}>
         {[
-          { label: '대기', count: DEMO.filter((d) => d.status === 'pending').length, color: COLORS.warning },
-          { label: '승인', count: DEMO.filter((d) => d.status === 'approved').length, color: COLORS.primary[500] },
-          { label: '반려', count: DEMO.filter((d) => d.status === 'rejected').length, color: COLORS.danger },
+          { label: '대기', count: counts.pending, color: COLORS.warning },
+          { label: '승인', count: counts.approved, color: COLORS.primary[500] },
+          { label: '반려', count: counts.rejected, color: COLORS.danger },
         ].map((s) => (
           <View key={s.label} style={styles.statItem}>
             <Text style={[styles.statCount, { color: s.color }]}>{s.count}</Text>
@@ -71,19 +123,28 @@ export default function ApprovalScreen() {
       </View>
 
       {/* 목록 */}
-      <ScrollView style={styles.list}>
-        {filtered.length === 0 ? (
+      <ScrollView
+        style={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary[500]} />}
+      >
+        {loading ? (
+          <View style={styles.empty}>
+            <ActivityIndicator color={COLORS.primary[500]} />
+          </View>
+        ) : docs.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>문서가 없습니다</Text>
           </View>
         ) : (
-          filtered.map((item) => {
-            const st = STATUS_STYLE[item.status];
+          docs.map((item) => {
+            const st = STATUS_STYLE[item.status] ?? STATUS_STYLE.draft;
             return (
               <TouchableOpacity key={item.id} style={styles.card} activeOpacity={0.7}>
                 <View style={styles.cardHeader}>
                   <View style={[styles.typeBadge, { backgroundColor: COLORS.primary[50] }]}>
-                    <Text style={[styles.typeText, { color: COLORS.primary[700] }]}>{item.type}</Text>
+                    <Text style={[styles.typeText, { color: COLORS.primary[700] }]}>
+                      {item.template?.category ?? item.template?.name ?? '일반'}
+                    </Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
                     <Text style={[styles.statusText, { color: st.text }]}>{st.label}</Text>
@@ -91,8 +152,8 @@ export default function ApprovalScreen() {
                 </View>
                 <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
                 <View style={styles.cardFooter}>
-                  <Text style={styles.cardAuthor}>{item.author}</Text>
-                  <Text style={styles.cardDate}>{item.date}</Text>
+                  <Text style={styles.cardAuthor}>{item.drafter?.name ?? '-'}</Text>
+                  <Text style={styles.cardDate}>{fmtDate(item.submittedAt || item.createdAt)}</Text>
                 </View>
               </TouchableOpacity>
             );

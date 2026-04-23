@@ -1,83 +1,174 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
+  ActivityIndicator, RefreshControl,
+} from 'react-native';
 import { COLORS } from '../../src/constants/theme';
+import api from '../../src/services/api';
 
 interface MailItem {
-  id: string;
-  from: string;
+  uid: string;
   subject: string;
-  preview: string;
-  date: string;
-  isRead: boolean;
-  isStarred: boolean;
+  fromEmail: string;
+  fromName: string;
+  snippet: string;
+  sentAt: string;
+  isSeen: boolean;
+  isFlagged: boolean;
+  hasAttachment: boolean;
 }
 
-const DEMO_MAILS: MailItem[] = [
-  { id: '1', from: '김부장', subject: '4월 프로젝트 진행 현황 보고 요청', preview: '안녕하세요, 4월 프로젝트 진행 현황에 대한 보고서를...', date: '09:30', isRead: false, isStarred: true },
-  { id: '2', from: '이대리', subject: 'Re: 화상회의 시스템 테스트 결과', preview: '테스트 결과 공유드립니다. 음성 인식 정확도...', date: '08:15', isRead: false, isStarred: false },
-  { id: '3', from: '박과장', subject: '자재관리 시스템 업데이트 안내', preview: '자재관리 시스템이 v2.1로 업데이트...', date: '어제', isRead: true, isStarred: false },
-  { id: '4', from: '최사원', subject: '신입사원 교육 일정 안내', preview: '4월 신입사원 교육 일정을 안내드립니다...', date: '어제', isRead: true, isStarred: false },
-  { id: '5', from: '정차장', subject: '연차 사용 승인 완료', preview: '신청하신 연차가 승인되었습니다...', date: '4/7', isRead: true, isStarred: true },
-];
-
 export default function MailScreen() {
-  const [mails, setMails] = useState(DEMO_MAILS);
+  const [mails, setMails] = useState<MailItem[]>([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [accountLinked, setAccountLinked] = useState<boolean | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
 
-  const filtered = mails.filter(
-    (m) => !search || m.subject.includes(search) || m.from.includes(search)
-  );
-  const unread = mails.filter((m) => !m.isRead).length;
+  // 계정 연결 여부 확인 → 연결되어 있으면 INBOX 로드
+  const fetchMessages = useCallback(async (opts: { forceRefresh?: boolean; searchQuery?: string } = {}) => {
+    setLoading(true);
+    setAccountError(null);
+    try {
+      const qs = new URLSearchParams({ folder: 'INBOX', limit: '30' });
+      if (opts.forceRefresh) qs.set('refresh', '1');
+      if (opts.searchQuery) qs.set('search', opts.searchQuery);
+      const res = await api.get(`/mail/messages?${qs.toString()}`);
+      setMails(res.data?.data ?? []);
+      setAccountLinked(true);
+    } catch (err: any) {
+      const code = err.response?.data?.error?.code;
+      if (code === 'MAIL_ACCOUNT_NOT_LINKED') {
+        setAccountLinked(false);
+      } else {
+        setAccountError(err.response?.data?.error?.message || '메일 조회 실패');
+        setAccountLinked(true); // UI 상태는 연결은 되어 있지만 오류 상태
+      }
+      setMails([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchMessages({ forceRefresh: true });
+    setRefreshing(false);
+  };
+
+  const onSearch = async (q: string) => {
+    setSearch(q);
+    // 2글자 이상부터 서버 검색 (간단 UX)
+    if (q.length === 0) {
+      fetchMessages();
+    } else if (q.length >= 2) {
+      fetchMessages({ searchQuery: q });
+    }
+  };
+
+  const unreadCount = mails.filter((m) => !m.isSeen).length;
+
+  const fmtTime = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const today = new Date();
+    const isToday = d.toDateString() === today.toDateString();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+    if (isToday) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    if (isYesterday) return '어제';
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+
+  const senderName = (m: MailItem) => m.fromName || m.fromEmail || '(발신자 없음)';
+
+  if (accountLinked === false) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.stateBox}>
+          <Text style={styles.stateEmoji}>📭</Text>
+          <Text style={styles.stateTitle}>메일 계정이 연결되지 않았습니다</Text>
+          <Text style={styles.stateHint}>
+            관리자에게 WorkMail 계정 연결을 요청하거나,{'\n'}웹 앱의 메일 설정에서 IMAP/SMTP 자격을 입력해 주세요.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* 검색바 */}
       <View style={styles.searchWrap}>
         <TextInput
           style={styles.searchInput}
-          placeholder="메일 검색..."
+          placeholder="메일 검색 (2글자 이상)"
           placeholderTextColor={COLORS.gray[400]}
           value={search}
-          onChangeText={setSearch}
+          onChangeText={onSearch}
+          autoCorrect={false}
+          autoCapitalize="none"
         />
       </View>
 
-      {/* 통계 */}
       <View style={styles.statsRow}>
-        <Text style={styles.statsText}>받은편지함 ({unread}개 안읽음)</Text>
-        <TouchableOpacity>
-          <Text style={styles.composeBtn}>+ 새 메일</Text>
-        </TouchableOpacity>
+        <Text style={styles.statsText}>받은편지함 ({unreadCount}개 안읽음)</Text>
       </View>
 
-      {/* 메일 목록 */}
-      <ScrollView style={styles.list}>
-        {filtered.map((mail) => (
-          <TouchableOpacity
-            key={mail.id}
-            style={[styles.mailRow, !mail.isRead && styles.mailUnread]}
-            activeOpacity={0.7}
-            onPress={() => setMails((p) => p.map((m) => m.id === mail.id ? { ...m, isRead: true } : m))}
-          >
-            <View style={styles.mailAvatar}>
-              <Text style={styles.mailAvatarText}>{mail.from[0]}</Text>
-            </View>
-            <View style={styles.mailContent}>
-              <View style={styles.mailHeader}>
-                <Text style={[styles.mailFrom, !mail.isRead && styles.bold]}>{mail.from}</Text>
-                <Text style={styles.mailDate}>{mail.date}</Text>
+      {accountError && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{accountError}</Text>
+        </View>
+      )}
+
+      <ScrollView
+        style={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary[500]} />}
+      >
+        {loading && mails.length === 0 ? (
+          <View style={styles.empty}>
+            <ActivityIndicator color={COLORS.primary[500]} />
+          </View>
+        ) : mails.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>{search ? '검색 결과가 없습니다' : '메일이 없습니다'}</Text>
+          </View>
+        ) : (
+          mails.map((mail) => (
+            <TouchableOpacity
+              key={mail.uid}
+              style={[styles.mailRow, !mail.isSeen && styles.mailUnread]}
+              activeOpacity={0.7}
+            >
+              <View style={styles.mailAvatar}>
+                <Text style={styles.mailAvatarText}>{senderName(mail)[0]?.toUpperCase()}</Text>
               </View>
-              <Text style={[styles.mailSubject, !mail.isRead && styles.bold]} numberOfLines={1}>
-                {mail.subject}
-              </Text>
-              <Text style={styles.mailPreview} numberOfLines={1}>{mail.preview}</Text>
-            </View>
-            <View style={styles.mailIndicators}>
-              {mail.isStarred && <Text style={styles.star}>★</Text>}
-              {!mail.isRead && <View style={styles.unreadDot} />}
-            </View>
-          </TouchableOpacity>
-        ))}
+              <View style={styles.mailContent}>
+                <View style={styles.mailHeader}>
+                  <Text style={[styles.mailFrom, !mail.isSeen && styles.bold]} numberOfLines={1}>
+                    {senderName(mail)}
+                  </Text>
+                  <Text style={styles.mailDate}>{fmtTime(mail.sentAt)}</Text>
+                </View>
+                <Text style={[styles.mailSubject, !mail.isSeen && styles.bold]} numberOfLines={1}>
+                  {mail.subject || '(제목 없음)'}
+                </Text>
+                <Text style={styles.mailPreview} numberOfLines={1}>
+                  {mail.hasAttachment ? '📎 ' : ''}{mail.snippet || ''}
+                </Text>
+              </View>
+              <View style={styles.mailIndicators}>
+                {mail.isFlagged && <Text style={styles.star}>★</Text>}
+                {!mail.isSeen && <View style={styles.unreadDot} />}
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
     </View>
   );
@@ -95,8 +186,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 8,
   },
   statsText: { fontSize: 13, color: COLORS.gray[500] },
-  composeBtn: { fontSize: 14, fontWeight: '600', color: COLORS.primary[600] },
+  errorBox: {
+    marginHorizontal: 16, padding: 10, backgroundColor: '#fef2f2', borderRadius: 10,
+    borderWidth: 1, borderColor: '#fecaca', marginBottom: 6,
+  },
+  errorText: { fontSize: 12, color: '#991b1b' },
   list: { flex: 1 },
+  empty: { alignItems: 'center', paddingVertical: 60 },
+  emptyText: { fontSize: 14, color: COLORS.gray[400] },
   mailRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14,
     backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50],
@@ -109,7 +206,7 @@ const styles = StyleSheet.create({
   mailAvatarText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
   mailContent: { flex: 1 },
   mailHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  mailFrom: { fontSize: 14, color: COLORS.gray[700] },
+  mailFrom: { fontSize: 14, color: COLORS.gray[700], flex: 1, marginRight: 8 },
   mailDate: { fontSize: 11, color: COLORS.gray[400] },
   mailSubject: { fontSize: 14, color: COLORS.gray[800], marginBottom: 2 },
   mailPreview: { fontSize: 12, color: COLORS.gray[400] },
@@ -117,4 +214,8 @@ const styles = StyleSheet.create({
   mailIndicators: { alignItems: 'center', gap: 4, marginLeft: 8 },
   star: { fontSize: 14, color: '#f59e0b' },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary[500] },
+  stateBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  stateEmoji: { fontSize: 48, marginBottom: 16 },
+  stateTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 8, textAlign: 'center' },
+  stateHint: { fontSize: 13, color: COLORS.gray[500], textAlign: 'center', lineHeight: 20 },
 });
