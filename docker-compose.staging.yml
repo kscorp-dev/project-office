@@ -1,0 +1,82 @@
+# Project Office — Staging 환경 오버레이
+#
+# 사용:
+#   COMPOSE_PROJECT_NAME=po-staging \
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml --env-file .env.staging up -d
+#
+# 또는 scripts/staging.sh를 사용 (권장):
+#   ./scripts/staging.sh start
+#
+# 프로덕션 docker-compose.yml과 다른 점:
+#   1. 포트 오프셋 (+10000) — 같은 호스트에서 prod와 병행 가능
+#       - Postgres: 5433 → 15433
+#       - Redis:    6380 → 16380
+#       - Backend:  3001 → 13001
+#       - Web:      8080 → 18080
+#       - Detection: 8100 → 18100
+#   2. 독립 볼륨 (pg_data_staging, redis_data_staging, uploads_data_staging)
+#   3. 독립 DB 이름 (project_office_staging)
+#   4. NODE_ENV=staging + 로그 verbose
+#   5. 리소스 제한 완화 (개발 편의)
+
+services:
+  postgres:
+    container_name: po_staging_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-project_office_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-po_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staging_secret_change_me}
+    ports:
+      - "127.0.0.1:${PG_PORT:-15433}:5432"
+    volumes:
+      - pg_data_staging:/var/lib/postgresql/data
+
+  redis:
+    container_name: po_staging_redis
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-16380}:6379"
+    volumes:
+      - redis_data_staging:/data
+
+  backend:
+    container_name: po_staging_backend
+    environment:
+      NODE_ENV: staging
+      DATABASE_URL: postgresql://${POSTGRES_USER:-po_staging}:${POSTGRES_PASSWORD:-staging_secret_change_me}@postgres:5432/${POSTGRES_DB:-project_office_staging}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:18080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:13001}
+      WEB_URL: ${WEB_URL:-http://localhost:18080}
+      # staging에서는 외부 발송 차단 (원치 않는 메일/푸시 방지)
+      DISABLE_PUSH: "true"
+      # SYSTEM_MAIL_SMTP_HOST 미설정 = 메일 로그만
+      DISABLE_VACATION_ACCRUAL_CRON: "true"
+      DISABLE_MAIL_SYNC: "1"
+      DISABLE_MAIL_IDLE: "1"
+    ports:
+      - "${BACKEND_PORT:-13001}:3000"
+    volumes:
+      - uploads_data_staging:/app/uploads
+
+  web:
+    container_name: po_staging_web
+    build:
+      args:
+        # staging은 백엔드에 직접 연결
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:13001/api}
+    ports:
+      - "${WEB_PORT:-18080}:80"
+
+  detection:
+    container_name: po_staging_detection
+    environment:
+      BACKEND_WEBHOOK_URL: ${BACKEND_WEBHOOK_URL:-http://backend:3000/api/parking/events/webhook}
+    ports:
+      - "${DETECTION_PORT:-18100}:8100"
+    volumes:
+      - detection_data_staging:/app/results
+
+volumes:
+  pg_data_staging:
+  redis_data_staging:
+  uploads_data_staging:
+  detection_data_staging:
