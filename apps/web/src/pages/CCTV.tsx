@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Camera, MonitorPlay, FolderOpen, RefreshCw, Maximize2, Grid3X3 } from 'lucide-react';
+import { Camera, MonitorPlay, FolderOpen, RefreshCw, Grid3X3, X } from 'lucide-react';
 import api from '../services/api';
+import HlsPlayer from '../components/HlsPlayer';
 
 interface CameraGroup {
   id: string;
@@ -133,20 +134,20 @@ export default function CCTVPage() {
 
         {/* Camera Grid */}
         {selectedCamera ? (
-          <div className="h-[calc(100%-48px)] bg-black rounded-2xl flex items-center justify-center relative">
-            <MonitorPlay size={64} className="text-gray-600" />
-            <p className="absolute bottom-4 left-4 text-gray-400 text-sm">
-              {selectedCamera.name} - {selectedCamera.location || 'N/A'}
-            </p>
-            <p className="absolute bottom-4 right-4 text-gray-500 text-xs">
-              RTSP 스트림 연결 대기중...
-            </p>
-            <button
-              onClick={() => setSelectedCamera(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              <Maximize2 size={20} />
-            </button>
+          <div className="h-[calc(100%-48px)] relative">
+            <HlsPlayer
+              cameraId={selectedCamera.id}
+              cameraName={`${selectedCamera.name}${selectedCamera.location ? ` · ${selectedCamera.location}` : ''}`}
+              overlay={
+                <button
+                  onClick={() => setSelectedCamera(null)}
+                  className="bg-black/50 text-white hover:bg-black/70 rounded-full p-1.5"
+                  title="닫기"
+                >
+                  <X size={16} />
+                </button>
+              }
+            />
           </div>
         ) : (
           <div className={`grid ${gridCols} gap-2 h-[calc(100%-48px)]`}>
@@ -154,10 +155,15 @@ export default function CCTVPage() {
               <div
                 key={cam.id}
                 onClick={() => setSelectedCamera(cam)}
-                className="bg-black rounded-2xl cursor-pointer hover:ring-2 hover:ring-primary-500 flex flex-col items-center justify-center relative"
+                className="relative cursor-pointer rounded-2xl overflow-hidden hover:ring-2 hover:ring-primary-500 bg-gray-800"
+                title={`${cam.name} 클릭하여 재생`}
               >
-                <MonitorPlay size={32} className="text-gray-700" />
-                <p className="absolute bottom-2 left-2 text-gray-400 text-xs">{cam.name}</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <MonitorPlay size={32} className="text-gray-600" />
+                  <p className="text-gray-400 text-xs mt-2">{cam.name}</p>
+                  {cam.location && <p className="text-gray-500 text-[10px]">{cam.location}</p>}
+                  <p className="text-gray-600 text-[10px] mt-1">클릭하여 재생</p>
+                </div>
                 <span className={`absolute top-2 right-2 w-2 h-2 rounded-full ${cam.status === 'online' ? 'bg-green-500' : 'bg-red-500'}`} />
               </div>
             ))}
