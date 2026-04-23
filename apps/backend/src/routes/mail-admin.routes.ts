@@ -17,6 +17,7 @@ import { qs } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { encryptMailPassword, generateStrongPassword } from '../utils/mailCrypto';
 import { AppError } from '../services/auth.service';
+import { getMailService } from '../services/mail.service';
 
 const router = Router();
 router.use(authenticate, authorize('super_admin', 'admin'));
@@ -381,6 +382,63 @@ router.get('/admin-logs', async (req: Request, res: Response) => {
   ]);
 
   res.json({ success: true, data: logs, meta: buildMeta(pagination, total) });
+});
+
+/* ──────────── 수신 테스트 (v0.20.0) ────────────
+ *
+ * 관리자가 임의 MailAccount의 실제 IMAP 수신 여부를 검증.
+ *   - IMAP 로그인 + INBOX open + 최근 N통 헤더 반환
+ *   - 일회성 ImapFlow 클라이언트 (풀 오염 방지)
+ *   - 결과 + 응답시간 + (실패 시) 오류 메시지
+ */
+
+// GET /admin/mail/accounts — 관리자용 계정 목록 (수신 테스트 셀렉터용)
+router.get('/accounts', async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.mailAccount.findMany({
+      orderBy: { email: 'asc' },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        isActive: true,
+        imapHost: true,
+        imapPort: true,
+        lastSyncAt: true,
+        lastSyncError: true,
+        userId: true,
+        user: { select: { id: true, name: true, employeeId: true } },
+      },
+    });
+    res.json({ success: true, data: accounts });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /admin/mail/accounts/:accountId/test-inbox?limit=5
+router.post('/accounts/:accountId/test-inbox', async (req: Request, res: Response) => {
+  try {
+    const accountId = qs(req.params.accountId);
+    const limit = parseInt(qs(req.query.limit)) || 5;
+
+    const svc = getMailService();
+    const result = await svc.adminTestInbox(accountId, limit);
+
+    await logAdminAction(
+      req.user!.id,
+      result.email || accountId,
+      'receive_test',
+      { ok: result.ok, totalMessages: result.totalMessages, elapsedMs: result.elapsedMs, error: result.error },
+    );
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: { code: 'INTERNAL', message: (err as Error).message || '서버 오류' },
+    });
+  }
 });
 
 export default router;

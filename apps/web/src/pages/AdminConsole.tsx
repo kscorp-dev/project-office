@@ -3,7 +3,7 @@ import {
   Shield, Users, Settings, ScrollText, ToggleLeft, ToggleRight,
   Search, RefreshCw, ChevronLeft, ChevronRight, Edit2, Check, X,
   UserCheck, UserX, LogIn, FileCheck, UserPlus, Eye, EyeOff,
-  Mail, Cloud, Wifi, WifiOff, AlertCircle,
+  Mail, Cloud, Wifi, WifiOff, AlertCircle, Inbox,
   Plus, MoreVertical, KeyRound, HardDrive, Trash2, Copy, Link2,
 } from 'lucide-react';
 import { api } from '../services/api';
@@ -1121,14 +1121,22 @@ export default function AdminConsolePage() {
                 <Cloud size={18} className="text-primary-600 dark:text-primary-400" />
                 <h3 className="font-semibold text-gray-800 dark:text-gray-100">AWS WorkMail 연결 상태</h3>
               </div>
-              <button
-                onClick={() => { fetchMailHealth(); fetchMailUsers(); }}
-                disabled={mailHealthLoading}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-200"
-              >
-                <RefreshCw size={14} className={mailHealthLoading ? 'animate-spin' : ''} />
-                {mailHealthLoading ? '확인 중...' : '새로고침'}
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/admin/mail/test"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm"
+                >
+                  <Inbox size={14} /> 수신 테스트
+                </a>
+                <button
+                  onClick={() => { fetchMailHealth(); fetchMailUsers(); }}
+                  disabled={mailHealthLoading}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-200"
+                >
+                  <RefreshCw size={14} className={mailHealthLoading ? 'animate-spin' : ''} />
+                  {mailHealthLoading ? '확인 중...' : '새로고침'}
+                </button>
+              </div>
             </div>
 
             {mailHealthError ? (

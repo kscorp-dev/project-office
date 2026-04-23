@@ -239,6 +239,133 @@ export class MailService {
     return { imap: imapOk, smtp: smtpOk, error: err };
   }
 
+  /**
+   * 관리자용 수신 테스트 — 특정 MailAccount의 INBOX에 접속해 최근 N통 헤더를 가져온다.
+   *
+   * 사용자용 testConnection()은 '로그인 성공만' 확인하지만 이것은:
+   *   - IMAP 로그인
+   *   - INBOX 실제 open + mailbox status
+   *   - 최근 5통(또는 N통) envelope/flags/uid fetch
+   *   - 완료 후 즉시 logout (풀 사용 안 함 — 관리자가 임시로 확인하는 용도)
+   *
+   * 특정 userId에 귀속되지 않고 MailAccount.id로 직접 접속하므로
+   * 관리자가 모든 직원 계정의 수신 상태를 확인 가능.
+   */
+  async adminTestInbox(
+    accountId: string,
+    limit = 5,
+  ): Promise<{
+    ok: boolean;
+    email: string;
+    totalMessages?: number;
+    recentMessages?: Array<{
+      uid: number;
+      from: string | null;
+      subject: string | null;
+      date: string | null;
+      seen: boolean;
+      size: number;
+    }>;
+    error?: string;
+    elapsedMs: number;
+  }> {
+    const startedAt = Date.now();
+    const account = await prisma.mailAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      return {
+        ok: false,
+        email: '',
+        error: 'MailAccount를 찾을 수 없습니다',
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+    if (!account.isActive) {
+      return {
+        ok: false,
+        email: account.email,
+        error: '비활성 계정입니다',
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+
+    // 일회성 클라이언트 (풀 오염 방지)
+    const password = decryptMailPassword(account.encryptedPassword);
+    const client = new ImapFlow({
+      host: account.imapHost,
+      port: account.imapPort,
+      secure: true,
+      auth: { user: account.email, pass: password },
+      logger: false,
+    });
+
+    const cappedLimit = Math.max(1, Math.min(50, limit));
+
+    try {
+      await client.connect();
+
+      const lock = await client.getMailboxLock('INBOX');
+      try {
+        const mbox = client.mailbox as MailboxObject;
+        const total = mbox.exists;
+
+        const recent: Array<{
+          uid: number;
+          from: string | null;
+          subject: string | null;
+          date: string | null;
+          seen: boolean;
+          size: number;
+        }> = [];
+
+        if (total > 0) {
+          const first = Math.max(1, total - cappedLimit + 1);
+          const seq = `${first}:${total}`;
+          for await (const msg of client.fetch(seq, {
+            envelope: true,
+            flags: true,
+            size: true,
+            uid: true,
+          })) {
+            const env = msg.envelope as FetchMessageObject['envelope'] | undefined;
+            const fromAddr = env?.from?.[0];
+            const fromStr = fromAddr
+              ? `${fromAddr.name ?? ''} <${fromAddr.address ?? ''}>`.trim()
+              : null;
+            recent.push({
+              uid: msg.uid ?? 0,
+              from: fromStr,
+              subject: env?.subject ?? null,
+              date: env?.date ? new Date(env.date).toISOString() : null,
+              seen: msg.flags?.has('\\Seen') ?? false,
+              size: msg.size ?? 0,
+            });
+          }
+          // fetch는 오름차순 — 최신이 뒤에 오므로 뒤집어서 반환 (최신 먼저)
+          recent.reverse();
+        }
+
+        return {
+          ok: true,
+          email: account.email,
+          totalMessages: total,
+          recentMessages: recent,
+          elapsedMs: Date.now() - startedAt,
+        };
+      } finally {
+        lock.release();
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        email: account.email,
+        error: (e as Error).message || 'IMAP 접속 실패',
+        elapsedMs: Date.now() - startedAt,
+      };
+    } finally {
+      try { await client.logout(); } catch { /* ignore */ }
+    }
+  }
+
   /* ───── 폴더 목록 ───── */
   async listFolders(userId: string): Promise<FolderInfo[]> {
     const acc = await this.getAccount(userId);

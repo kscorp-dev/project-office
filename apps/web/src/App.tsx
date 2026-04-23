@@ -24,6 +24,7 @@ import CalendarSyncPage from './pages/CalendarSync';
 import UserInvitePage from './pages/admin/UserInvite';
 import HolidaysAdminPage from './pages/admin/Holidays';
 import CameraPermissionsPage from './pages/admin/CameraPermissions';
+import MailReceiveTestPage from './pages/admin/MailReceiveTest';
 import MailPage from './pages/Mail';
 import ParkingPage from './pages/Parking';
 import DocumentsPage from './pages/Documents';
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="/admin/users/invite" element={<UserInvitePage />} />
             <Route path="/admin/holidays" element={<HolidaysAdminPage />} />
             <Route path="/admin/cameras/permissions" element={<CameraPermissionsPage />} />
+            <Route path="/admin/mail/test" element={<MailReceiveTestPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />
