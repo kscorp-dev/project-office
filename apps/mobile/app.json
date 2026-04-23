@@ -2,7 +2,7 @@
   "expo": {
     "name": "Project Office",
     "slug": "project-office",
-    "version": "0.11.0",
+    "version": "0.12.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.kscorp.projectoffice",
       "infoPlist": {
-        "NSCameraUsageDescription": "바코드 스캔 및 사진 촬영에 카메라를 사용합니다.",
+        "NSCameraUsageDescription": "화상회의 및 바코드 스캔에 카메라를 사용합니다.",
+        "NSMicrophoneUsageDescription": "화상회의 음성 통화에 마이크를 사용합니다.",
         "NSLocationWhenInUseUsageDescription": "출퇴근 GPS 인증에 위치 정보를 사용합니다.",
         "NSFaceIDUsageDescription": "생체 인증 로그인에 Face ID를 사용합니다."
       }
@@ -29,9 +30,16 @@
       "package": "com.kscorp.projectoffice",
       "permissions": [
         "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
         "ACCESS_FINE_LOCATION",
         "USE_BIOMETRIC",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE"
       ]
     },
     "plugins": [
@@ -40,7 +48,14 @@
       "expo-local-authentication",
       "expo-camera",
       "expo-location",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "화상회의에 카메라 접근이 필요합니다.",
+          "microphonePermission": "화상회의 음성 통화에 마이크 접근이 필요합니다."
+        }
+      ]
     ],
     "scheme": "projectoffice",
     "extra": {

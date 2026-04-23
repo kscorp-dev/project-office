@@ -49,17 +49,36 @@ export function setupMeetingSocket(io: SocketIOServer) {
       try {
         const { meetingId } = data;
 
-        // DB에서 유저 정보 조회
+        // DB에서 유저 정보 조회 (+ 역할: 관리자 판단)
         const dbUser = await prisma.user.findUnique({
           where: { id: userId },
-          select: { id: true, name: true, position: true },
+          select: { id: true, name: true, position: true, role: true },
         });
         if (!dbUser) {
           socket.emit('meeting:error', { code: 'USER_NOT_FOUND', message: '사용자를 찾을 수 없습니다' });
           return;
         }
 
-        // 회의 정보 조회
+        // 권한 검증 — 호스트, 초대받은 사람, 참여 기록 있는 사람, 관리자만 입장 가능
+        const { canJoinMeeting } = await import('../services/meeting.service');
+        const access = await canJoinMeeting({
+          meetingId,
+          userId: dbUser.id,
+          userRole: dbUser.role,
+        });
+        if (!access.ok) {
+          const codeMap: Record<string, { code: string; msg: string }> = {
+            NOT_FOUND:    { code: 'MEETING_NOT_FOUND', msg: '회의를 찾을 수 없습니다' },
+            NOT_ALLOWED:  { code: 'MEETING_ACCESS_DENIED', msg: '이 회의에 참여할 권한이 없습니다' },
+            NOT_ACTIVE:   { code: 'MEETING_NOT_ACTIVE', msg: '진행 중인 회의가 아닙니다' },
+            CANCELLED:    { code: 'MEETING_CANCELLED', msg: '취소된 회의입니다' },
+          };
+          const e = codeMap[access.reason || 'NOT_ALLOWED'] || codeMap.NOT_ALLOWED;
+          socket.emit('meeting:error', e);
+          return;
+        }
+
+        // 회의 정보 (maxParticipants 확인용)
         const mtg = await prisma.meeting.findUnique({
           where: { id: meetingId },
           select: { id: true, hostId: true, status: true, maxParticipants: true },

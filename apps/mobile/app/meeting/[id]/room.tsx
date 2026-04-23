@@ -6,11 +6,42 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import Constants from 'expo-constants';
 import { COLORS } from '../../../src/constants/theme';
 import { api } from '../../../src/services/api';
 import { useAuthStore } from '../../../src/store/auth';
 
 const { width, height } = Dimensions.get('window');
+
+/**
+ * 런타임에서 실제 WebRTC 사용 가능 여부 판단
+ *
+ * - Expo Go 환경: native 모듈 없음 → UI 프리뷰 모드
+ * - EAS Dev Client / Production: native 모듈 존재 → 실제 영상/음성 연결
+ *
+ * Metro 번들러가 require를 항상 정적 분석하므로 module 자체는 번들에 포함되지만,
+ * Expo Go에서 native bridge 호출이 없으면 에러는 나지 않는다.
+ */
+const IS_DEV_CLIENT = Constants.appOwnership !== 'expo';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let RTCView: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let useWebRTCMobileHook: any = null;
+if (IS_DEV_CLIENT) {
+  try {
+    RTCView = require('react-native-webrtc').RTCView;
+    useWebRTCMobileHook = require('../../../src/hooks/useWebRTCMobile').useWebRTCMobile;
+  } catch {
+    // Dev client인데 빌드에 네이티브 모듈 아직 없음 → 프리뷰 유지
+  }
+}
+const WEBRTC_AVAILABLE = !!(RTCView && useWebRTCMobileHook);
+
+// Socket.IO URL = API base에서 /api 제거
+// (src/services/api.ts의 BASE_URL과 동일 정책)
+const API_BASE = ((require('../../../src/services/api') as { API_BASE_URL?: string }).API_BASE_URL)
+  || 'http://10.0.2.2:3000/api';
+const SOCKET_URL = API_BASE.replace(/\/api\/?$/, '');
 
 interface Participant {
   socketId: string;
@@ -41,14 +72,19 @@ export default function MeetingRoomScreen() {
   const [connecting, setConnecting] = useState(true);
   const [elapsedSec, setElapsedSec] = useState(0);
 
-  // 미디어 상태 (UI 스텁 — 실제 WebRTC는 EAS Build + react-native-webrtc로 연동 예정)
+  // 미디어 상태
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [frontCamera, setFrontCamera] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
 
-  // 참가자 + 채팅 (목업)
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  // 실제 WebRTC 훅 (dev client에서만 활성)
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- 조건부 훅이지만 IS_DEV_CLIENT는 런타임 고정값
+  const rtc = WEBRTC_AVAILABLE
+    ? useWebRTCMobileHook({ meetingId: id, socketUrl: SOCKET_URL })
+    : null;
+
+  // 채팅 (목업 — 실제 채팅은 rtc.socket으로 후속 연결)
   const [chatVisible, setChatVisible] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -59,31 +95,15 @@ export default function MeetingRoomScreen() {
     return () => clearInterval(iv);
   }, []);
 
-  // 회의 정보 로드 + 로컬 참가자 추가 (실제 WebRTC 연결은 후속 구현)
+  // 회의 정보 로드
   useEffect(() => {
     (async () => {
       try {
         const { data } = await api.get(`/meeting/${id}`);
         setMeetingTitle(data.data?.title || '회의실');
       } catch { /* ignore */ }
-      // 로컬 플레이스홀더
-      if (currentUser) {
-        setParticipants([
-          {
-            socketId: 'self',
-            userId: currentUser.id,
-            name: currentUser.name,
-            position: currentUser.position,
-            isHost: false,
-            isMuted: !micOn,
-            isVideoOff: !camOn,
-            isLocal: true,
-          },
-        ]);
-      }
       setConnecting(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleLeave = () => {
@@ -117,8 +137,46 @@ export default function MeetingRoomScreen() {
       : `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const localParticipant = participants.find((p) => p.isLocal);
-  const remoteParticipants = participants.filter((p) => !p.isLocal);
+  /* ── 참가자 목록 계산 ──
+   * - 로컬: currentUser + 현재 mic/cam 상태
+   * - 원격: WebRTC 활성 시 rtc.remotePeers, 아니면 빈 배열 (프리뷰 모드는 혼자)
+   */
+  const localParticipant: Participant | undefined = currentUser ? {
+    socketId: 'self',
+    userId: currentUser.id,
+    name: currentUser.name,
+    position: currentUser.position,
+    isHost: false,
+    isMuted: !micOn,
+    isVideoOff: !camOn,
+    isLocal: true,
+  } : undefined;
+
+  const remoteParticipants: Participant[] = (WEBRTC_AVAILABLE && rtc)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? (rtc.remotePeers as any[]).map((p) => ({
+        socketId: p.socketId,
+        userId: p.userId,
+        name: p.name,
+        position: p.position,
+        isHost: p.isHost,
+        isMuted: p.isMuted,
+        isVideoOff: p.isVideoOff,
+        isLocal: false,
+      }))
+    : [];
+
+  const totalCount = (localParticipant ? 1 : 0) + remoteParticipants.length;
+
+  // 참가자에 해당하는 MediaStream 찾기 (rtc 활성 시에만 의미 있음)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const streamOf = (p: Participant): any | null => {
+    if (!WEBRTC_AVAILABLE || !rtc) return null;
+    if (p.isLocal) return rtc.localStream ?? null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const remote = (rtc.remotePeers as any[]).find((rp) => rp.socketId === p.socketId);
+    return remote?.stream ?? null;
+  };
 
   return (
     <View style={styles.container}>
@@ -136,10 +194,16 @@ export default function MeetingRoomScreen() {
             <View style={styles.liveDot} />
             <Text style={styles.topMeta}>{fmtTime(elapsedSec)}</Text>
             <Text style={styles.topSep}>·</Text>
-            <Text style={styles.topMeta}>{participants.length}명</Text>
+            <Text style={styles.topMeta}>{totalCount}명</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => setFrontCamera((v) => !v)} style={styles.topBtn}>
+        <TouchableOpacity
+          onPress={() => {
+            setFrontCamera((v) => !v);
+            rtc?.switchCamera();
+          }}
+          style={styles.topBtn}
+        >
           <Text style={styles.topIcon}>🔄</Text>
         </TouchableOpacity>
       </View>
@@ -150,23 +214,37 @@ export default function MeetingRoomScreen() {
           <ConnectingOverlay />
         ) : remoteParticipants.length === 0 ? (
           // 혼자 있을 때 — 내 영상 풀스크린
-          <FullVideoTile participant={localParticipant} front={frontCamera} screenSharing={screenSharing} />
+          <FullVideoTile
+            participant={localParticipant}
+            front={frontCamera}
+            screenSharing={screenSharing}
+            stream={localParticipant ? streamOf(localParticipant) : null}
+          />
         ) : (
           // 2명 이상 — 그리드
           <VideoGrid
             local={localParticipant}
             remotes={remoteParticipants}
             front={frontCamera}
+            streamOf={streamOf}
           />
         )}
 
-        {/* 디버그/안내 오버레이 (개발 중) */}
+        {/* 모드 안내 배너 — 실제 연결 vs 프리뷰 */}
         {!connecting && (
-          <View style={styles.devNotice}>
-            <Text style={styles.devNoticeText}>
-              📱 모바일 WebRTC는 EAS Dev Client 빌드 필요{'\n'}
-              현재는 UI 프리뷰 모드입니다
+          <View style={[styles.devNotice, WEBRTC_AVAILABLE && styles.devNoticeLive]}>
+            <Text style={[styles.devNoticeText, WEBRTC_AVAILABLE && styles.devNoticeTextLive]}>
+              {WEBRTC_AVAILABLE
+                ? (rtc?.connected
+                  ? `🟢 실시간 연결됨 · 원격 ${rtc.remotePeers.length}명`
+                  : '⚪ WebRTC 연결 시도 중...')
+                : '📱 WebRTC native 모듈 미탑재 — UI 프리뷰 모드\n(EAS Dev Client 빌드 시 실스트림 활성)'}
             </Text>
+            {rtc?.error && (
+              <Text style={[styles.devNoticeText, { color: '#fca5a5', marginTop: 4 }]}>
+                ⚠ {rtc.error}
+              </Text>
+            )}
           </View>
         )}
       </View>
@@ -177,13 +255,19 @@ export default function MeetingRoomScreen() {
           icon={micOn ? '🎤' : '🔇'}
           label={micOn ? '음소거' : '음성 켜기'}
           active={!micOn}
-          onPress={() => setMicOn((v) => !v)}
+          onPress={() => {
+            setMicOn((v) => !v);
+            rtc?.toggleMic();
+          }}
         />
         <CtrlBtn
           icon={camOn ? '📹' : '🚫'}
           label={camOn ? '카메라 끄기' : '카메라 켜기'}
           active={!camOn}
-          onPress={() => setCamOn((v) => !v)}
+          onPress={() => {
+            setCamOn((v) => !v);
+            rtc?.toggleCam();
+          }}
         />
         <CtrlBtn
           icon={screenSharing ? '🖥️' : '📲'}
@@ -230,10 +314,17 @@ function ConnectingOverlay() {
 }
 
 function FullVideoTile({
-  participant, front, screenSharing,
-}: { participant?: Participant; front: boolean; screenSharing: boolean }) {
+  participant, front, screenSharing, stream,
+}: {
+  participant?: Participant;
+  front: boolean;
+  screenSharing: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream?: any | null;
+}) {
   if (!participant) return null;
   const initial = (participant.name?.[0] || '?').toUpperCase();
+  const hasLiveVideo = !!(WEBRTC_AVAILABLE && RTCView && stream && !participant.isVideoOff);
   return (
     <View style={styles.fullTile}>
       {participant.isVideoOff ? (
@@ -244,6 +335,13 @@ function FullVideoTile({
           <Text style={styles.videoOffName}>{participant.name}</Text>
           <Text style={styles.videoOffSub}>카메라가 꺼져 있습니다</Text>
         </View>
+      ) : hasLiveVideo ? (
+        <RTCView
+          streamURL={stream.toURL()}
+          objectFit="cover"
+          mirror={participant.isLocal && front}
+          style={StyleSheet.absoluteFill}
+        />
       ) : (
         <View style={styles.cameraPlaceholder}>
           <Text style={styles.cameraIcon}>📷</Text>
@@ -252,7 +350,9 @@ function FullVideoTile({
         </View>
       )}
       <View style={styles.nameTag}>
-        <Text style={styles.nameTagText}>{participant.name} (나)</Text>
+        <Text style={styles.nameTagText}>
+          {participant.name}{participant.isLocal ? ' (나)' : ''}
+        </Text>
         {participant.isMuted && <Text style={styles.nameTagMute}>🔇</Text>}
       </View>
     </View>
@@ -260,8 +360,14 @@ function FullVideoTile({
 }
 
 function VideoGrid({
-  local, remotes, front,
-}: { local?: Participant; remotes: Participant[]; front: boolean }) {
+  local, remotes, front, streamOf,
+}: {
+  local?: Participant;
+  remotes: Participant[];
+  front: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  streamOf: (p: Participant) => any | null;
+}) {
   const all = local ? [local, ...remotes] : remotes;
   const cols = all.length === 1 ? 1 : 2;
   const tileWidth = (width - 24 - (cols - 1) * 8) / cols;
@@ -276,16 +382,30 @@ function VideoGrid({
       contentContainerStyle={{ padding: 12, gap: 8 }}
       columnWrapperStyle={cols > 1 ? { gap: 8 } : undefined}
       renderItem={({ item }) => (
-        <VideoTile participant={item} width={tileWidth} height={tileHeight} front={front} />
+        <VideoTile
+          participant={item}
+          width={tileWidth}
+          height={tileHeight}
+          front={front}
+          stream={streamOf(item)}
+        />
       )}
     />
   );
 }
 
 function VideoTile({
-  participant, width: w, height: h, front,
-}: { participant: Participant; width: number; height: number; front: boolean }) {
+  participant, width: w, height: h, front, stream,
+}: {
+  participant: Participant;
+  width: number;
+  height: number;
+  front: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream?: any | null;
+}) {
   const initial = (participant.name?.[0] || '?').toUpperCase();
+  const hasLiveVideo = !!(WEBRTC_AVAILABLE && RTCView && stream && !participant.isVideoOff);
   return (
     <View style={[styles.gridTile, { width: w, height: h }]}>
       {participant.isVideoOff ? (
@@ -294,6 +414,13 @@ function VideoTile({
             <Text style={styles.gridAvatarText}>{initial}</Text>
           </View>
         </View>
+      ) : hasLiveVideo ? (
+        <RTCView
+          streamURL={stream.toURL()}
+          objectFit="cover"
+          mirror={participant.isLocal && front}
+          style={StyleSheet.absoluteFill}
+        />
       ) : (
         <View style={styles.cameraPlaceholder}>
           <Text style={styles.cameraIconSmall}>📷</Text>
@@ -494,7 +621,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34, 197, 94, 0.12)', borderColor: COLORS.primary[500], borderWidth: 1,
     borderRadius: 10, padding: 10,
   },
+  devNoticeLive: {
+    backgroundColor: 'rgba(34, 197, 94, 0.18)', borderColor: COLORS.primary[400],
+  },
   devNoticeText: { color: COLORS.primary[300], fontSize: 11, lineHeight: 16, textAlign: 'center' },
+  devNoticeTextLive: { color: COLORS.primary[200], fontWeight: '600' },
 
   /* 하단 컨트롤 바 */
   bottomBar: {

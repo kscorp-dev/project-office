@@ -12,6 +12,7 @@ import { validate } from '../middleware/validate';
 import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
 import { meetingFileFilter } from '../utils/fileFilter';
+import { canViewMeeting, canJoinMeeting } from '../services/meeting.service';
 
 const router = Router();
 router.use(checkModule('meeting'));
@@ -372,13 +373,30 @@ function writeMeta(meetingId: string, data: SharedDocMeta[]) {
   fs.writeFileSync(metaPath(meetingId), JSON.stringify(data, null, 2));
 }
 
-// POST /meeting/:id/documents — 문서 업로드
+// POST /meeting/:id/documents — 문서 업로드 (참가자/호스트/관리자만)
 router.post('/:id/documents', authenticate, meetingUpload.single('file'), async (req: Request, res: Response) => {
   try {
     const meetingId = qs(req.params.id);
     const file = req.file;
     if (!file) {
       res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 첨부되지 않았습니다' } });
+      return;
+    }
+
+    // 권한 검증 — 회의 참여 권한이 있는 사람만 업로드 가능
+    const access = await canJoinMeeting({
+      meetingId, userId: req.user!.id, userRole: req.user!.role,
+    });
+    if (!access.ok) {
+      // 업로드된 파일 즉시 삭제 (다음 요청에서 중복 방지)
+      if (file.path) fs.unlink(file.path, () => { /* ignore */ });
+      res.status(access.reason === 'NOT_FOUND' ? 404 : 403).json({
+        success: false,
+        error: {
+          code: access.reason === 'NOT_FOUND' ? 'MEETING_NOT_FOUND' : 'MEETING_ACCESS_DENIED',
+          message: access.reason === 'NOT_FOUND' ? '회의를 찾을 수 없습니다' : '이 회의에 참여 권한이 없습니다',
+        },
+      });
       return;
     }
 
@@ -411,21 +429,51 @@ router.post('/:id/documents', authenticate, meetingUpload.single('file'), async 
   }
 });
 
-// GET /meeting/:id/documents — 공유 문서 목록
+// GET /meeting/:id/documents — 공유 문서 목록 (참가 이력자/호스트/관리자만)
 router.get('/:id/documents', authenticate, async (req: Request, res: Response) => {
   try {
-    const docs = readMeta(qs(req.params.id));
+    const meetingId = qs(req.params.id);
+    const access = await canViewMeeting({
+      meetingId, userId: req.user!.id, userRole: req.user!.role,
+    });
+    if (!access.ok) {
+      res.status(access.reason === 'NOT_FOUND' ? 404 : 403).json({
+        success: false,
+        error: {
+          code: access.reason === 'NOT_FOUND' ? 'MEETING_NOT_FOUND' : 'MEETING_ACCESS_DENIED',
+          message: access.reason === 'NOT_FOUND' ? '회의를 찾을 수 없습니다' : '이 회의의 문서를 조회할 권한이 없습니다',
+        },
+      });
+      return;
+    }
+
+    const docs = readMeta(meetingId);
     res.json({ success: true, data: docs });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
 
-// GET /meeting/:id/documents/:docId/file — 파일 스트림
+// GET /meeting/:id/documents/:docId/file — 파일 스트림 (참가 이력자/호스트/관리자만)
 router.get('/:id/documents/:docId/file', authenticate, async (req: Request, res: Response) => {
   try {
     const meetingId = qs(req.params.id);
     const docId = qs(req.params.docId);
+
+    const access = await canViewMeeting({
+      meetingId, userId: req.user!.id, userRole: req.user!.role,
+    });
+    if (!access.ok) {
+      res.status(access.reason === 'NOT_FOUND' ? 404 : 403).json({
+        success: false,
+        error: {
+          code: access.reason === 'NOT_FOUND' ? 'MEETING_NOT_FOUND' : 'MEETING_ACCESS_DENIED',
+          message: access.reason === 'NOT_FOUND' ? '회의를 찾을 수 없습니다' : '파일 다운로드 권한이 없습니다',
+        },
+      });
+      return;
+    }
+
     const meta = readMeta(meetingId);
     const doc = meta.find((d) => d.id === docId);
 
