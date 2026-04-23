@@ -6,19 +6,31 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
       "env": {
-        "API_URL": "http://43.200.29.148:3001/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
+      }
+    },
+    "development-simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:3000/api"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "API_URL": "https://43-200-29-148.sslip.io/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
       }
     },
     "production": {
       "env": {
-        "API_URL": "https://43-200-29-148.sslip.io/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
       }
     }
   },
