@@ -43,6 +43,8 @@ interface SystemSetting {
   value: string;
   description?: string;
   category?: string;
+  /** 이 설정을 편집할 수 있는 최소 역할 */
+  minRole?: 'admin' | 'super_admin';
 }
 
 interface AuditLog {
@@ -95,13 +97,15 @@ const EMPTY_USER_FORM: CreateUserForm = {
   mailboxPasswordMode: 'auto', mailboxCustomPassword: '',
 };
 
-type TabKey = 'modules' | 'users' | 'settings' | 'logs' | 'mail';
+type TabKey = 'modules' | 'users' | 'settings' | 'logs' | 'mail' | 'security';
 
-const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
+/** TABS 는 렌더 시 role 기반으로 필터링 — '보안' 탭은 super_admin 전용 */
+const BASE_TABS: { key: TabKey; label: string; icon: React.ElementType; superAdminOnly?: boolean }[] = [
   { key: 'modules',  label: '모듈관리',   icon: ToggleLeft },
   { key: 'users',    label: '사용자관리',  icon: Users },
   { key: 'mail',     label: '메일관리',    icon: Mail },
   { key: 'settings', label: '시스템설정',  icon: Settings },
+  { key: 'security', label: '보안',       icon: Shield, superAdminOnly: true },
   { key: 'logs',     label: '감사로그',    icon: ScrollText },
 ];
 
@@ -171,8 +175,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 export default function AdminConsolePage() {
   const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const TABS = BASE_TABS.filter(t => !t.superAdminOnly || isSuperAdmin);
   const [activeTab, setActiveTab] = useState<TabKey>('modules');
   const [stats, setStats] = useState<AdminStats>({ totalUsers: 0, activeUsers: 0, todayLogins: 0, pendingApprovals: 0 });
+  // 사용자별 감사 로그 (super_admin 전용)
+  const [userAuditModal, setUserAuditModal] = useState<{ userId: string; userName: string } | null>(null);
 
   // Modules
   const [modules, setModules] = useState<Module[]>([]);
@@ -843,28 +851,58 @@ export default function AdminConsolePage() {
                           {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : '없음'}
                         </td>
                         <td className="py-3 text-center">
-                          {u.id !== user?.id && (
-                            <div className="flex items-center justify-center gap-1">
-                              {u.status !== 'active' && (
-                                <button
-                                  onClick={() => handleStatusChange(u.id, 'active')}
-                                  className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"
-                                  title="활성화"
-                                >
-                                  <UserCheck size={15} />
-                                </button>
-                              )}
-                              {u.status === 'active' && (
-                                <button
-                                  onClick={() => handleStatusChange(u.id, 'suspended')}
-                                  className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600"
-                                  title="정지"
-                                >
-                                  <UserX size={15} />
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <div className="flex items-center justify-center gap-1">
+                            {/* 사용자별 감사로그 (super_admin 전용) */}
+                            {isSuperAdmin && (
+                              <button
+                                onClick={() => setUserAuditModal({ userId: u.id, userName: u.name })}
+                                className="p-1.5 rounded hover:bg-primary-50 dark:hover:bg-slate-700 text-gray-400 hover:text-primary-600"
+                                title="이 사용자의 활동 로그"
+                              >
+                                <ScrollText size={15} />
+                              </button>
+                            )}
+                            {/* super_admin 전용: 세션 강제 종료 */}
+                            {isSuperAdmin && u.id !== user?.id && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`${u.name}의 모든 세션을 강제 종료하시겠습니까? (재로그인 필요)`)) return;
+                                  try {
+                                    const { data } = await api.post(`/admin/security/revoke-user-sessions/${u.id}`);
+                                    alert(`세션 ${data.data?.revokedCount ?? 0}건 강제 종료됨`);
+                                  } catch (err: any) {
+                                    alert(err.response?.data?.error?.message || '실패');
+                                  }
+                                }}
+                                className="p-1.5 rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-400 hover:text-amber-600"
+                                title="모든 세션 강제 종료"
+                              >
+                                <KeyRound size={15} />
+                              </button>
+                            )}
+                            {u.id !== user?.id && (
+                              <>
+                                {u.status !== 'active' && (
+                                  <button
+                                    onClick={() => handleStatusChange(u.id, 'active')}
+                                    className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"
+                                    title="활성화"
+                                  >
+                                    <UserCheck size={15} />
+                                  </button>
+                                )}
+                                {u.status === 'active' && (
+                                  <button
+                                    onClick={() => handleStatusChange(u.id, 'suspended')}
+                                    className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600"
+                                    title="정지"
+                                  >
+                                    <UserX size={15} />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -904,58 +942,87 @@ export default function AdminConsolePage() {
                 </tr>
               </thead>
               <tbody>
-                {settings.map((s) => (
-                  <tr key={s.id} className="border-b last:border-0 hover:bg-primary-50/50">
-                    <td className="py-3">
-                      <p className="font-mono text-xs font-medium">{s.key}</p>
-                      {s.category && (
-                        <span className="text-xs text-gray-400">{s.category}</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {editingKey === s.key ? (
-                        <input
-                          type="text"
-                          value={editingValue}
-                          onChange={(e) => setEditingValue(e.target.value)}
-                          className="input-field py-1 text-sm"
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{s.value}</span>
-                      )}
-                    </td>
-                    <td className="py-3 text-gray-500 text-xs">{s.description || '-'}</td>
-                    <td className="py-3 text-center">
-                      {editingKey === s.key ? (
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleSaveSetting(s)}
-                            className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"
-                            title="저장"
-                          >
-                            <Check size={15} />
-                          </button>
-                          <button
-                            onClick={() => setEditingKey(null)}
-                            className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                            title="취소"
-                          >
-                            <X size={15} />
-                          </button>
+                {settings.map((s) => {
+                  const locked = s.minRole === 'super_admin' && !isSuperAdmin;
+                  return (
+                    <tr
+                      key={s.id}
+                      className={`border-b last:border-0 ${
+                        locked
+                          ? 'bg-amber-50/40 dark:bg-amber-900/10'
+                          : 'hover:bg-primary-50/50'
+                      }`}
+                    >
+                      <td className="py-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-mono text-xs font-medium">{s.key}</p>
+                          {s.minRole === 'super_admin' && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              <ShieldAlert size={10} /> 슈퍼관리자
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => startEditSetting(s)}
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                          title="편집"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        {s.category && (
+                          <span className="text-xs text-gray-400">{s.category}</span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        {editingKey === s.key ? (
+                          <input
+                            type="text"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            className="input-field py-1 text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">{s.value}</span>
+                        )}
+                      </td>
+                      <td className="py-3 text-gray-500 text-xs">
+                        {s.description || '-'}
+                        {locked && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 flex items-center gap-0.5">
+                            <Lock size={10} /> 슈퍼 관리자만 편집 가능
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3 text-center">
+                        {editingKey === s.key ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleSaveSetting(s)}
+                              className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"
+                              title="저장"
+                            >
+                              <Check size={15} />
+                            </button>
+                            <button
+                              onClick={() => setEditingKey(null)}
+                              className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                              title="취소"
+                            >
+                              <X size={15} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => !locked && startEditSetting(s)}
+                            disabled={locked}
+                            className={`p-1.5 rounded ${
+                              locked
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                            }`}
+                            title={locked ? '슈퍼 관리자만 편집 가능' : '편집'}
+                          >
+                            {locked ? <Lock size={14} /> : <Edit2 size={15} />}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -1415,6 +1482,78 @@ export default function AdminConsolePage() {
         </div>
       )}
 
+      {/* ─── 보안 (super_admin 전용) ─── */}
+      {activeTab === 'security' && isSuperAdmin && (
+        <div className="card dark:bg-slate-800 dark:border-slate-700/80">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <Shield size={16} className="text-amber-500" /> 보안 작업
+            </h2>
+            <p className="text-xs text-gray-400 mt-1">슈퍼 관리자 전용. 실행 즉시 전체 시스템에 영향을 주는 작업입니다.</p>
+          </div>
+          <div className="space-y-3">
+            <div className="border border-red-200 dark:border-red-800/50 bg-red-50/40 dark:bg-red-900/10 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <KeyRound className="text-red-500 shrink-0 mt-0.5" size={20} />
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-red-700 dark:text-red-400">모든 사용자 강제 로그아웃</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    유효한 RefreshToken을 전부 폐기합니다. 현재 로그인 중인 모든 사용자는 다음 요청에서 재로그인이 요구됩니다.
+                    토큰 유출/침해가 의심될 때 사용하세요.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!confirm('정말 모든 사용자의 세션을 종료하시겠습니까? (본인 포함)')) return;
+                    try {
+                      const { data } = await api.post('/admin/security/revoke-all-sessions');
+                      alert(`세션 ${data.data?.revokedCount ?? 0}건 강제 종료됨. 본 창도 곧 재로그인을 요구합니다.`);
+                    } catch (err: any) {
+                      alert(err.response?.data?.error?.message || '실패');
+                    }
+                  }}
+                  className="btn-primary bg-red-500 hover:bg-red-600 text-white text-sm shrink-0"
+                >
+                  실행
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-amber-200 dark:border-amber-800/50 bg-amber-50/40 dark:bg-amber-900/10 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <Lock className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-amber-700 dark:text-amber-400">마지막 슈퍼 관리자 보호</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    시스템에 활성 슈퍼 관리자가 한 명뿐이면 그 계정을 강등/정지할 수 없도록 자동으로 차단됩니다.
+                    새 슈퍼 관리자를 먼저 지정한 뒤 강등할 수 있습니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-gray-200 dark:border-slate-700 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="text-gray-400 shrink-0 mt-0.5" size={20} />
+                <div className="flex-1">
+                  <p className="font-semibold text-sm dark:text-white">감사 로그 위험도 필터</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    모듈 토글, 역할 변경, 세션 강제 종료 등 고위험 작업에는 <code className="text-amber-600">riskLevel=high</code> 가 부여됩니다.
+                    감사로그 탭에서 액션/사용자 필터로 조회하세요.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setActiveTab('logs'); setLogAction('role_change'); }}
+                  className="btn-secondary text-xs shrink-0"
+                >
+                  감사로그로
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── 감사로그 ─── */}
       {activeTab === 'logs' && (
         <div className="card dark:bg-slate-800 dark:border-slate-700/80">
@@ -1573,6 +1712,158 @@ export default function AdminConsolePage() {
           </div>
         </div>
       )}
+
+      {/* ─── 사용자별 감사로그 모달 (super_admin 전용) ─── */}
+      {userAuditModal && (
+        <UserAuditLogModal
+          userId={userAuditModal.userId}
+          userName={userAuditModal.userName}
+          onClose={() => setUserAuditModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════
+   사용자별 감사로그 모달
+   ═══════════════════════════════════ */
+function UserAuditLogModal({
+  userId, userName, onClose,
+}: {
+  userId: string;
+  userName: string;
+  onClose: () => void;
+}) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [summary, setSummary] = useState<{ id: string; name: string; employeeId: string; email: string; role: string; status: string; lastLoginAt?: string } | null>(null);
+  const [meta, setMeta] = useState({ total: 0, page: 1, limit: 30, totalPages: 0 });
+  const [actionFilter, setActionFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(meta.page), limit: String(meta.limit) });
+      if (actionFilter) params.set('action', actionFilter);
+      const { data } = await api.get(`/admin/users/${userId}/audit-logs?${params.toString()}`);
+      setLogs(data.data.logs);
+      setSummary(data.data.user);
+      setMeta(data.meta);
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || '로그 조회 실패');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, meta.page, actionFilter]);
+
+  const fmt = (dt: string) => new Date(dt).toLocaleString('ko-KR', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold flex items-center gap-2">
+              <ScrollText size={16} /> {userName} 활동 로그
+            </h3>
+            {summary && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                {summary.employeeId} · {summary.email} · {ROLE_MAP[summary.role]?.label ?? summary.role}
+                {summary.lastLoginAt && ` · 최근 로그인 ${fmt(summary.lastLoginAt)}`}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-700 rounded">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b dark:border-slate-700 flex items-center gap-3 flex-wrap">
+          <input
+            type="text"
+            placeholder="액션 필터 (예: login, role_change)"
+            value={actionFilter}
+            onChange={(e) => { setActionFilter(e.target.value); setMeta(m => ({ ...m, page: 1 })); }}
+            className="input-field text-xs w-60"
+          />
+          <span className="text-xs text-gray-400">총 {meta.total}건</span>
+          <button onClick={fetchLogs} className="ml-auto text-gray-400 hover:text-gray-600">
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-3">
+          {loading ? (
+            <div className="flex justify-center py-8"><RefreshCw className="animate-spin text-gray-400" size={24} /></div>
+          ) : logs.length === 0 ? (
+            <p className="text-center text-gray-400 py-12 text-sm">기록이 없습니다</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-500 border-b dark:border-slate-700">
+                  <th className="py-2 w-36 font-medium">시각</th>
+                  <th className="py-2 w-32 font-medium">액션</th>
+                  <th className="py-2 font-medium">리소스</th>
+                  <th className="py-2 w-20 font-medium">위험도</th>
+                  <th className="py-2 w-32 font-medium">IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((l) => {
+                  const risk = (l as any).riskLevel as string | undefined;
+                  const riskColor = risk === 'high' || risk === 'critical'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                    : risk === 'medium'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300';
+                  return (
+                    <tr key={l.id} className="border-b last:border-0 dark:border-slate-700/40">
+                      <td className="py-2 text-gray-500">{fmt(l.createdAt)}</td>
+                      <td className="py-2 font-mono">{l.action}</td>
+                      <td className="py-2 text-gray-600 dark:text-gray-300">
+                        {(l as any).resourceType ?? l.resource ?? '-'}
+                        {l.resourceId && <span className="text-gray-400"> · {l.resourceId.slice(0, 8)}</span>}
+                      </td>
+                      <td className="py-2">
+                        {risk && <span className={`px-1.5 py-0.5 rounded text-[10px] ${riskColor}`}>{risk}</span>}
+                      </td>
+                      <td className="py-2 text-gray-400 font-mono text-[10px]">{l.ipAddress ?? '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {meta.totalPages > 1 && (
+          <div className="px-5 py-3 border-t dark:border-slate-700 flex items-center justify-center gap-2">
+            <button
+              onClick={() => setMeta(m => ({ ...m, page: Math.max(1, m.page - 1) }))}
+              disabled={meta.page === 1}
+              className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-xs text-gray-500">{meta.page} / {meta.totalPages}</span>
+            <button
+              onClick={() => setMeta(m => ({ ...m, page: Math.min(m.totalPages, m.page + 1) }))}
+              disabled={meta.page >= meta.totalPages}
+              className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

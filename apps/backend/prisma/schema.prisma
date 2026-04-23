@@ -1358,6 +1358,10 @@ model SystemSetting {
   value     String
   category  String   @default("general") // general, security, notification, system
   description String?
+  /// 이 설정을 변경할 수 있는 최소 역할. super_admin / admin (기본: admin)
+  /// 보안/시스템 민감 키(session_timeout, password_min_length, max_login_attempts,
+  /// maintenance_mode 등)는 super_admin 으로 승격해서 일반 admin이 변경 못하게 한다.
+  minRole   String   @default("admin") @map("min_role")
   updatedBy String?  @map("updated_by")
   updatedAt DateTime @updatedAt @map("updated_at")
 

@@ -95,11 +95,28 @@ router.get('/settings', async (_req: Request, res: Response) => {
   }
 });
 
-// PUT /admin/settings/:key - 설정 값 변경
+// ── role-gate 헬퍼: 설정 편집 권한 확인
+// minRole 이 super_admin 인 설정은 super_admin 만 수정 가능
+function canEditSetting(minRole: string, userRole: string): boolean {
+  if (minRole === 'super_admin') return userRole === 'super_admin';
+  // admin / 그 외는 admin/super_admin 둘 다 허용
+  return userRole === 'admin' || userRole === 'super_admin';
+}
+
+// PUT /admin/settings/:key - 설정 값 변경 (key로 지정, 존재하지 않으면 생성)
 router.put('/settings/:key', async (req: Request, res: Response) => {
   try {
     if (req.body.value === undefined) {
       res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: '설정 값을 입력해주세요' } });
+      return;
+    }
+
+    const existing = await prisma.systemSetting.findUnique({ where: { key: qs(req.params.key) } });
+    if (existing && !canEditSetting(existing.minRole, req.user!.role)) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'SETTING_SUPER_ADMIN_ONLY', message: '이 설정은 슈퍼 관리자만 변경할 수 있습니다' },
+      });
       return;
     }
 
@@ -109,11 +126,141 @@ router.put('/settings/:key', async (req: Request, res: Response) => {
       create: { key: qs(req.params.key), value: String(req.body.value), updatedBy: req.user!.id },
     });
 
+    // 감사 로그
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'settings_change',
+        resourceType: 'system_setting',
+        resourceId: setting.id,
+        details: { key: setting.key, value: setting.value, minRole: setting.minRole },
+        ipAddress: req.ip,
+      },
+    }).catch(() => { /* ignore */ });
+
     res.json({ success: true, data: setting });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
+
+// PATCH /admin/settings/:id - 설정 값 변경 (id로 지정, 기존 설정만 업데이트)
+// 프론트 AdminConsole 이 id로 호출해서 PUT과 별도로 제공한다.
+router.patch('/settings/:id', async (req: Request, res: Response) => {
+  try {
+    if (req.body.value === undefined) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: '설정 값을 입력해주세요' } });
+      return;
+    }
+    const existing = await prisma.systemSetting.findUnique({ where: { id: qs(req.params.id) } });
+    if (!existing) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '설정을 찾을 수 없습니다' } });
+      return;
+    }
+    if (!canEditSetting(existing.minRole, req.user!.role)) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'SETTING_SUPER_ADMIN_ONLY', message: '이 설정은 슈퍼 관리자만 변경할 수 있습니다' },
+      });
+      return;
+    }
+    const setting = await prisma.systemSetting.update({
+      where: { id: existing.id },
+      data: { value: String(req.body.value), updatedBy: req.user!.id },
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'settings_change',
+        resourceType: 'system_setting',
+        resourceId: setting.id,
+        details: { key: setting.key, value: setting.value, minRole: setting.minRole },
+        ipAddress: req.ip,
+      },
+    }).catch(() => { /* ignore */ });
+    res.json({ success: true, data: setting });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// ===== 보안 / 세션 관리 (super_admin 전용) =====
+
+// POST /admin/security/revoke-all-sessions
+// 모든 사용자의 유효 RefreshToken을 일괄 revoke → 다음 토큰 갱신 시 강제 재로그인
+// 보안 사고 대응용. super_admin 전용.
+router.post(
+  '/security/revoke-all-sessions',
+  async (req: Request, res: Response) => {
+    if (req.user!.role !== 'super_admin') {
+      res.status(403).json({
+        success: false,
+        error: { code: 'SUPER_ADMIN_ONLY', message: '슈퍼 관리자만 실행 가능합니다' },
+      });
+      return;
+    }
+    try {
+      const result = await prisma.refreshToken.updateMany({
+        where: { revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user!.id,
+          action: 'logout',
+          resourceType: 'refresh_token_bulk',
+          details: { scope: 'all', revokedCount: result.count },
+          ipAddress: req.ip,
+          riskLevel: 'high',
+        },
+      }).catch(() => { /* ignore */ });
+      res.json({ success: true, data: { revokedCount: result.count } });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// POST /admin/security/revoke-user-sessions/:userId
+// 특정 사용자의 모든 세션 강제 종료. super_admin 전용.
+router.post(
+  '/security/revoke-user-sessions/:userId',
+  async (req: Request, res: Response) => {
+    if (req.user!.role !== 'super_admin') {
+      res.status(403).json({
+        success: false,
+        error: { code: 'SUPER_ADMIN_ONLY', message: '슈퍼 관리자만 실행 가능합니다' },
+      });
+      return;
+    }
+    try {
+      const targetId = qs(req.params.userId);
+      const target = await prisma.user.findUnique({ where: { id: targetId } });
+      if (!target) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다' } });
+        return;
+      }
+      const result = await prisma.refreshToken.updateMany({
+        where: { userId: targetId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.auditLog.create({
+        data: {
+          userId: req.user!.id,
+          action: 'logout',
+          resourceType: 'refresh_token_user',
+          resourceId: targetId,
+          details: { targetUser: target.employeeId, revokedCount: result.count },
+          ipAddress: req.ip,
+          riskLevel: 'medium',
+        },
+      }).catch(() => { /* ignore */ });
+      res.json({ success: true, data: { revokedCount: result.count } });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
 
 // ===== 사용자 관리 =====
 
@@ -329,6 +476,18 @@ router.get('/users', async (req: Request, res: Response) => {
   }
 });
 
+// ── "마지막 super_admin" 가드 헬퍼
+// 현재 active 상태인 super_admin 이 유일한데 그를 강등/비활성화하려는 경우 차단
+async function ensureNotLastSuperAdmin(targetUserId: string, action: 'role_change' | 'status_change'): Promise<string | null> {
+  const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { role: true, status: true } });
+  if (!target || target.role !== 'super_admin' || target.status !== 'active') return null; // 대상이 active super_admin 이 아니면 OK
+  const count = await prisma.user.count({ where: { role: 'super_admin', status: 'active' } });
+  if (count > 1) return null;
+  return action === 'role_change'
+    ? '마지막 슈퍼 관리자입니다. 먼저 다른 사용자를 슈퍼 관리자로 지정해야 합니다.'
+    : '마지막 슈퍼 관리자입니다. 비활성화/잠금할 수 없습니다.';
+}
+
 // PATCH /admin/users/:id/role - 역할 변경
 router.patch('/users/:id/role', async (req: Request, res: Response) => {
   try {
@@ -350,11 +509,33 @@ router.patch('/users/:id/role', async (req: Request, res: Response) => {
       return;
     }
 
+    // super_admin → 다른 역할로 강등하려는 경우, 마지막 super_admin 보호
+    if (user.role === 'super_admin' && req.body.role !== 'super_admin') {
+      const guard = await ensureNotLastSuperAdmin(user.id, 'role_change');
+      if (guard) {
+        res.status(400).json({ success: false, error: { code: 'LAST_SUPER_ADMIN', message: guard } });
+        return;
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id: qs(req.params.id) },
       data: { role: req.body.role },
       select: { id: true, name: true, email: true, role: true, status: true },
     });
+
+    // 감사 로그
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'role_change',
+        resourceType: 'user',
+        resourceId: user.id,
+        details: { targetUser: user.employeeId, before: user.role, after: req.body.role },
+        ipAddress: req.ip,
+        riskLevel: req.body.role === 'super_admin' ? 'high' : 'medium',
+      },
+    }).catch(() => { /* ignore */ });
 
     res.json({ success: true, data: updated });
   } catch {
@@ -383,6 +564,15 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
       return;
     }
 
+    // super_admin 을 active 외 상태로 바꾸려는 경우, 마지막 super_admin 보호
+    if (user.role === 'super_admin' && req.body.status !== 'active') {
+      const guard = await ensureNotLastSuperAdmin(user.id, 'status_change');
+      if (guard) {
+        res.status(400).json({ success: false, error: { code: 'LAST_SUPER_ADMIN', message: guard } });
+        return;
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id: qs(req.params.id) },
       data: { status: req.body.status },
@@ -390,6 +580,52 @@ router.patch('/users/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /admin/users/:id/audit-logs - 특정 사용자의 모든 감사 로그 (super_admin 전용)
+// 멤버별 행위 이력을 한눈에 보기 위한 전용 엔드포인트.
+router.get('/users/:id/audit-logs', async (req: Request, res: Response) => {
+  if (req.user!.role !== 'super_admin') {
+    res.status(403).json({
+      success: false,
+      error: { code: 'SUPER_ADMIN_ONLY', message: '슈퍼 관리자만 조회 가능합니다' },
+    });
+    return;
+  }
+  try {
+    const targetId = qs(req.params.id);
+    const page = parseInt(qs(req.query.page)) || 1;
+    const limit = Math.min(parseInt(qs(req.query.limit)) || 30, 100);
+    const action = qsOpt(req.query.action);
+
+    const where: any = { userId: targetId };
+    if (action) where.action = { contains: action, mode: 'insensitive' };
+
+    const [logs, total, user] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.auditLog.count({ where }),
+      prisma.user.findUnique({
+        where: { id: targetId },
+        select: { id: true, name: true, email: true, employeeId: true, role: true, status: true, lastLoginAt: true },
+      }),
+    ]);
+    if (!user) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다' } });
+      return;
+    }
+    res.json({
+      success: true,
+      data: { user, logs },
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

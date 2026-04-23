@@ -34,6 +34,25 @@ async function main() {
     });
   }
 
+  // 시스템 설정 기본값 + minRole 정책 시드
+  // (super_admin 승격 대상: 보안·시스템 민감 키)
+  const systemSettings = [
+    { key: 'company_name',        value: 'KS Corporation',   category: 'general',      description: '회사명',                     minRole: 'admin'       },
+    { key: 'notification_email',  value: 'admin@kscorp.com', category: 'notification', description: '알림 발송 이메일',            minRole: 'admin'       },
+    { key: 'session_timeout',     value: '30',               category: 'security',     description: '세션 타임아웃 (분)',          minRole: 'super_admin' },
+    { key: 'password_min_length', value: '8',                category: 'security',     description: '비밀번호 최소 길이',           minRole: 'super_admin' },
+    { key: 'max_login_attempts',  value: '5',                category: 'security',     description: '최대 로그인 시도 횟수',        minRole: 'super_admin' },
+    { key: 'maintenance_mode',    value: 'false',            category: 'system',       description: '유지보수 모드 (true 시 비관리자 접근 차단)', minRole: 'super_admin' },
+  ];
+  for (const s of systemSettings) {
+    await prisma.systemSetting.upsert({
+      where: { key: s.key },
+      // 재실행 시 category/minRole/description 만 업데이트 (value는 운영 중 변경된 값 보존)
+      update: { category: s.category, minRole: s.minRole, description: s.description },
+      create: s,
+    });
+  }
+
   // 루트 부서 생성
   const rootDept = await prisma.department.upsert({
     where: { code: 'ROOT' },
