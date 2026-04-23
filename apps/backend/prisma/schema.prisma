@@ -691,6 +691,8 @@ model CalendarEvent {
   color       String?     @default("#3b82f6")
   categoryId  String?     @map("category_id")
   repeat      EventRepeat @default(none)
+  /// 반복 종료일 (null = 무제한 반복)
+  repeatUntil DateTime?   @map("repeat_until")
   scope       String      @default("personal") // personal, department, company
   creatorId   String      @map("creator_id")
   departmentId String?    @map("department_id")

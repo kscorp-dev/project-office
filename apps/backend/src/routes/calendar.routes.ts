@@ -19,6 +19,7 @@ const eventSchema = z.object({
   color: z.string().max(7).optional(),
   categoryId: z.string().uuid().optional().nullable(),
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).default('none'),
+  repeatUntil: z.string().datetime().optional().nullable(),
   scope: z.enum(['personal', 'department', 'company']).default('personal'),
   attendeeIds: z.array(z.string().uuid()).optional(),
 });
@@ -100,13 +101,27 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '수정 권한이 없습니다' } }); return;
     }
 
-    const { startDate, endDate, ...rest } = req.body;
+    const { startDate, endDate, attendeeIds, repeatUntil, ...rest } = req.body;
+
+    // attendeeIds가 들어오면 기존 참석자 전체 교체
+    if (attendeeIds !== undefined && Array.isArray(attendeeIds)) {
+      await prisma.eventAttendee.deleteMany({ where: { eventId: qs(req.params.id) } });
+      if (attendeeIds.length > 0) {
+        await prisma.eventAttendee.createMany({
+          data: attendeeIds.map((userId: string) => ({ eventId: qs(req.params.id), userId })),
+        });
+      }
+    }
+
     const updated = await prisma.calendarEvent.update({
       where: { id: qs(req.params.id) },
       data: {
         ...rest,
         ...(startDate ? { startDate: new Date(startDate) } : {}),
         ...(endDate ? { endDate: new Date(endDate) } : {}),
+        ...(repeatUntil !== undefined
+          ? { repeatUntil: repeatUntil ? new Date(repeatUntil) : null }
+          : {}),
       },
     });
 
