@@ -109,35 +109,41 @@ const vacationSchema = z.object({
   endDate: z.string().datetime(),
   days: z.number().min(0.5),
   reason: z.string().max(500).optional(),
+  /** 결재선 (순서대로) — 전자결재 연동 (기획 §12) */
+  approverIds: z.array(z.string().uuid()).min(1).max(10),
+  referenceIds: z.array(z.string().uuid()).max(20).optional(),
 });
 
 // POST /attendance/vacations - 휴가 신청
+// 전자결재와 자동 연동: Vacation(pending) + ApprovalDocument(pending) 동시 생성, 양방향 링크.
+// 최종 승인 시 approval.service → applyVacationOnFinalApproval 이 호출되어
+// VacationBalance 차감 + CalendarEvent 자동 등록 + 기안자 알림.
 router.post('/vacations', authenticate, validate(vacationSchema), async (req: Request, res: Response) => {
   try {
-    // 잔여 연차 확인
-    const year = new Date().getFullYear();
-    const balance = await prisma.vacationBalance.findUnique({
-      where: { userId_year: { userId: req.user!.id, year } },
+    const { createVacationWithApproval } = await import('../services/vacation-approval.service');
+    const result = await createVacationWithApproval({
+      userId: req.user!.id,
+      type: req.body.type,
+      startDate: new Date(req.body.startDate),
+      endDate: new Date(req.body.endDate),
+      days: req.body.days,
+      reason: req.body.reason,
+      approverIds: req.body.approverIds,
+      referenceIds: req.body.referenceIds,
     });
 
-    if (balance && req.body.type === 'annual' && balance.remainDays < req.body.days) {
-      res.status(400).json({ success: false, error: { code: 'INSUFFICIENT_BALANCE', message: `잔여 연차가 부족합니다 (${balance.remainDays}일 남음)` } });
+    // 첫 결재자 알림 발송 (실패해도 요청은 성공으로)
+    const { ApprovalService } = await import('../services/approval.service');
+    await new ApprovalService().notifyOnSubmit(result.approvalDocId).catch(() => {});
+
+    res.status(201).json({ success: true, data: result });
+  } catch (err: unknown) {
+    // AppError 식별 (서비스에서 throw)
+    if (err && typeof err === 'object' && 'statusCode' in err && 'code' in err) {
+      const e = err as { statusCode: number; code: string; message: string };
+      res.status(e.statusCode).json({ success: false, error: { code: e.code, message: e.message } });
       return;
     }
-
-    const vacation = await prisma.vacation.create({
-      data: {
-        userId: req.user!.id,
-        type: req.body.type,
-        startDate: new Date(req.body.startDate),
-        endDate: new Date(req.body.endDate),
-        days: req.body.days,
-        reason: req.body.reason,
-      },
-    });
-
-    res.status(201).json({ success: true, data: vacation });
-  } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

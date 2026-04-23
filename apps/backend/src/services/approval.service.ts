@@ -1,5 +1,10 @@
 import prisma from '../config/prisma';
 import { AppError } from './auth.service';
+import {
+  applyVacationOnFinalApproval,
+  applyVacationOnRejection,
+} from './vacation-approval.service';
+import { createNotification } from './notification.service';
 
 interface CreateDocumentData {
   templateId: string;
@@ -210,6 +215,14 @@ export class ApprovalService {
         if (docUpdate.count === 0) {
           throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
         }
+        // 최종 승인 후처리 — 양식 코드별 분기 (휴가 등)
+        const fullDoc = await tx.approvalDocument.findUnique({
+          where: { id: documentId },
+          include: { template: { select: { code: true } } },
+        });
+        if (fullDoc && fullDoc.template.code.toUpperCase() === 'VACATION') {
+          await applyVacationOnFinalApproval(tx, fullDoc, approverId);
+        }
       } else {
         const docUpdate = await tx.approvalDocument.updateMany({
           where: { id: documentId, currentStep: doc.currentStep, status: 'pending' },
@@ -220,6 +233,9 @@ export class ApprovalService {
         }
       }
     });
+
+    // 알림 (트랜잭션 외부, 실패해도 DB에 영향 없음)
+    await this.notifyApprovalProgress(documentId, approverId, 'approved', comment).catch(() => {});
 
     return this.getDocumentDetail(documentId);
   }
@@ -263,9 +279,168 @@ export class ApprovalService {
       if (docUpdate.count === 0) {
         throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
       }
+
+      // 반려 후처리 — 양식 코드별 분기
+      const fullDoc = await tx.approvalDocument.findUnique({
+        where: { id: documentId },
+        include: { template: { select: { code: true } } },
+      });
+      if (fullDoc && fullDoc.template.code.toUpperCase() === 'VACATION') {
+        await applyVacationOnRejection(tx, fullDoc, comment);
+      }
     });
 
+    // 알림
+    await this.notifyApprovalProgress(documentId, approverId, 'rejected', comment).catch(() => {});
+
     return this.getDocumentDetail(documentId);
+  }
+
+  /**
+   * 결재 진행 상태 변경 시 알림 발송
+   * - 최종 승인/반려: 기안자에게 결과 알림
+   * - 중간 승인: 다음 결재자에게 "결재 요청" 알림
+   * - 공통: 참조자에게 진행 상태 알림 (승인/반려 시만)
+   */
+  private async notifyApprovalProgress(
+    documentId: string,
+    actorId: string,
+    kind: 'approved' | 'rejected',
+    comment?: string,
+  ): Promise<void> {
+    const doc = await prisma.approvalDocument.findUnique({
+      where: { id: documentId },
+      include: {
+        drafter: { select: { id: true, name: true } },
+        lines: {
+          include: { approver: { select: { id: true, name: true } } },
+          orderBy: { step: 'asc' },
+        },
+        references: { select: { userId: true } },
+      },
+    });
+    if (!doc) return;
+
+    const link = `/approval/documents/${doc.id}`;
+    const baseBody = `[${doc.docNumber}] ${doc.title}`;
+
+    if (doc.status === 'rejected') {
+      // 기안자에게 반려 알림
+      await createNotification({
+        recipientId: doc.drafterId,
+        actorId,
+        type: 'approval_rejected',
+        title: '결재가 반려되었습니다',
+        body: comment ? `${baseBody}\n반려사유: ${comment}` : baseBody,
+        link,
+        refType: 'approval',
+        refId: doc.id,
+      });
+      // 참조자에게도 공유
+      for (const ref of doc.references) {
+        await createNotification({
+          recipientId: ref.userId,
+          actorId,
+          type: 'approval_reference',
+          title: '참조 문서가 반려되었습니다',
+          body: baseBody,
+          link,
+          refType: 'approval',
+          refId: doc.id,
+        });
+      }
+      return;
+    }
+
+    if (doc.status === 'approved') {
+      // 기안자에게 완료 알림
+      await createNotification({
+        recipientId: doc.drafterId,
+        actorId,
+        type: 'approval_approved',
+        title: '결재가 최종 승인되었습니다',
+        body: baseBody,
+        link,
+        refType: 'approval',
+        refId: doc.id,
+      });
+      // 참조자에게 공유
+      for (const ref of doc.references) {
+        await createNotification({
+          recipientId: ref.userId,
+          actorId,
+          type: 'approval_reference',
+          title: '참조 문서가 완료되었습니다',
+          body: baseBody,
+          link,
+          refType: 'approval',
+          refId: doc.id,
+        });
+      }
+      return;
+    }
+
+    // 중간 승인 → 다음 결재자
+    if (kind === 'approved' && doc.status === 'pending') {
+      const nextLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
+      if (nextLine) {
+        await createNotification({
+          recipientId: nextLine.approverId,
+          actorId,
+          type: 'approval_pending',
+          title: '결재가 요청되었습니다',
+          body: `${doc.drafter?.name ?? ''} — ${baseBody}`,
+          link,
+          refType: 'approval',
+          refId: doc.id,
+        });
+      }
+    }
+  }
+
+  /**
+   * 문서 상신 시 첫 결재자에게 알림 + 참조자 알림
+   * - createDocument(submit=true) 또는 submitDocument 완료 후 호출
+   */
+  async notifyOnSubmit(documentId: string): Promise<void> {
+    const doc = await prisma.approvalDocument.findUnique({
+      where: { id: documentId },
+      include: {
+        drafter: { select: { id: true, name: true } },
+        lines: { orderBy: { step: 'asc' }, take: 1 },
+        references: { select: { userId: true } },
+      },
+    });
+    if (!doc) return;
+
+    const link = `/approval/documents/${doc.id}`;
+    const baseBody = `${doc.drafter?.name ?? ''} — [${doc.docNumber}] ${doc.title}`;
+    const firstApproverId = doc.lines[0]?.approverId;
+
+    if (firstApproverId) {
+      await createNotification({
+        recipientId: firstApproverId,
+        actorId: doc.drafterId,
+        type: 'approval_pending',
+        title: '결재가 요청되었습니다',
+        body: baseBody,
+        link,
+        refType: 'approval',
+        refId: doc.id,
+      });
+    }
+    for (const ref of doc.references) {
+      await createNotification({
+        recipientId: ref.userId,
+        actorId: doc.drafterId,
+        type: 'approval_reference',
+        title: '참조 문서가 등록되었습니다',
+        body: baseBody,
+        link,
+        refType: 'approval',
+        refId: doc.id,
+      });
+    }
   }
 
   /**

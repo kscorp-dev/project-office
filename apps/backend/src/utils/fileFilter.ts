@@ -124,6 +124,13 @@ function makeFileFilter(map: MimeMap): (req: Request, file: Express.Multer.File,
 
 export const messengerFileFilter = makeFileFilter(MESSENGER_MIME_MAP);
 export const meetingFileFilter = makeFileFilter(MEETING_DOC_MIME_MAP);
+// 결재 첨부 — 미디어는 불필요, 이미지+문서+아카이브만
+const APPROVAL_MIME_MAP: MimeMap = {
+  ...IMAGE_MIME_MAP,
+  ...DOCUMENT_MIME_MAP,
+  ...ARCHIVE_MIME_MAP,
+};
+export const approvalFileFilter = makeFileFilter(APPROVAL_MIME_MAP);
 
 // 필요 시 다른 라우트에서 map만 조합해서 쓸 수 있도록 export
 export { IMAGE_MIME_MAP, DOCUMENT_MIME_MAP, ARCHIVE_MIME_MAP, MEDIA_MIME_MAP, makeFileFilter };

@@ -105,6 +105,10 @@ model User {
   mailContacts         MailContact[]          @relation("MailContacts")
   mailAdminLogs        MailAdminLog[]         @relation("MailAdminLogs")
 
+  // 알림 (v0.14.0)
+  notifications        Notification[]          @relation("NotificationRecipient")
+  sentNotifications    Notification[]          @relation("NotificationActor")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -1226,6 +1230,8 @@ enum AuditAction {
   approval_approve
   approval_reject
   approval_withdraw
+  approval_attachment_upload
+  approval_attachment_delete
 }
 
 enum RiskLevel {
@@ -1427,4 +1433,65 @@ model MailAdminLog {
   @@index([targetEmail, createdAt])
   @@index([actorId, createdAt])
   @@map("mail_admin_logs")
+}
+
+// ===== 통합 알림 시스템 (v0.14.0) =====
+
+enum NotificationType {
+  // 결재
+  approval_pending          // "결재할 문서가 도착했습니다"
+  approval_approved         // "결재가 승인되었습니다"
+  approval_rejected         // "결재가 반려되었습니다"
+  approval_recalled         // "결재가 회수되었습니다"
+  approval_reference        // "참조 문서가 도착했습니다"
+  // 휴가
+  vacation_approved         // "휴가가 승인되었습니다"
+  vacation_rejected
+  // 메신저
+  message_received          // "새 메시지가 도착했습니다"
+  message_mention           // "@멘션되었습니다"
+  // 게시판
+  post_must_read            // "필독 게시글이 등록되었습니다"
+  // 작업지시서
+  task_assigned             // "작업이 배정되었습니다"
+  task_status_changed       // "작업 상태가 변경되었습니다"
+  // 화상회의
+  meeting_invited           // "회의에 초대되었습니다"
+  meeting_starting_soon     // "예약된 회의가 5분 내 시작됩니다"
+  meeting_minutes_ready     // "AI 회의록이 생성되었습니다"
+  // 메일
+  mail_received             // "새 메일이 도착했습니다"
+  // 일반
+  system                    // 시스템 알림
+}
+
+/// 통합 알림 — 모든 모듈에서 재사용
+/// - recipientId: 알림 받는 사람
+/// - actorId: 알림을 트리거한 사람 (nullable - 시스템 알림 등)
+/// - type: NotificationType enum
+/// - title/body: 화면 표시용 (다국어는 type 기반으로 클라이언트에서 재작성 가능)
+/// - link: 클릭 시 이동 경로 (예: "/approval/documents/abc", "/meeting/xyz/minutes")
+/// - refType/refId: 관련 리소스 (approval:xxx, meeting:xxx 등) — 조회/정리 용
+/// - meta: 추가 정보 (Json, 자유롭게)
+model Notification {
+  id          String   @id @default(uuid())
+  recipientId String   @map("recipient_id")
+  actorId     String?  @map("actor_id")
+  type        NotificationType
+  title       String
+  body        String?
+  link        String?
+  refType     String?  @map("ref_type")   // "approval" | "meeting" | "vacation" | "message" | ...
+  refId       String?  @map("ref_id")
+  meta        Json?
+  isRead      Boolean  @default(false) @map("is_read")
+  readAt      DateTime? @map("read_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, isRead, createdAt(sort: Desc)])
+  @@index([refType, refId])
+  @@map("notifications")
 }

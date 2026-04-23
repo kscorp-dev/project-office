@@ -32,11 +32,13 @@ import parkingRoutes from './routes/parking.routes';
 import adminRoutes from './routes/admin.routes';
 import mailAdminRoutes from './routes/mail-admin.routes';
 import mailRoutes from './routes/mail.routes';
+import notificationRoutes from './routes/notification.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
 import { setupMeetingSocket } from './websocket/meeting';
 import { setupMailSocket } from './websocket/mail';
+import { setupNotificationSocket } from './websocket/notifications';
 
 const app = express();
 const httpServer = createServer(app);
@@ -128,6 +130,7 @@ app.use('/api/parking', parkingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/mail', mailAdminRoutes);
 app.use('/api/mail', mailRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 Handler
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
@@ -140,6 +143,7 @@ app.use(errorHandler);
 setupMessengerSocket(io);
 setupMeetingSocket(io);
 setupMailSocket(io);
+setupNotificationSocket(io);
 
 // Socket.IO 인스턴스를 app에 저장 (라우트에서 접근 가능)
 app.set('io', io);
