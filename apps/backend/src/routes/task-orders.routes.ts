@@ -1,11 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { checkModule } from '../middleware/checkModule';
 import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
+import { config } from '../config';
+import { makeFileFilter, IMAGE_MIME_MAP, DOCUMENT_MIME_MAP, ARCHIVE_MIME_MAP } from '../utils/fileFilter';
+import { createNotification } from '../services/notification.service';
 
 const router = Router();
 router.use(checkModule('task_orders'));
@@ -459,6 +466,538 @@ router.get('/stats/summary', authenticate, async (req: Request, res: Response) =
     ]);
 
     res.json({ success: true, data: { sent, received, inProgress, overdue } });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// ===== 디자인 파일 (DESIGN-001~012) =====
+//
+// 권한:
+//   - 작성자(creator) + 배정자(assignees) + 관리자만 조회/업로드/다운로드
+//   - 승인(approve/reject)은 작성자 본인만
+//
+// 기능:
+//   - 업로드 (신규) + 새 버전 (같은 파일명 여러 개 아님, parentFileId로 체인)
+//   - 다운로드 시 TaskFileLog 자동 기록 (action=download)
+//   - 조회(view) 시에도 로그 + "디자인파일 확인" 이력
+//   - 승인/반려 — approveComment, 자동 TaskFileLog 기록
+
+// 디자인 파일: 이미지 + 문서 + 아카이브 + 주요 디자인 포맷
+const DESIGN_MIME: Record<string, readonly string[]> = {
+  ...IMAGE_MIME_MAP,
+  ...DOCUMENT_MIME_MAP,
+  ...ARCHIVE_MIME_MAP,
+  '.ai':  ['application/postscript', 'application/illustrator', 'application/octet-stream'],
+  '.psd': ['image/vnd.adobe.photoshop', 'application/octet-stream'],
+  '.eps': ['application/postscript', 'application/eps', 'application/x-eps'],
+  '.indd':['application/x-indesign', 'application/octet-stream'],
+  '.sketch': ['application/zip', 'application/octet-stream'],
+  '.fig': ['application/octet-stream'],
+};
+const designFileFilter = makeFileFilter(DESIGN_MIME);
+
+const designStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const taskId = qs(req.params.id);
+    const dir = path.resolve(config.upload.dir, 'tasks', taskId, 'designs');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
+  },
+});
+
+const designUpload = multer({
+  storage: designStorage,
+  limits: { fileSize: config.upload.maxFileSize }, // 50MB 기본 (env로 조정)
+  fileFilter: designFileFilter,
+});
+
+function detectFileType(mime: string, ext: string): string {
+  const e = ext.toLowerCase();
+  if (['.ai', '.psd', '.eps', '.indd', '.sketch', '.fig'].includes(e)) return e.slice(1);
+  if (mime.startsWith('image/')) return 'image';
+  if (mime === 'application/pdf') return 'pdf';
+  return 'other';
+}
+
+/** 태스크 접근 권한: 작성자 / 배정자 / 관리자 */
+async function canAccessTask(taskId: string, userId: string, role: string): Promise<{ ok: true; task: { creatorId: string } } | { ok: false; reason: string }> {
+  const task = await prisma.taskOrder.findUnique({
+    where: { id: taskId },
+    select: {
+      creatorId: true,
+      assignees: { select: { userId: true } },
+    },
+  });
+  if (!task) return { ok: false, reason: 'NOT_FOUND' };
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isCreator = task.creatorId === userId;
+  const isAssignee = task.assignees.some((a) => a.userId === userId);
+  if (!isAdmin && !isCreator && !isAssignee) return { ok: false, reason: 'FORBIDDEN' };
+  return { ok: true, task: { creatorId: task.creatorId } };
+}
+
+async function logFileAction(params: {
+  taskId: string;
+  fileId: string;
+  userId: string;
+  action: 'upload' | 'download' | 'view' | 'approve' | 'reject';
+  fileVersion: number;
+  comment?: string;
+  req?: Request;
+}): Promise<void> {
+  try {
+    await prisma.taskFileLog.create({
+      data: {
+        taskId: params.taskId,
+        fileId: params.fileId,
+        userId: params.userId,
+        action: params.action,
+        fileVersion: params.fileVersion,
+        comment: params.comment,
+        ipAddress: params.req?.ip,
+        deviceType: params.req?.headers['user-agent']?.slice(0, 100),
+      },
+    });
+  } catch { /* ignore — 로그 실패는 본 기능 막지 않음 */ }
+}
+
+// GET /:id/design-files — 목록 (현재 버전만 isLatest=true)
+router.get('/:id/design-files', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taskId = qs(req.params.id);
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const rows = await prisma.taskDesignFile.findMany({
+      where: { taskId, isLatest: true },
+      include: {
+        uploader: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({
+      success: true,
+      data: rows.map((r) => ({ ...r, fileSize: Number(r.fileSize) })),
+    });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /:id/design-files — 신규 업로드
+router.post(
+  '/:id/design-files',
+  authenticate,
+  designUpload.single('file'),
+  async (req: Request, res: Response) => {
+    const taskId = qs(req.params.id);
+    const file = req.file;
+    const removeUploaded = () => {
+      if (file && fs.existsSync(file.path)) {
+        try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+      }
+    };
+    try {
+      if (!file) {
+        res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 없습니다' } });
+        return;
+      }
+      const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+      if (!access.ok) {
+        removeUploaded();
+        const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+        res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+        return;
+      }
+
+      const relPath = path.relative(path.resolve(config.upload.dir), file.path);
+      const ext = path.extname(file.originalname);
+      const fileType = detectFileType(file.mimetype, ext);
+
+      const created = await prisma.taskDesignFile.create({
+        data: {
+          taskId,
+          fileName: file.originalname,
+          filePath: relPath,
+          fileSize: BigInt(file.size),
+          fileType,
+          mimeType: file.mimetype,
+          version: 1,
+          uploadedBy: req.user!.id,
+          isLatest: true,
+        },
+      });
+
+      await logFileAction({
+        taskId,
+        fileId: created.id,
+        userId: req.user!.id,
+        action: 'upload',
+        fileVersion: 1,
+        req,
+      });
+
+      // 작성자에게 알림 (업로더 본인이 아니면)
+      if (access.task.creatorId !== req.user!.id) {
+        await createNotification({
+          recipientId: access.task.creatorId,
+          actorId: req.user!.id,
+          type: 'task_status_changed',
+          title: '디자인파일이 업로드되었습니다',
+          body: file.originalname,
+          link: `/task-orders/${taskId}`,
+          refType: 'task',
+          refId: taskId,
+        }).catch(() => {});
+      }
+
+      res.status(201).json({
+        success: true,
+        data: { ...created, fileSize: Number(created.fileSize) },
+      });
+    } catch (err) {
+      removeUploaded();
+      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message || '서버 오류' } });
+    }
+  },
+);
+
+// POST /:id/design-files/:fileId/upload-version — 새 버전 업로드 (이전 것 isLatest=false)
+router.post(
+  '/:id/design-files/:fileId/upload-version',
+  authenticate,
+  designUpload.single('file'),
+  async (req: Request, res: Response) => {
+    const taskId = qs(req.params.id);
+    const fileId = qs(req.params.fileId);
+    const file = req.file;
+    const removeUploaded = () => {
+      if (file && fs.existsSync(file.path)) {
+        try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+      }
+    };
+    try {
+      if (!file) {
+        res.status(400).json({ success: false, error: { code: 'NO_FILE', message: '파일이 없습니다' } });
+        return;
+      }
+      const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+      if (!access.ok) {
+        removeUploaded();
+        const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+        res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+        return;
+      }
+
+      const previous = await prisma.taskDesignFile.findUnique({ where: { id: fileId } });
+      if (!previous || previous.taskId !== taskId) {
+        removeUploaded();
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '원본 파일을 찾을 수 없습니다' } });
+        return;
+      }
+
+      const relPath = path.relative(path.resolve(config.upload.dir), file.path);
+      const ext = path.extname(file.originalname);
+      const fileType = detectFileType(file.mimetype, ext);
+      const newVersion = previous.version + 1;
+
+      const created = await prisma.$transaction(async (tx) => {
+        // 기존 버전 isLatest=false
+        await tx.taskDesignFile.update({
+          where: { id: fileId },
+          data: { isLatest: false },
+        });
+
+        return tx.taskDesignFile.create({
+          data: {
+            taskId,
+            fileName: file.originalname,
+            filePath: relPath,
+            fileSize: BigInt(file.size),
+            fileType,
+            mimeType: file.mimetype,
+            version: newVersion,
+            uploadedBy: req.user!.id,
+            parentFileId: previous.parentFileId ?? fileId, // 체인 유지
+            isLatest: true,
+          },
+        });
+      });
+
+      await logFileAction({
+        taskId,
+        fileId: created.id,
+        userId: req.user!.id,
+        action: 'upload',
+        fileVersion: newVersion,
+        req,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: { ...created, fileSize: Number(created.fileSize) },
+      });
+    } catch (err) {
+      removeUploaded();
+      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message || '서버 오류' } });
+    }
+  },
+);
+
+// GET /:id/design-files/:fileId/download — 바이너리 + 로그 자동 기록
+router.get('/:id/design-files/:fileId/download', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taskId = qs(req.params.id);
+    const fileId = qs(req.params.fileId);
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+
+    const file = await prisma.taskDesignFile.findUnique({ where: { id: fileId } });
+    if (!file || file.taskId !== taskId) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+      return;
+    }
+
+    const absPath = path.resolve(config.upload.dir, file.filePath);
+    const baseDir = path.resolve(config.upload.dir, 'tasks');
+    if (!absPath.startsWith(baseDir) || !fs.existsSync(absPath)) {
+      res.status(404).json({ success: false, error: { code: 'FILE_MISSING', message: '파일이 서버에 없습니다' } });
+      return;
+    }
+
+    // 로그 자동 기록 (DESIGN-005)
+    await logFileAction({
+      taskId, fileId, userId: req.user!.id, action: 'download',
+      fileVersion: file.version, req,
+    });
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+    );
+    res.sendFile(absPath);
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /:id/design-files/:fileId/view — 조회 이력 기록 (DESIGN-006 "확인")
+router.post('/:id/design-files/:fileId/view', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taskId = qs(req.params.id);
+    const fileId = qs(req.params.fileId);
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const file = await prisma.taskDesignFile.findUnique({ where: { id: fileId } });
+    if (!file || file.taskId !== taskId) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+      return;
+    }
+    await logFileAction({
+      taskId, fileId, userId: req.user!.id, action: 'view',
+      fileVersion: file.version, req,
+    });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /:id/design-files/:fileId/approve — 승인 (작성자만)
+const approveSchema = z.object({ comment: z.string().max(1000).optional() });
+router.post(
+  '/:id/design-files/:fileId/approve',
+  authenticate,
+  validate(approveSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const taskId = qs(req.params.id);
+      const fileId = qs(req.params.fileId);
+      const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+      if (!access.ok) {
+        const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+        res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+        return;
+      }
+      const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+      if (!isAdmin && access.task.creatorId !== req.user!.id) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '작성자만 승인할 수 있습니다' } });
+        return;
+      }
+
+      const file = await prisma.taskDesignFile.findUnique({ where: { id: fileId } });
+      if (!file || file.taskId !== taskId) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+        return;
+      }
+      if (file.isApproved) {
+        res.status(400).json({ success: false, error: { code: 'ALREADY_APPROVED', message: '이미 승인된 파일입니다' } });
+        return;
+      }
+
+      const updated = await prisma.taskDesignFile.update({
+        where: { id: fileId },
+        data: {
+          isApproved: true,
+          approvedBy: req.user!.id,
+          approvedAt: new Date(),
+          approveComment: req.body.comment,
+        },
+      });
+
+      await logFileAction({
+        taskId, fileId, userId: req.user!.id, action: 'approve',
+        fileVersion: file.version, comment: req.body.comment, req,
+      });
+
+      // 업로더에게 알림
+      await createNotification({
+        recipientId: file.uploadedBy,
+        actorId: req.user!.id,
+        type: 'task_status_changed',
+        title: '디자인파일이 승인되었습니다',
+        body: `${file.fileName}${req.body.comment ? ` — ${req.body.comment}` : ''}`,
+        link: `/task-orders/${taskId}`,
+        refType: 'task',
+        refId: taskId,
+      }).catch(() => {});
+
+      res.json({ success: true, data: { ...updated, fileSize: Number(updated.fileSize) } });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// POST /:id/design-files/:fileId/reject — 반려 (approveComment 필수)
+const rejectSchema = z.object({ comment: z.string().min(1).max(1000) });
+router.post(
+  '/:id/design-files/:fileId/reject',
+  authenticate,
+  validate(rejectSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const taskId = qs(req.params.id);
+      const fileId = qs(req.params.fileId);
+      const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+      if (!access.ok) {
+        const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+        res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+        return;
+      }
+      const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+      if (!isAdmin && access.task.creatorId !== req.user!.id) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '작성자만 반려할 수 있습니다' } });
+        return;
+      }
+
+      const file = await prisma.taskDesignFile.findUnique({ where: { id: fileId } });
+      if (!file || file.taskId !== taskId) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+        return;
+      }
+
+      await logFileAction({
+        taskId, fileId, userId: req.user!.id, action: 'reject',
+        fileVersion: file.version, comment: req.body.comment, req,
+      });
+
+      // 업로더에게 알림
+      await createNotification({
+        recipientId: file.uploadedBy,
+        actorId: req.user!.id,
+        type: 'task_status_changed',
+        title: '디자인파일이 반려되었습니다',
+        body: `${file.fileName} — ${req.body.comment}`,
+        link: `/task-orders/${taskId}`,
+        refType: 'task',
+        refId: taskId,
+      }).catch(() => {});
+
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// GET /:id/design-files/:fileId/versions — 버전 체인 조회
+router.get('/:id/design-files/:fileId/versions', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taskId = qs(req.params.id);
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const file = await prisma.taskDesignFile.findUnique({ where: { id: qs(req.params.fileId) } });
+    if (!file || file.taskId !== taskId) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '파일을 찾을 수 없습니다' } });
+      return;
+    }
+    // parentFileId 체인 따라 찾기 (첫 parent = rootId)
+    const rootId = file.parentFileId ?? file.id;
+    const versions = await prisma.taskDesignFile.findMany({
+      where: {
+        OR: [{ id: rootId }, { parentFileId: rootId }],
+      },
+      include: {
+        uploader: { select: { id: true, name: true } },
+      },
+      orderBy: { version: 'desc' },
+    });
+    res.json({
+      success: true,
+      data: versions.map((v) => ({ ...v, fileSize: Number(v.fileSize) })),
+    });
+  } catch {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /:id/design-files/:fileId/logs — 파일별 접근 로그 (작성자/관리자만)
+router.get('/:id/design-files/:fileId/logs', authenticate, async (req: Request, res: Response) => {
+  try {
+    const taskId = qs(req.params.id);
+    const fileId = qs(req.params.fileId);
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const isAdmin = req.user!.role === 'super_admin' || req.user!.role === 'admin';
+    if (!isAdmin && access.task.creatorId !== req.user!.id) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '작성자/관리자만 로그 조회 가능' } });
+      return;
+    }
+    const logs = await prisma.taskFileLog.findMany({
+      where: { taskId, fileId },
+      include: {
+        user: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    res.json({ success: true, data: logs });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }

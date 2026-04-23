@@ -19,6 +19,7 @@
 import type { Prisma, NotificationType } from '@prisma/client';
 import prisma from '../config/prisma';
 import { emitNewNotification, emitUnreadCount } from '../websocket/notifications';
+import { sendPushToUser } from './push.service';
 
 export interface CreateNotificationInput {
   recipientId: string;
@@ -54,12 +55,27 @@ export async function createNotification(input: CreateNotificationInput): Promis
     },
   });
 
-  // 실시간 푸시 (실패해도 DB는 보존)
+  // 실시간 WebSocket push (실패해도 DB는 보존)
   try {
     emitNewNotification(input.recipientId, notification);
     const unread = await countUnread(input.recipientId);
     emitUnreadCount(input.recipientId, unread);
   } catch { /* ignore — DB 저장은 성공 */ }
+
+  // 모바일 FCM/APNs push (앱 미실행 상태에서 알림) — 비동기, 실패해도 무시
+  sendPushToUser(input.recipientId, {
+    title: input.title,
+    body: input.body ?? '',
+    data: {
+      link: input.link,
+      refType: input.refType,
+      refId: input.refId,
+      notificationId: notification.id,
+      type: input.type,
+    },
+  }).catch((e) => {
+    // 로그는 push.service 내부에서 처리
+  });
 }
 
 /** 여러 수신자에게 동일 알림 벌크 생성 */

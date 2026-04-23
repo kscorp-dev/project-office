@@ -156,6 +156,7 @@ import { startMailSyncScheduler, runMailSyncOnce } from './workers/mailSync.work
 import { startAllMailIdle, stopAllMailIdle } from './workers/mailIdle.worker';
 import { shutdownMailPool } from './services/mail.service';
 import { startVacationAccrualScheduler, stopVacationAccrualScheduler } from './workers/vacationAccrual.worker';
+import { shutdownAllStreams } from './services/cctv-stream.service';
 
 httpServer.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
@@ -187,7 +188,7 @@ httpServer.listen(config.port, () => {
 const shutdown = async (signal: string) => {
   logger.info({ signal }, 'Shutdown requested');
   stopVacationAccrualScheduler();
-  await Promise.allSettled([stopAllMailIdle(), shutdownMailPool()]);
+  await Promise.allSettled([stopAllMailIdle(), shutdownMailPool(), shutdownAllStreams()]);
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();
 };

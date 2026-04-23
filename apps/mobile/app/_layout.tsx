@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { useAuthStore } from '../src/store/auth';
+import { usePushNotifications } from '../src/hooks/usePushNotifications';
 
 const theme = {
   ...MD3LightTheme,
@@ -23,6 +24,9 @@ export default function RootLayout() {
   useEffect(() => {
     initialize();
   }, []);
+
+  // 푸시 토큰 등록 (로그인 상태 되면 내부에서 한 번만 실행)
+  usePushNotifications();
 
   return (
     <PaperProvider theme={theme}>
