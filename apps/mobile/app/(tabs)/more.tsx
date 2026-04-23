@@ -32,6 +32,7 @@ const MENU_SECTIONS = [
   {
     title: '설정',
     items: [
+      { key: 'calendar-sync', label: '외부 캘린더 연동', emoji: '🗓️' },
       { key: 'profile',   label: '내 정보',      emoji: '👤' },
       { key: 'settings',  label: '앱 설정',      emoji: '⚙️' },
       { key: 'admin',     label: '관리콘솔',     emoji: '🔧' },
@@ -60,6 +61,10 @@ export default function MoreScreen() {
     // 구현된 라우트로 연결
     if (key === 'meeting') {
       router.push('/meeting');
+      return;
+    }
+    if (key === 'calendar-sync') {
+      router.push('/settings/calendar-sync');
       return;
     }
     Alert.alert('준비 중', `${key} 기능은 준비 중입니다.`);

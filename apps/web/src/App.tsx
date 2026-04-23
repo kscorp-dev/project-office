@@ -20,6 +20,7 @@ import InventoryPage from './pages/Inventory';
 import MeetingPage from './pages/Meeting';
 import MeetingRoom from './pages/MeetingRoom';
 import MeetingMinutesPage from './pages/MeetingMinutes';
+import CalendarSyncPage from './pages/CalendarSync';
 import MailPage from './pages/Mail';
 import ParkingPage from './pages/Parking';
 import DocumentsPage from './pages/Documents';
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/parking" element={<ParkingPage />} />
             <Route path="/meeting" element={<MeetingPage />} />
             <Route path="/meeting/:id/minutes" element={<MeetingMinutesPage />} />
+            <Route path="/settings/calendar-sync" element={<CalendarSyncPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/admin" element={<AdminConsolePage />} />
           </Route>

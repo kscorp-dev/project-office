@@ -115,6 +115,9 @@ model User {
   authTokens           AuthToken[]             @relation("UserAuthTokens")
   issuedAuthTokens     AuthToken[]             @relation("IssuedAuthTokens")
 
+  // 캘린더 외부 동기화 (v0.16.0)
+  calendarSubscriptions CalendarSubscription[] @relation("CalendarSubscriptions")
+
   @@index([departmentId])
   @@index([role])
   @@index([status])
@@ -1526,6 +1529,39 @@ model MailAdminLog {
   @@index([targetEmail, createdAt])
   @@index([actorId, createdAt])
   @@map("mail_admin_logs")
+}
+
+// ===== 캘린더 외부 동기화 (v0.16.0) =====
+
+/// 사용자별 ICS(iCalendar) 구독 URL
+/// - 하나의 URL이 하나의 기기 또는 외부 캘린더에 대응
+/// - token이 공개 feed 엔드포인트의 인증 역할 (랜덤 32바이트 URL-safe)
+/// - reminderMinutes 배열로 VALARM 블록을 여러 개 생성 (N분 전)
+model CalendarSubscription {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  token           String   @unique
+  name            String                                          // "내 iPhone", "Google" 등 사용자 라벨
+  /// 포함 범위: "personal" (본인 일정만) / "personal_dept" (+ 소속 부서) / "all" (전사)
+  scope           String   @default("personal")
+  includeVacation Boolean  @default(true) @map("include_vacation")
+  includeMeeting  Boolean  @default(true) @map("include_meeting")
+  includeTasks    Boolean  @default(false) @map("include_tasks")
+  /// VALARM 트리거 시간 (분 전) — 복수 지정으로 여러 알림 가능
+  reminderMinutes Int[]    @default([10]) @map("reminder_minutes")
+  isActive        Boolean  @default(true) @map("is_active")
+  lastAccessedAt  DateTime? @map("last_accessed_at")
+  accessCount     Int      @default(0) @map("access_count")
+  /// 마지막 응답의 ETag (If-None-Match 304 지원)
+  lastEtag        String?  @map("last_etag")
+  createdAt       DateTime @default(now()) @map("created_at")
+  revokedAt       DateTime? @map("revoked_at")
+
+  user User @relation("CalendarSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([token])
+  @@map("calendar_subscriptions")
 }
 
 // ===== 통합 알림 시스템 (v0.14.0) =====
