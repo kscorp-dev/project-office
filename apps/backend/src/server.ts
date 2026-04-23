@@ -35,6 +35,7 @@ import mailRoutes from './routes/mail.routes';
 import notificationRoutes from './routes/notification.routes';
 import holidayRoutes from './routes/holiday.routes';
 import calendarSyncRoutes from './routes/calendar-sync.routes';
+import modulesRoutes from './routes/modules.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -135,6 +136,7 @@ app.use('/api/mail', mailRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/calendar-sync', calendarSyncRoutes);
+app.use('/api/modules', modulesRoutes);
 
 // 404 Handler
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';

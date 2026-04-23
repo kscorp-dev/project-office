@@ -1374,6 +1374,10 @@ model FeatureModule {
   isEnabled   Boolean @default(true) @map("is_enabled")
   sortOrder   Int     @default(0) @map("sort_order")
 
+  /// 물리장비/대외노출 민감 기능 — super_admin만 활성/비활성 전환 가능
+  /// (CCTV, 주차추적, 근태관리 등)
+  isCritical  Boolean @default(false) @map("is_critical")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

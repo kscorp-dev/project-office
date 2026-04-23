@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useLayoutStore, type SidebarPosition, type ThemeMode } from '../store/layout';
 import { useMailRealtime } from '../store/mailRealtime';
+import { useModulesStore } from '../store/modules';
 import {
   LayoutDashboard, FileCheck, MessageSquare, Users, LogOut, Menu, X,
   Camera, Clock, Calendar, Newspaper, ClipboardList, Package, Car,
@@ -40,12 +41,16 @@ const POSITION_OPTIONS: { value: SidebarPosition; icon: any; label: string }[] =
 /* ── 사이드바 네비게이션 (세로 모드) ── */
 function VerticalNav({ compact }: { compact: boolean }) {
   const { navGroups, hiddenItems, toggleGroup } = useLayoutStore();
+  const isNavEnabled = useModulesStore((s) => s.isNavEnabled);
+  // 스토어의 map 이 바뀔 때 재렌더되도록 구독
+  useModulesStore((s) => s.map);
 
   return (
     <nav className="flex-1 py-2 overflow-y-auto">
       {navGroups.map(group => {
         const items = group.children
           .filter(key => !hiddenItems.includes(key))
+          .filter(key => isNavEnabled(key)) // 비활성 모듈 숨김
           .map(key => NAV_ITEMS[key])
           .filter(Boolean);
         if (items.length === 0) return null;
@@ -91,12 +96,15 @@ function VerticalNav({ compact }: { compact: boolean }) {
 /* ── 상/하단 바 네비게이션 (가로 모드) ── */
 function HorizontalNav() {
   const { navGroups, hiddenItems, toggleGroup } = useLayoutStore();
+  const isNavEnabled = useModulesStore((s) => s.isNavEnabled);
+  useModulesStore((s) => s.map);
 
   return (
     <nav className="flex items-center gap-1 px-4 py-1 overflow-x-auto flex-1">
       {navGroups.map(group => {
         const items = group.children
           .filter(key => !hiddenItems.includes(key))
+          .filter(key => isNavEnabled(key))
           .map(key => NAV_ITEMS[key])
           .filter(Boolean);
         if (items.length === 0) return null;

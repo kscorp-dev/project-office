@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
-  Shield, Users, Settings, ScrollText, ToggleLeft, ToggleRight,
+  Shield, Users, Settings, ScrollText, ToggleLeft,
   Search, RefreshCw, ChevronLeft, ChevronRight, Edit2, Check, X,
   UserCheck, UserX, LogIn, FileCheck, UserPlus, Eye, EyeOff,
-  Mail, Cloud, Wifi, WifiOff, AlertCircle, Inbox,
+  Mail, Cloud, Wifi, WifiOff, AlertCircle, Inbox, ShieldAlert, Lock,
   Plus, MoreVertical, KeyRound, HardDrive, Trash2, Copy, Link2,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
+import { useModulesStore } from '../store/modules';
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -17,7 +18,10 @@ interface Module {
   displayName: string;
   description?: string;
   isEnabled: boolean;
-  order: number;
+  /** super_admin 전용 모듈 (CCTV / 주차 / 근태 등) */
+  isCritical?: boolean;
+  sortOrder?: number;
+  order?: number;
 }
 
 interface AdminUser {
@@ -479,11 +483,30 @@ export default function AdminConsolePage() {
     }
   };
 
-  /* ── Module toggle ── */
+  /* ── Module toggle ──
+   * - critical 모듈은 super_admin만 토글 가능 (버튼에서 이미 disabled 처리)
+   * - 토글 성공 시 전역 modules store를 refresh → 사이드바 네비게이션 즉시 반영
+   */
   const handleModuleToggle = async (mod: Module) => {
+    if (mod.isCritical && user?.role !== 'super_admin') {
+      alert(`${mod.displayName}은(는) 슈퍼 관리자만 제어할 수 있습니다`);
+      return;
+    }
+    // 비활성으로 전환 시 관리자 콘솔 자체가 사라지면 곤란 → admin 모듈은 보호
+    if (mod.name === 'admin' && mod.isEnabled) {
+      alert('관리자콘솔은 비활성화할 수 없습니다');
+      return;
+    }
+    const confirmMsg = mod.isCritical && mod.isEnabled
+      ? `${mod.displayName}은(는) 물리장비 연동 모듈입니다. 비활성화하면 전 직원이 접근 불가해집니다. 계속할까요?`
+      : null;
+    if (confirmMsg && !confirm(confirmMsg)) return;
+
     try {
       await api.patch(`/admin/modules/${mod.id}`, { isEnabled: !mod.isEnabled });
       setModules((prev) => prev.map((m) => m.id === mod.id ? { ...m, isEnabled: !m.isEnabled } : m));
+      // 전역 모듈 스토어 동기화 → 사이드바 숨김/노출 즉시 반영
+      useModulesStore.getState().refresh();
     } catch (err: any) {
       alert(err.response?.data?.error?.message || '모듈 변경 중 오류가 발생했습니다');
     }
@@ -618,44 +641,109 @@ export default function AdminConsolePage() {
       {activeTab === 'modules' && (
         <div className="card dark:bg-slate-800 dark:border-slate-700/80">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold">모듈 목록</h2>
-            <button onClick={fetchModules} className="text-gray-400 hover:text-gray-600">
+            <div>
+              <h2 className="text-base font-semibold">모듈 목록</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                스위치를 누르면 즉시 적용되고 전 직원의 사이드바에서 해당 메뉴가 사라집니다. 별도의 적용 버튼은 없습니다.
+              </p>
+            </div>
+            <button
+              onClick={fetchModules}
+              className="text-gray-400 hover:text-gray-600 p-2"
+              title="새로고침"
+            >
               <RefreshCw size={16} />
             </button>
           </div>
+
+          {/* 범례 */}
+          <div className="flex flex-wrap items-center gap-3 mb-4 text-[11px] text-gray-500 dark:text-gray-400">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> 활성
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-slate-600" /> 비활성
+            </span>
+            <span className="flex items-center gap-1">
+              <ShieldAlert size={12} className="text-amber-500" /> 슈퍼관리자 전용 (물리장비/대외노출 모듈)
+            </span>
+          </div>
+
           {modulesLoading ? (
             <div className="flex justify-center py-16"><RefreshCw className="animate-spin text-gray-400" size={28} /></div>
           ) : modules.length === 0 ? (
             <p className="text-center text-gray-400 py-12">모듈이 없습니다</p>
           ) : (
-            <div className="space-y-3">
-              {modules.map((mod) => (
-                <div
-                  key={mod.id}
-                  className="flex items-center justify-between py-3 px-4 rounded-2xl border dark:border-slate-700 hover:bg-primary-50/50 dark:hover:bg-slate-700/50 transition-colors"
-                >
-                  <div>
-                    <p className="font-medium dark:text-white">{mod.displayName}</p>
-                    {mod.description && <p className="text-xs text-gray-400 mt-0.5">{mod.description}</p>}
-                    <p className="text-xs text-gray-300 mt-0.5">ID: {mod.name}</p>
-                  </div>
-                  <button
-                    onClick={() => handleModuleToggle(mod)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                      mod.isEnabled
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            <div className="space-y-2">
+              {modules.map((mod) => {
+                const isSuperAdmin = user?.role === 'super_admin';
+                const locked = mod.isCritical && !isSuperAdmin;
+                const adminSelf = mod.name === 'admin'; // 관리자 콘솔 자체 — 비활성화 금지
+                const disabled = locked || (adminSelf && mod.isEnabled);
+                return (
+                  <div
+                    key={mod.id}
+                    className={`flex items-center justify-between gap-3 py-3 px-4 rounded-2xl border transition-colors ${
+                      locked
+                        ? 'border-amber-200 dark:border-amber-700/50 bg-amber-50/40 dark:bg-amber-900/10'
+                        : 'border-gray-200 dark:border-slate-700 hover:bg-primary-50/40 dark:hover:bg-slate-700/40'
                     }`}
                   >
-                    {mod.isEnabled
-                      ? <><ToggleRight size={18} /> 활성화</>
-                      : <><ToggleLeft size={18} /> 비활성</>
-                    }
-                  </button>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium dark:text-white truncate">{mod.displayName}</p>
+                        {mod.isCritical && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            <ShieldAlert size={10} /> 슈퍼관리자
+                          </span>
+                        )}
+                        {adminSelf && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
+                            <Lock size={10} /> 보호됨
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-300 dark:text-slate-500">{mod.name}</span>
+                      </div>
+                      {mod.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{mod.description}</p>}
+                      {locked && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                          <Lock size={11} /> 슈퍼 관리자만 이 모듈의 활성/비활성을 변경할 수 있습니다
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 스위치 UI — 클릭 즉시 반영 */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={mod.isEnabled}
+                      aria-label={`${mod.displayName} ${mod.isEnabled ? '비활성화' : '활성화'}`}
+                      onClick={() => handleModuleToggle(mod)}
+                      disabled={disabled}
+                      className={`relative shrink-0 inline-flex items-center h-6 w-11 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 dark:focus:ring-offset-slate-800 ${
+                        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                      } ${
+                        mod.isEnabled
+                          ? 'bg-emerald-500'
+                          : 'bg-gray-300 dark:bg-slate-600'
+                      }`}
+                      title={disabled ? (locked ? '슈퍼 관리자 전용' : '비활성화 불가') : (mod.isEnabled ? '클릭하여 비활성화' : '클릭하여 활성화')}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                          mod.isEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
+
+          <p className="mt-4 text-[11px] text-gray-400 dark:text-gray-500">
+            💡 비활성 모듈은 백엔드에서 403 차단되고, 웹 사이드바에서도 자동으로 숨겨집니다.
+          </p>
         </div>
       )}
 

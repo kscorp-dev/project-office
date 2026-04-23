@@ -16,11 +16,12 @@ router.use(authenticate, authorize('super_admin', 'admin'));
 
 // ===== 모듈 관리 =====
 
-// GET /admin/modules - 모듈 목록
+// GET /admin/modules - 모듈 목록 (admin/super_admin)
+// sortOrder 기준 정렬 → 기획 순서(auth, approval, messenger, cctv, attendance ...)
 router.get('/modules', async (_req: Request, res: Response) => {
   try {
     const modules = await prisma.featureModule.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
     res.json({ success: true, data: modules });
   } catch {
@@ -29,6 +30,8 @@ router.get('/modules', async (_req: Request, res: Response) => {
 });
 
 // PATCH /admin/modules/:id - 모듈 활성화/비활성화
+// - critical 모듈(cctv/parking/attendance 등)은 super_admin만 전환 가능
+// - isEnabled 미지정 시 현재 값 반전
 router.patch('/modules/:id', async (req: Request, res: Response) => {
   try {
     const module = await prisma.featureModule.findUnique({ where: { id: qs(req.params.id) } });
@@ -37,12 +40,40 @@ router.patch('/modules/:id', async (req: Request, res: Response) => {
       return;
     }
 
+    // critical 모듈은 super_admin 전용
+    if (module.isCritical && req.user!.role !== 'super_admin') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'CRITICAL_MODULE_SUPER_ADMIN_ONLY',
+          message: `${module.displayName}은(는) 슈퍼 관리자만 제어할 수 있습니다`,
+        },
+      });
+      return;
+    }
+
+    const nextEnabled = req.body.isEnabled !== undefined ? Boolean(req.body.isEnabled) : !module.isEnabled;
+
     const updated = await prisma.featureModule.update({
       where: { id: qs(req.params.id) },
-      data: {
-        isEnabled: req.body.isEnabled !== undefined ? req.body.isEnabled : !module.isEnabled,
-      },
+      data: { isEnabled: nextEnabled },
     });
+
+    // 감사 로그
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'module_toggle',
+        resourceType: 'feature_module',
+        resourceId: module.id,
+        details: {
+          module: module.name,
+          isEnabled: nextEnabled,
+          isCritical: module.isCritical,
+        },
+        ipAddress: req.ip,
+      },
+    }).catch(() => { /* audit 실패가 토글을 막지 않도록 */ });
 
     res.json({ success: true, data: updated });
   } catch {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '../services/api';
+import { useModulesStore } from './modules';
 
 interface User {
   id: string;
@@ -66,6 +67,8 @@ export const useAuthStore = create<AuthState>()(
           });
           const { accessToken, refreshToken, user } = data.data;
           set({ user, accessToken, refreshToken, isLoading: false });
+          // 로그인 성공 시 활성 모듈 목록을 즉시 로드 (Layout 네비게이션 필터링용)
+          useModulesStore.getState().fetch().catch(() => { /* ignore */ });
         } catch (err: any) {
           // 429 Rate Limit — 친화적 안내 메시지 생성
           let message: string;
@@ -101,6 +104,7 @@ export const useAuthStore = create<AuthState>()(
           api.post('/auth/logout', { refreshToken }).catch(() => {});
         }
         set({ user: null, accessToken: null, refreshToken: null });
+        useModulesStore.getState().reset();
         // persist storage도 정리 (민감정보 즉시 제거)
         try {
           localStorage.removeItem('auth-storage');
@@ -131,9 +135,12 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data } = await api.get('/auth/me');
           set({ user: data.data, isBootstrapping: false });
+          // 세션 복구 직후 모듈 상태도 동기화
+          useModulesStore.getState().fetch().catch(() => { /* ignore */ });
         } catch {
           // 토큰 무효 — 정리
           set({ user: null, accessToken: null, refreshToken: null, isBootstrapping: false });
+          useModulesStore.getState().reset();
         }
       },
 

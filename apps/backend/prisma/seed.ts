@@ -5,20 +5,21 @@ const prisma = new PrismaClient();
 
 async function main() {
   // 기능 모듈 시드 (task_orders 복수형으로 통일)
+  // isCritical=true → 물리장비/대외노출 모듈. super_admin만 on/off 가능
   const modules = [
-    { name: 'auth', displayName: '인증/조직관리', sortOrder: 1 },
-    { name: 'approval', displayName: '전자결재', sortOrder: 2 },
-    { name: 'messenger', displayName: '메신저', sortOrder: 3 },
-    { name: 'cctv', displayName: 'CCTV 모니터링', sortOrder: 4 },
-    { name: 'attendance', displayName: '근무관리', sortOrder: 5 },
-    { name: 'calendar', displayName: '캘린더', sortOrder: 6 },
-    { name: 'board', displayName: '게시판', sortOrder: 7 },
-    { name: 'task_orders', displayName: '작업지시서', sortOrder: 8 },
-    { name: 'inventory', displayName: '재고관리', sortOrder: 9 },
-    { name: 'meeting', displayName: '화상회의', sortOrder: 10 },
-    { name: 'document', displayName: '문서관리', sortOrder: 11 },
-    { name: 'parking', displayName: 'AI 주차 추적', sortOrder: 12 },
-    { name: 'admin', displayName: '관리자콘솔', sortOrder: 13 },
+    { name: 'auth',        displayName: '인증/조직관리', sortOrder: 1,  isCritical: false },
+    { name: 'approval',    displayName: '전자결재',      sortOrder: 2,  isCritical: false },
+    { name: 'messenger',   displayName: '메신저',        sortOrder: 3,  isCritical: false },
+    { name: 'cctv',        displayName: 'CCTV 모니터링', sortOrder: 4,  isCritical: true  },
+    { name: 'attendance',  displayName: '근무관리',      sortOrder: 5,  isCritical: true  },
+    { name: 'calendar',    displayName: '캘린더',        sortOrder: 6,  isCritical: false },
+    { name: 'board',       displayName: '게시판',        sortOrder: 7,  isCritical: false },
+    { name: 'task_orders', displayName: '작업지시서',    sortOrder: 8,  isCritical: false },
+    { name: 'inventory',   displayName: '재고관리',      sortOrder: 9,  isCritical: false },
+    { name: 'meeting',     displayName: '화상회의',      sortOrder: 10, isCritical: false },
+    { name: 'document',    displayName: '문서관리',      sortOrder: 11, isCritical: false },
+    { name: 'parking',     displayName: 'AI 주차 추적',  sortOrder: 12, isCritical: true  },
+    { name: 'admin',       displayName: '관리자콘솔',    sortOrder: 13, isCritical: false },
   ];
 
   // 과거 잘못 시드된 단수형 'task_order' 제거
@@ -27,7 +28,8 @@ async function main() {
   for (const mod of modules) {
     await prisma.featureModule.upsert({
       where: { name: mod.name },
-      update: {},
+      // 재실행 시 isCritical 정책 변경 반영 (displayName/sortOrder는 기존값 유지)
+      update: { isCritical: mod.isCritical },
       create: mod,
     });
   }
