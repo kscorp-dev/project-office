@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth';
 import { COLORS } from '../../src/constants/theme';
+import { useNotifications } from '../../src/hooks/useNotifications';
 
 const QUICK_MENU = [
   { key: 'mail',     label: '메일',     emoji: '✉️',  route: '/(tabs)/mail' },
@@ -18,6 +19,7 @@ const QUICK_MENU = [
 export default function DashboardScreen() {
   const { user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
+  const { unreadCount } = useNotifications();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -44,6 +46,21 @@ export default function DashboardScreen() {
           <Text style={styles.greetName}>{user?.name || '사용자'}님</Text>
           <Text style={styles.greetDept}>{user?.department?.name || user?.position || '(주)KS코퍼레이션'}</Text>
         </View>
+        {/* 알림 종 */}
+        <TouchableOpacity
+          onPress={() => router.push('/notifications')}
+          style={dashStyles.bell}
+          activeOpacity={0.7}
+        >
+          <Text style={dashStyles.bellIcon}>🔔</Text>
+          {unreadCount > 0 && (
+            <View style={dashStyles.bellBadge}>
+              <Text style={dashStyles.bellBadgeText}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* 오늘 요약 */}
@@ -187,4 +204,37 @@ const styles = StyleSheet.create({
   noticeBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.gray[100] },
   noticeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary[400] },
   noticeText: { flex: 1, fontSize: 14, color: COLORS.gray[700] },
+});
+
+/* 알림 종 스타일 */
+const dashStyles = StyleSheet.create({
+  bell: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.gray[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  bellIcon: { fontSize: 20 },
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  bellBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '700',
+  },
 });

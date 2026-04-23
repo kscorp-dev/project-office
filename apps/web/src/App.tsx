@@ -21,6 +21,9 @@ import MeetingPage from './pages/Meeting';
 import MeetingRoom from './pages/MeetingRoom';
 import MeetingMinutesPage from './pages/MeetingMinutes';
 import CalendarSyncPage from './pages/CalendarSync';
+import UserInvitePage from './pages/admin/UserInvite';
+import HolidaysAdminPage from './pages/admin/Holidays';
+import CameraPermissionsPage from './pages/admin/CameraPermissions';
 import MailPage from './pages/Mail';
 import ParkingPage from './pages/Parking';
 import DocumentsPage from './pages/Documents';
@@ -73,6 +76,9 @@ export default function App() {
             <Route path="/settings/calendar-sync" element={<CalendarSyncPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/admin" element={<AdminConsolePage />} />
+            <Route path="/admin/users/invite" element={<UserInvitePage />} />
+            <Route path="/admin/holidays" element={<HolidaysAdminPage />} />
+            <Route path="/admin/cameras/permissions" element={<CameraPermissionsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

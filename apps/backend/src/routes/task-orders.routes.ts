@@ -129,17 +129,30 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       prisma.taskOrder.count({ where }),
     ]);
 
-    // 체크리스트 진행률 계산
-    const tasksWithProgress = await Promise.all(
-      tasks.map(async (task) => {
-        const checklistTotal = await prisma.taskChecklist.count({ where: { taskId: task.id } });
-        const checklistDone = await prisma.taskChecklist.count({ where: { taskId: task.id, isCompleted: true } });
-        return {
-          ...task,
-          progress: checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : 0,
-        };
-      })
-    );
+    // 체크리스트 진행률 계산 — v0.19.0 성능 최적화: N+1 제거
+    // GROUP BY로 한 번에 모든 task의 total/done 집계
+    const taskIds = tasks.map((t) => t.id);
+    let progressMap = new Map<string, { total: number; done: number }>();
+    if (taskIds.length > 0) {
+      const agg = await prisma.taskChecklist.groupBy({
+        by: ['taskId', 'isCompleted'],
+        where: { taskId: { in: taskIds } },
+        _count: { _all: true },
+      });
+      for (const row of agg) {
+        const cur = progressMap.get(row.taskId) ?? { total: 0, done: 0 };
+        cur.total += row._count._all;
+        if (row.isCompleted) cur.done += row._count._all;
+        progressMap.set(row.taskId, cur);
+      }
+    }
+    const tasksWithProgress = tasks.map((task) => {
+      const p = progressMap.get(task.id) ?? { total: 0, done: 0 };
+      return {
+        ...task,
+        progress: p.total > 0 ? Math.round((p.done / p.total) * 100) : 0,
+      };
+    });
 
     res.json({ success: true, data: tasksWithProgress, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } });
   } catch {

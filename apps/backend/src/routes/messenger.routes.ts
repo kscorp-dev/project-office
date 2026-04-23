@@ -319,25 +319,22 @@ router.post('/rooms/:id/upload', authenticate, messengerUpload.single('file'), a
 });
 
 // GET /messenger/unread - 전체 안읽은 메시지 수
+// v0.19.0 성능 최적화: N+1 제거 — raw SQL로 한 번에 집계
 router.get('/unread', authenticate, async (req: Request, res: Response) => {
   try {
-    const participants = await prisma.chatParticipant.findMany({
-      where: { userId: req.user!.id, leftAt: null },
-    });
-
-    let totalUnread = 0;
-    for (const p of participants) {
-      const count = await prisma.message.count({
-        where: {
-          roomId: p.roomId,
-          createdAt: { gt: p.lastReadAt },
-          senderId: { not: req.user!.id },
-          isDeleted: false,
-        },
-      });
-      totalUnread += count;
-    }
-
+    const userId = req.user!.id;
+    const result = await prisma.$queryRaw<Array<{ total: bigint }>>`
+      SELECT COUNT(m.id)::bigint AS total
+      FROM chat_participants cp
+      INNER JOIN messages m
+        ON m.room_id = cp.room_id
+        AND m.created_at > cp.last_read_at
+        AND m.sender_id <> ${userId}
+        AND m.is_deleted = false
+      WHERE cp.user_id = ${userId}
+        AND cp.left_at IS NULL
+    `;
+    const totalUnread = Number(result[0]?.total ?? 0);
     res.json({ success: true, data: { unread: totalUnread } });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

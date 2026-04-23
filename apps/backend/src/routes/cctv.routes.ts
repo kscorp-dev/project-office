@@ -15,7 +15,8 @@ import {
   listAllowedCameraIds,
   type AccessUser,
 } from '../services/cctv-permission.service';
-import { executePtzCommand, type PtzAction } from '../services/cctv-ptz.service';
+import { executePtzCommand, testOnvifConnection, type PtzAction } from '../services/cctv-ptz.service';
+import { encryptMailPassword } from '../utils/mailCrypto';
 import {
   startStream,
   detachViewer,
@@ -124,8 +125,14 @@ router.get('/cameras/:id', authenticate, async (req: Request, res: Response) => 
 
 router.post('/cameras', authenticate, authorize('super_admin', 'admin'), validate(cameraSchema), async (req: Request, res: Response) => {
   try {
-    const camera = await prisma.camera.create({ data: req.body });
-    res.status(201).json({ success: true, data: camera });
+    const data = { ...req.body };
+    // ptzPassword가 들어오면 AES-256-GCM 암호화해서 저장
+    if (data.ptzPassword) {
+      data.ptzPassword = encryptMailPassword(data.ptzPassword);
+    }
+    const camera = await prisma.camera.create({ data });
+    const { ptzPassword, ...sanitized } = camera;
+    res.status(201).json({ success: true, data: sanitized });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
@@ -133,12 +140,47 @@ router.post('/cameras', authenticate, authorize('super_admin', 'admin'), validat
 
 router.patch('/cameras/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
-    const camera = await prisma.camera.update({ where: { id: qs(req.params.id) }, data: req.body });
-    res.json({ success: true, data: camera });
+    const data = { ...req.body };
+    if (data.ptzPassword) {
+      data.ptzPassword = encryptMailPassword(data.ptzPassword);
+    } else if (data.ptzPassword === null || data.ptzPassword === '') {
+      data.ptzPassword = null;
+    }
+    const camera = await prisma.camera.update({ where: { id: qs(req.params.id) }, data });
+    const { ptzPassword, ...sanitized } = camera;
+    res.json({ success: true, data: sanitized });
   } catch {
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });
+
+// POST /cameras/:id/ptz/test — ONVIF 접속 테스트 (관리자)
+router.post(
+  '/cameras/:id/ptz/test',
+  authenticate,
+  authorize('super_admin', 'admin'),
+  async (req: Request, res: Response) => {
+    try {
+      const camera = await prisma.camera.findUnique({ where: { id: qs(req.params.id) } });
+      if (!camera) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '카메라를 찾을 수 없습니다' } });
+        return;
+      }
+      if (!camera.isPtz) {
+        res.status(400).json({ success: false, error: { code: 'NOT_PTZ', message: 'PTZ 지원하지 않는 카메라입니다' } });
+        return;
+      }
+      const result = await testOnvifConnection(camera);
+      if (!result.ok) {
+        res.status(400).json({ success: false, error: { code: 'CONNECTION_FAILED', message: result.message } });
+        return;
+      }
+      res.json({ success: true, data: { message: result.message } });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
 
 router.delete('/cameras/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {

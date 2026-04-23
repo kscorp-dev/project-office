@@ -409,6 +409,8 @@ model ChatParticipant {
   @@map("chat_participants")
 }
 
+/// 채팅 메시지
+/// - v0.19.0: (roomId, createdAt desc) 인덱스 추가 (unread count + 최신 목록)
 model Message {
   id        String      @id @default(uuid())
   roomId    String      @map("room_id")

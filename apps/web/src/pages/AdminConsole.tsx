@@ -689,6 +689,12 @@ export default function AdminConsolePage() {
             >
               <UserPlus size={15} /> 직원 등록
             </button>
+            <a
+              href="/admin/users/invite"
+              className="btn-secondary flex items-center gap-1.5 text-sm text-primary-700 border-primary-300 hover:bg-primary-50"
+            >
+              <Mail size={15} /> 이메일 초대
+            </a>
             <p className="text-sm text-gray-500 dark:text-gray-400">총 {usersMeta.total}명</p>
           </div>
 
