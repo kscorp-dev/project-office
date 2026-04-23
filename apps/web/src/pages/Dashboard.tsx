@@ -440,6 +440,14 @@ export default function DashboardPage() {
   const [showAddPanel, setShowAddPanel] = useState(false);
   const { containerRef, width: containerWidth } = useContainerWidth();
 
+  // AWS Console 스타일 — 드래그/리사이즈 중 활성 위젯 추적 (실시간 w×h 오버레이)
+  const [activeWidget, setActiveWidget] = useState<{
+    id: string;
+    w: number;
+    h: number;
+    mode: 'drag' | 'resize';
+  } | null>(null);
+
   const saveLayouts = useCallback((newLayouts: Layouts) => {
     setLayouts(newLayouts);
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(newLayouts));
@@ -569,7 +577,10 @@ export default function DashboardPage() {
       )}
 
       {/* ── 그리드 레이아웃 ── */}
-      <div ref={containerRef as React.RefObject<HTMLDivElement>}>
+      <div
+        ref={containerRef as React.RefObject<HTMLDivElement>}
+        className={`dashboard-grid-wrap ${editing ? 'dashboard-grid-wrap--editing' : ''} ${activeWidget ? 'dashboard-grid-wrap--active' : ''}`}
+      >
       <Responsive
         className="layout"
         width={containerWidth ?? 1200}
@@ -581,7 +592,21 @@ export default function DashboardPage() {
         onLayoutChange={(_: LayoutItem[], allLayouts: Layouts) => saveLayouts(allLayouts)}
         compactType="vertical"
         margin={[16, 16] as [number, number]}
-        {...({ isDraggable: editing, isResizable: editing } as any)}
+        {...({
+          isDraggable: editing,
+          isResizable: editing,
+          resizeHandles: ['se'],
+          onResizeStart: (_layout: LayoutItem[], _old: LayoutItem, item: LayoutItem) =>
+            setActiveWidget({ id: item.i, w: item.w, h: item.h, mode: 'resize' }),
+          onResize: (_layout: LayoutItem[], _old: LayoutItem, item: LayoutItem) =>
+            setActiveWidget({ id: item.i, w: item.w, h: item.h, mode: 'resize' }),
+          onResizeStop: () => setActiveWidget(null),
+          onDragStart: (_layout: LayoutItem[], _old: LayoutItem, item: LayoutItem) =>
+            setActiveWidget({ id: item.i, w: item.w, h: item.h, mode: 'drag' }),
+          onDrag: (_layout: LayoutItem[], _old: LayoutItem, item: LayoutItem) =>
+            setActiveWidget({ id: item.i, w: item.w, h: item.h, mode: 'drag' }),
+          onDragStop: () => setActiveWidget(null),
+        } as any)}
       >
         {visibleWidgets.map(w => {
           const isMemo = w.id === 'memo';
@@ -650,8 +675,8 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* ── 리사이즈 인디케이터 (편집 모드) ── */}
-              {editing && (
+              {/* ── 리사이즈 인디케이터 (편집 모드 · hover 시 미리 안내) ── */}
+              {editing && activeWidget?.id !== w.id && (
                 <div className="absolute bottom-1 right-1 flex items-center gap-0.5 opacity-0 group-hover/widget:opacity-100 transition-opacity pointer-events-none z-10">
                   <div className="flex items-center gap-1 bg-primary-500/90 dark:bg-primary-600/90 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-md shadow-sm">
                     <Move size={9} />
@@ -659,11 +684,115 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+
+              {/* ── 아웃라인 강조 (드래그/리사이즈 중 해당 위젯) ── */}
+              {activeWidget?.id === w.id && (
+                <div className="absolute inset-0 ring-4 ring-primary-500 ring-offset-2 rounded-3xl pointer-events-none z-10 bg-primary-500/5" />
+              )}
             </div>
           );
         })}
       </Responsive>
+
+      {/* ── 전역 floating 크기 배지 (드래그/리사이즈 중만) — AWS 스타일 ── */}
+      {activeWidget && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in duration-150">
+          <div className="bg-gray-900/95 dark:bg-white/95 text-white dark:text-gray-900 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+            <div className={`w-2 h-2 rounded-full ${activeWidget.mode === 'drag' ? 'bg-blue-400' : 'bg-amber-400'} animate-pulse`} />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider opacity-60">
+                {activeWidget.mode === 'drag' ? '이동 중' : '크기 조절 중'}
+              </div>
+              <div className="font-mono text-xl font-bold tracking-wider">
+                {activeWidget.w} <span className="opacity-40 text-sm mx-1">×</span> {activeWidget.h}
+              </div>
+            </div>
+            <div className="text-[10px] opacity-50 border-l border-white/20 dark:border-gray-400/20 pl-3">
+              열 × 행
+            </div>
+          </div>
+        </div>
+      )}
       </div>
+
+      {/* ── AWS Cloudscape Board 스타일 — 편집 모드 격자 + 핸들 + 드롭 placeholder ── */}
+      <style>{`
+        /* 편집 모드 진입 시 배경에 12-column × row 격자 */
+        .dashboard-grid-wrap--editing {
+          background-image:
+            linear-gradient(to right, rgba(34,197,94,0.18) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(34,197,94,0.12) 1px, transparent 1px);
+          background-size: calc((100% - 16px) / 12) 40px;
+          background-position: 8px 0;
+          background-color: rgba(34,197,94,0.03);
+          border-radius: 16px;
+          padding: 4px;
+          transition: background-color 180ms;
+        }
+        /* 다크모드에서 격자 색상 조정 */
+        :is(.dark) .dashboard-grid-wrap--editing {
+          background-image:
+            linear-gradient(to right, rgba(134,239,172,0.12) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(134,239,172,0.09) 1px, transparent 1px);
+          background-color: rgba(134,239,172,0.02);
+        }
+        /* 드래그/리사이즈 중엔 격자를 조금 더 진하게 */
+        .dashboard-grid-wrap--active {
+          background-image:
+            linear-gradient(to right, rgba(34,197,94,0.3) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(34,197,94,0.22) 1px, transparent 1px) !important;
+          background-color: rgba(34,197,94,0.06) !important;
+        }
+
+        /* 드롭 placeholder — 초록 점선 박스 (AWS는 밝은 녹색 박스) */
+        .dashboard-grid-wrap .react-grid-item.react-grid-placeholder {
+          background: rgba(34,197,94,0.22) !important;
+          border: 2px dashed rgb(34,197,94) !important;
+          border-radius: 20px !important;
+          opacity: 1 !important;
+          box-shadow: 0 0 0 4px rgba(34,197,94,0.1);
+        }
+
+        /* 리사이즈 핸들 — 우하단 코너 강조 */
+        .dashboard-grid-wrap--editing .react-resizable-handle-se {
+          width: 22px;
+          height: 22px;
+          background: none;
+          right: 6px;
+          bottom: 6px;
+          cursor: nwse-resize;
+        }
+        .dashboard-grid-wrap--editing .react-resizable-handle-se::after {
+          content: '';
+          position: absolute;
+          right: 2px;
+          bottom: 2px;
+          width: 14px;
+          height: 14px;
+          background-image:
+            linear-gradient(135deg, transparent 40%, rgb(34,197,94) 40%, rgb(34,197,94) 50%, transparent 50%, transparent 60%, rgb(34,197,94) 60%, rgb(34,197,94) 70%, transparent 70%);
+          opacity: 0.6;
+          transition: opacity 150ms;
+        }
+        .dashboard-grid-wrap--editing .react-resizable-handle-se:hover::after {
+          opacity: 1;
+          transform: scale(1.2);
+        }
+
+        /* 드래그 중인 위젯 — 반투명 + 강한 그림자 */
+        .dashboard-grid-wrap .react-grid-item.react-draggable-dragging {
+          opacity: 0.88;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+          z-index: 30;
+          cursor: grabbing;
+        }
+        /* 리사이즈 중 */
+        .dashboard-grid-wrap .react-grid-item.resizing {
+          opacity: 0.95;
+          box-shadow: 0 0 0 3px rgba(34,197,94,0.4), 0 12px 28px rgba(34,197,94,0.25);
+          z-index: 30;
+        }
+      `}</style>
     </div>
   );
 }
