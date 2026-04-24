@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#f0fdf4"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kscorp.projectoffice",
@@ -55,7 +57,8 @@
           "cameraPermission": "화상회의에 카메라 접근이 필요합니다.",
           "microphonePermission": "화상회의 음성 통화에 마이크 접근이 필요합니다."
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "scheme": "projectoffice",
     "extra": {

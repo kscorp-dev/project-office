@@ -1,76 +1,48 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * 메신저 탭 — 오프라인 캐시 우선 + 네트워크 sync.
+ *
+ * useChatRooms 훅이 SQLite 캐시를 먼저 읽어 즉시 렌더 후 서버 응답으로 갱신한다.
+ * 오프라인 상태면 상단에 "오프라인 모드" 배너 표시.
+ */
+import { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
-  ActivityIndicator, RefreshControl, Alert,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { COLORS } from '../../src/constants/theme';
-import api from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
-
-interface ChatRoomApi {
-  id: string;
-  type: 'direct' | 'group';
-  name?: string | null;
-  participants: Array<{
-    userId: string;
-    user: { id: string; name: string; profileImage?: string | null };
-  }>;
-  lastMessage?: {
-    content: string | null;
-    type: string;
-    createdAt: string;
-    sender?: { name: string } | null;
-  } | null;
-  unreadCount: number;
-  updatedAt: string;
-}
+import { useChatRooms, type UiChatRoom } from '../../src/hooks/useChatRooms';
 
 export default function MessengerScreen() {
   const [search, setSearch] = useState('');
-  const [rooms, setRooms] = useState<ChatRoomApi[]>([]);
-  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const currentUserId = useAuthStore((s) => s.user?.id);
-
-  const fetchRooms = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('/messenger/rooms');
-      setRooms(res.data?.data ?? []);
-    } catch (err: any) {
-      Alert.alert('오류', err.response?.data?.error?.message || '대화방 조회 실패');
-      setRooms([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchRooms(); }, [fetchRooms]);
+  const { rooms, loading, isOffline, lastSyncedAt, refresh } = useChatRooms();
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchRooms();
+    await refresh();
     setRefreshing(false);
   };
 
-  /** direct 방은 상대방 이름, group 방은 name 또는 참가자 요약 */
-  const roomTitle = (r: ChatRoomApi): string => {
+  /** direct 방은 상대방 이름 추론, group 방은 name 또는 참가자 요약 */
+  const roomTitle = (r: UiChatRoom): string => {
     if (r.name) return r.name;
     if (r.type === 'direct') {
-      const other = r.participants.find((p) => p.userId !== currentUserId);
-      return other?.user.name ?? '(대화상대 없음)';
+      const other = r.participants.find((p) => p.id !== currentUserId);
+      return other?.name ?? '(대화상대 없음)';
     }
-    return r.participants.map((p) => p.user.name).slice(0, 3).join(', ');
+    return r.participants.map((p) => p.name).slice(0, 3).join(', ');
   };
 
-  const roomAvatar = (r: ChatRoomApi): string => {
+  const roomAvatar = (r: UiChatRoom): string => {
     if (r.type === 'group') return String(r.participants.length);
     return roomTitle(r)[0] ?? '?';
   };
 
-  const fmtTime = (iso?: string) => {
-    if (!iso) return '';
-    const d = new Date(iso);
+  const fmtTime = (ms: number | null) => {
+    if (!ms) return '';
+    const d = new Date(ms);
     const today = new Date();
     const isToday = d.toDateString() === today.toDateString();
     const yesterday = new Date(today);
@@ -81,21 +53,32 @@ export default function MessengerScreen() {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   };
 
-  const lastMessagePreview = (r: ChatRoomApi): string => {
-    if (!r.lastMessage) return '';
-    if (r.lastMessage.type === 'image') return '📷 사진';
-    if (r.lastMessage.type === 'file') return '📎 파일';
-    return r.lastMessage.content ?? '';
+  const fmtLastSync = (ms: number | null) => {
+    if (!ms) return '';
+    const diff = Math.floor((Date.now() - ms) / 1000);
+    if (diff < 60) return '방금 전 동기화';
+    if (diff < 3600) return `${Math.floor(diff / 60)}분 전 동기화`;
+    return `${Math.floor(diff / 3600)}시간 전 동기화`;
   };
 
   const filtered = rooms.filter((r) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return roomTitle(r).toLowerCase().includes(q) || lastMessagePreview(r).toLowerCase().includes(q);
+    return roomTitle(r).toLowerCase().includes(q) ||
+           (r.lastMessagePreview?.toLowerCase().includes(q) ?? false);
   });
 
   return (
     <View style={styles.container}>
+      {/* 오프라인 배너 */}
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            📡 오프라인 · 저장된 정보를 표시합니다{lastSyncedAt ? ` · ${fmtLastSync(lastSyncedAt)}` : ''}
+          </Text>
+        </View>
+      )}
+
       {/* 검색 */}
       <View style={styles.searchWrap}>
         <TextInput
@@ -111,7 +94,7 @@ export default function MessengerScreen() {
         style={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary[500]} />}
       >
-        {loading ? (
+        {loading && rooms.length === 0 ? (
           <View style={styles.empty}>
             <ActivityIndicator color={COLORS.primary[500]} />
           </View>
@@ -134,10 +117,10 @@ export default function MessengerScreen() {
                       {roomTitle(chat)}
                       {isGroup && <Text style={styles.memberCount}> ({chat.participants.length})</Text>}
                     </Text>
-                    <Text style={styles.chatTime}>{fmtTime(chat.lastMessage?.createdAt ?? chat.updatedAt)}</Text>
+                    <Text style={styles.chatTime}>{fmtTime(chat.lastMessageAt)}</Text>
                   </View>
                   <Text style={styles.chatMsg} numberOfLines={1}>
-                    {lastMessagePreview(chat) || '대화 시작'}
+                    {chat.lastMessagePreview || '대화 시작'}
                   </Text>
                 </View>
 
@@ -157,6 +140,8 @@ export default function MessengerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  offlineBanner: { backgroundColor: '#fef3c7', paddingVertical: 8, paddingHorizontal: 16 },
+  offlineBannerText: { fontSize: 12, color: '#92400e', textAlign: 'center' },
   searchWrap: { paddingHorizontal: 16, paddingVertical: 8 },
   searchInput: {
     backgroundColor: COLORS.white, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,

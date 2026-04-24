@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
+import { router } from 'expo-router';
 import { COLORS } from '../../src/constants/theme';
 import api from '../../src/services/api';
 
@@ -139,7 +140,12 @@ export default function ApprovalScreen() {
           docs.map((item) => {
             const st = STATUS_STYLE[item.status] ?? STATUS_STYLE.draft;
             return (
-              <TouchableOpacity key={item.id} style={styles.card} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={item.id}
+                style={styles.card}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/approval/${item.id}` as any)}
+              >
                 <View style={styles.cardHeader}>
                   <View style={[styles.typeBadge, { backgroundColor: COLORS.primary[50] }]}>
                     <Text style={[styles.typeText, { color: COLORS.primary[700] }]}>
