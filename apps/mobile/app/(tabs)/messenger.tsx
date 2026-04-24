@@ -9,6 +9,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { router } from 'expo-router';
 import { COLORS } from '../../src/constants/theme';
 import { useAuthStore } from '../../src/store/auth';
 import { useChatRooms, type UiChatRoom } from '../../src/hooks/useChatRooms';
@@ -106,7 +107,12 @@ export default function MessengerScreen() {
           filtered.map((chat) => {
             const isGroup = chat.type === 'group';
             return (
-              <TouchableOpacity key={chat.id} style={styles.chatRow} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={chat.id}
+                style={styles.chatRow}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/messenger/room/${chat.id}` as any)}
+              >
                 <View style={[styles.avatar, isGroup && styles.avatarGroup]}>
                   <Text style={styles.avatarText}>{roomAvatar(chat)}</Text>
                 </View>

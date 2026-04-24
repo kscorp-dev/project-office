@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Alert, TouchableOpacity, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { COLORS } from '../src/constants/theme';
 import api from '../src/services/api';
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   modRowLocked: { opacity: 0.55 },
   modName: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
   modCritical: { color: '#b45309', fontSize: 10 },
-  modId: { fontSize: 11, color: COLORS.gray[400], fontFamily: 'Menlo', marginTop: 2 },
+  modId: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 2 },
   toggle: { width: 44, height: 24, borderRadius: 12, padding: 2 },
   toggleOn: { backgroundColor: '#10b981' },
   toggleOff: { backgroundColor: COLORS.gray[300] },

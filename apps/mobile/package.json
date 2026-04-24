@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@config-plugins/react-native-callkeep": "^13.0.0",
     "@config-plugins/react-native-webrtc": "^10.0.0",
     "@hookform/resolvers": "^3.9.0",
     "@project-office/shared": "*",
@@ -27,6 +28,7 @@
     "expo-secure-store": "~14.0.0",
     "expo-sqlite": "~15.1.4",
     "expo-status-bar": "~2.0.0",
+    "expo-system-ui": "~4.0.9",
     "react": "18.3.1",
     "react-hook-form": "^7.53.0",
     "react-native": "0.76.9",
@@ -50,6 +52,8 @@
           "react-native-webrtc",
           "expo-av",
           "@config-plugins/react-native-webrtc",
+          "@config-plugins/react-native-callkeep",
+          "react-native-callkeep",
           "@project-office/shared",
           "socket.io-client"
         ]

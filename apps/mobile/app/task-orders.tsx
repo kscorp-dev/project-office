@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { COLORS } from '../src/constants/theme';
 import api from '../src/services/api';
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', color: COLORS.gray[400], padding: 40 },
   card: { backgroundColor: COLORS.white, padding: 14, borderRadius: 14, marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  taskNumber: { fontSize: 11, color: COLORS.gray[400], fontFamily: 'Menlo' },
+  taskNumber: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   title: { fontSize: 15, fontWeight: '600', color: COLORS.gray[800], marginBottom: 8 },
   metaRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },

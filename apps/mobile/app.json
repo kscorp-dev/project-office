@@ -21,7 +21,21 @@
         "NSCameraUsageDescription": "화상회의 및 바코드 스캔에 카메라를 사용합니다.",
         "NSMicrophoneUsageDescription": "화상회의 음성 통화에 마이크를 사용합니다.",
         "NSLocationWhenInUseUsageDescription": "출퇴근 GPS 인증에 위치 정보를 사용합니다.",
-        "NSFaceIDUsageDescription": "생체 인증 로그인에 Face ID를 사용합니다."
+        "NSFaceIDUsageDescription": "생체 인증 로그인에 Face ID를 사용합니다.",
+        "NSContactsUsageDescription": "조직도/초대 시 연락처 접근이 필요합니다.",
+        "NSPhotoLibraryUsageDescription": "첨부 사진 선택을 위해 사진 접근이 필요합니다.",
+        "NSPhotoLibraryAddUsageDescription": "촬영한 사진을 앨범에 저장합니다.",
+        "NSCalendarsUsageDescription": "회사 일정을 휴대폰 캘린더에 추가합니다.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "remote-notification",
+          "fetch"
+        ]
+      },
+      "entitlements": {
+        "aps-environment": "development"
       }
     },
     "android": {
@@ -41,7 +55,15 @@
         "USE_BIOMETRIC",
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_PHONE_CALL",
+        "POST_NOTIFICATIONS",
+        "READ_PHONE_STATE",
+        "CALL_PHONE",
+        "MANAGE_OWN_CALLS",
+        "BIND_TELECOM_CONNECTION_SERVICE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
       ]
     },
     "plugins": [
@@ -58,6 +80,7 @@
           "microphonePermission": "화상회의 음성 통화에 마이크 접근이 필요합니다."
         }
       ],
+      "@config-plugins/react-native-callkeep",
       "expo-sqlite"
     ],
     "scheme": "projectoffice",

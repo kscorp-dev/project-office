@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { COLORS } from '../src/constants/theme';
 import api from '../src/services/api';
@@ -114,6 +114,6 @@ const styles = StyleSheet.create({
   typePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 11, fontWeight: '700' },
   typeIn: { backgroundColor: '#d1fae5', color: '#047857' },
   typeOut: { backgroundColor: '#fed7aa', color: '#c2410c' },
-  plate: { fontSize: 14, fontWeight: '600', fontFamily: 'Menlo', color: COLORS.gray[800] },
+  plate: { fontSize: 14, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: COLORS.gray[800] },
   eventMeta: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
 });

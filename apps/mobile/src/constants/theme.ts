@@ -5,6 +5,7 @@
  *   import { COLORS, SPACING, RADIUS, TYPO } from '@/constants/theme'
  *   <View style={{ padding: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.surface }}>
  */
+import { Platform } from 'react-native';
 
 // ────────────────── COLOR ──────────────────
 
@@ -108,7 +109,11 @@ export const TYPO = {
   meta:     { fontSize: 12, lineHeight: 18, fontWeight: '400' as const },
   caption:  { fontSize: 11, lineHeight: 16, fontWeight: '400' as const },
   overline: { fontSize: 10, lineHeight: 14, fontWeight: '700' as const, letterSpacing: 0.8 },
-  mono:     { fontSize: 12, lineHeight: 18, fontFamily: 'Menlo' as const },
+  mono:     {
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: (Platform.OS === 'ios' ? 'Menlo' : 'monospace'),
+  },
 } as const;
 
 // ────────────────── ELEVATION (shadow) ──────────────────

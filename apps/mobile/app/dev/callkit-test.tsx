@@ -9,7 +9,7 @@
  * 접근: `/dev/callkit-test` 또는 더보기 메뉴에서 링크 (v1.0 전엔 비노출)
  */
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { COLORS } from '../../src/constants/theme';
 import { simulateIncomingCall, endIncomingCall } from '../../src/services/callkeep';
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   btnOutline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.gray[300] },
   btnOutlineText: { color: COLORS.gray[700] },
   meta: {
-    fontFamily: 'Menlo', fontSize: 11, color: COLORS.gray[500],
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11, color: COLORS.gray[500],
     backgroundColor: COLORS.gray[50], padding: 10, borderRadius: 8,
   },
   hints: { marginTop: 20, padding: 14, backgroundColor: '#fffbeb', borderRadius: 12 },
