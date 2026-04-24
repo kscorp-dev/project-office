@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/store/auth';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 import { initOfflineDb } from '../src/offline-db';
 import { setupCallKeep } from '../src/services/callkeep';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 const theme = {
   ...MD3LightTheme,
@@ -25,13 +27,18 @@ export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
-    initialize();
-    // 오프라인 캐시 DB 초기화 (실패해도 앱은 네트워크 fallback 으로 동작)
-    initOfflineDb()
-      .catch(() => { /* 캐시 기능만 비활성, 앱은 계속 진행 */ })
-      .finally(() => setDbReady(true));
-    // CallKit / ConnectionService 준비. 네이티브 모듈 없으면 내부에서 no-op.
-    setupCallKeep().catch(() => { /* 환경에 따라 조용히 실패 허용 */ });
+    // 병렬 초기화: auth 세션 복구, SQLite DB, CallKit
+    let cancelled = false;
+    Promise.allSettled([
+      initialize(),
+      initOfflineDb(),
+      setupCallKeep(),
+    ]).then(() => {
+      if (!cancelled) setDbReady(true);
+    });
+    return () => { cancelled = true; };
+    // initialize 는 zustand action 이라 레퍼런스 안정 — deps 비움 ok
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 푸시 토큰 등록 (로그인 상태 되면 내부에서 한 번만 실행)
@@ -41,20 +48,24 @@ export default function RootLayout() {
   if (!dbReady) return null;
 
   return (
-    <PaperProvider theme={theme}>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="meeting/index" options={{ headerShown: true, title: '화상회의' }} />
-        <Stack.Screen name="meeting/[id]" options={{ headerShown: true, title: '회의 상세' }} />
-        <Stack.Screen name="meeting/[id]/room" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="messenger/room/[id]" options={{ headerShown: true }} />
-        <Stack.Screen name="approval/[id]" options={{ headerShown: true }} />
-        <Stack.Screen name="notifications" options={{ headerShown: true, title: '알림' }} />
-        <Stack.Screen name="settings/calendar-sync" options={{ headerShown: true, title: '외부 캘린더 연동' }} />
-      </Stack>
-    </PaperProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <PaperProvider theme={theme}>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="meeting/index" options={{ headerShown: true, title: '화상회의' }} />
+            <Stack.Screen name="meeting/[id]" options={{ headerShown: true, title: '회의 상세' }} />
+            <Stack.Screen name="meeting/[id]/room" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="messenger/room/[id]" options={{ headerShown: true }} />
+            <Stack.Screen name="approval/[id]" options={{ headerShown: true }} />
+            <Stack.Screen name="notifications" options={{ headerShown: true, title: '알림' }} />
+            <Stack.Screen name="settings/calendar-sync" options={{ headerShown: true, title: '외부 캘린더 연동' }} />
+          </Stack>
+        </PaperProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

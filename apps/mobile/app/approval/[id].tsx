@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../src/constants/theme';
 import api from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
@@ -72,6 +73,7 @@ export default function ApprovalDetailScreen() {
   const router = useRouter();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const { authenticate } = useBiometric();
+  const insets = useSafeAreaInsets();
 
   const [doc, setDoc] = useState<ApprovalDoc | null>(null);
   const [loading, setLoading] = useState(false);
@@ -333,9 +335,9 @@ export default function ApprovalDetailScreen() {
           )}
         </ScrollView>
 
-        {/* 하단 Sticky Action Bar */}
+        {/* 하단 Sticky Action Bar — safe area insets.bottom 추가 */}
         {(isMyTurn || canWithdraw) && (
-          <View style={styles.actionBar}>
+          <View style={[styles.actionBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
             {isMyTurn && (
               <>
                 <TouchableOpacity
@@ -458,10 +460,10 @@ const styles = StyleSheet.create({
 
   actionBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
-    flexDirection: 'row', gap: 10, padding: 14,
+    flexDirection: 'row', gap: 10,
+    paddingTop: 14, paddingHorizontal: 14,
     backgroundColor: COLORS.white,
     borderTopWidth: 1, borderTopColor: COLORS.gray[100],
-    paddingBottom: Platform.OS === 'ios' ? 30 : 14,
   },
   btn: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
@@ -480,7 +482,7 @@ const styles = StyleSheet.create({
   modalCard: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 20, paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    padding: 20, paddingBottom: 24,
   },
   modalTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 12 },
   modalInput: {

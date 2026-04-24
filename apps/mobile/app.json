@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -81,7 +82,23 @@
         }
       ],
       "@config-plugins/react-native-callkeep",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          },
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.25",
+            "extraProguardRules": "-keep class io.wazo.callkeep.** { *; }\n-keep class com.oney.WebRTCModule.** { *; }"
+          }
+        }
+      ]
     ],
     "scheme": "projectoffice",
     "extra": {

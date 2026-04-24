@@ -43,20 +43,39 @@ export function useMessengerSocket() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    if (!accessToken) return;
+    // 로그아웃/비로그인 상태면 기존 소켓이 있어도 즉시 종료
+    if (!accessToken) {
+      if (sharedSocket) {
+        sharedSocket.disconnect();
+        sharedSocket = null;
+        refCount = 0;
+      }
+      socketRef.current = null;
+      setConnected(false);
+      return;
+    }
+
     const socket = ensureSocket(accessToken);
     socketRef.current = socket;
     refCount += 1;
 
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
+    const onConnectError = (err: Error) => {
+      // 토큰 만료로 인한 401 의 경우 — api.ts 가 refresh 후 setTokens 호출 →
+      // 이 훅의 useEffect 가 재실행되어 새 토큰으로 재연결됨.
+      // 여기선 로그만 남기고 socket.io 기본 reconnection 로직에 맡김.
+      if (__DEV__) console.warn('[messenger socket] connect_error', err.message);
+    };
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
     if (socket.connected) setConnected(true);
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
       refCount -= 1;
       if (refCount <= 0) {
         socket.disconnect();

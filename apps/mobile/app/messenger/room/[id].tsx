@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../../../src/constants/theme';
 import api from '../../../src/services/api';
 import { useAuthStore } from '../../../src/store/auth';
@@ -52,6 +53,7 @@ export default function MessengerRoomScreen() {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const { connected, emit, on } = useMessengerSocket();
   const { markRoomRead } = useChatRooms();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -343,7 +345,7 @@ export default function MessengerRoomScreen() {
 
         {typingText && <Text style={styles.typing}>{typingText}</Text>}
 
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, SPACING.sm) }]}>
           <TouchableOpacity
             style={styles.attachBtn}
             onPress={() => Alert.alert(
@@ -458,10 +460,9 @@ const styles = StyleSheet.create({
 
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    padding: SPACING.sm,
+    paddingHorizontal: SPACING.sm, paddingTop: SPACING.sm,
     backgroundColor: COLORS.white,
     borderTopWidth: 1, borderTopColor: COLORS.gray[100],
-    paddingBottom: Platform.OS === 'ios' ? SPACING.lg : SPACING.sm,
   },
   attachBtn: {
     width: 40, height: 40, borderRadius: RADIUS.pill,
