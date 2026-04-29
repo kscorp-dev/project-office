@@ -83,6 +83,7 @@
       ],
       "@config-plugins/react-native-callkeep",
       "expo-sqlite",
+      "./plugins/with-fmt-xcode26-fix.js",
       [
         "expo-build-properties",
         {
