@@ -1,7 +1,9 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useMemo } from 'react';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 
 const MENU_SECTIONS = [
   {
@@ -41,6 +43,8 @@ const MENU_SECTIONS = [
 ];
 
 export default function MoreScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const { user, logout } = useAuthStore();
 
   const handleLogout = () => {
@@ -127,14 +131,14 @@ export default function MoreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   content: { padding: 16, paddingBottom: 40 },
 
   profileCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface,
     borderRadius: 20, padding: 20, marginBottom: 24,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }),
   },
   profileAvatar: {
     width: 56, height: 56, borderRadius: 18, backgroundColor: COLORS.primary[500],
@@ -142,26 +146,26 @@ const styles = StyleSheet.create({
   },
   profileAvatarText: { fontSize: 24, fontWeight: '700', color: COLORS.white },
   profileInfo: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: '700', color: COLORS.gray[800] },
-  profileDept: { fontSize: 13, color: COLORS.gray[500], marginTop: 2 },
-  profileId: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
+  profileName: { fontSize: 18, fontWeight: '700', color: c.text },
+  profileDept: { fontSize: 13, color: c.textMuted, marginTop: 2 },
+  profileId: { fontSize: 11, color: c.textSubtle, marginTop: 2 },
 
   section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.gray[500], marginBottom: 10, paddingLeft: 4 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: c.textMuted, marginBottom: 10, paddingLeft: 4 },
   menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   menuItem: {
-    width: '23%' as any, backgroundColor: COLORS.white, borderRadius: 16, paddingVertical: 16,
+    width: '23%' as any, backgroundColor: c.surface, borderRadius: 16, paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 }),
   },
   menuEmoji: { fontSize: 26, marginBottom: 6 },
-  menuLabel: { fontSize: 11, fontWeight: '600', color: COLORS.gray[700] },
+  menuLabel: { fontSize: 11, fontWeight: '600', color: c.text },
 
   logoutBtn: {
-    backgroundColor: COLORS.white, borderRadius: 14, paddingVertical: 16, alignItems: 'center',
-    marginTop: 8, borderWidth: 1, borderColor: COLORS.gray[200],
+    backgroundColor: c.surface, borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+    marginTop: 8, borderWidth: 1, borderColor: c.border,
   },
   logoutText: { fontSize: 15, fontWeight: '600', color: COLORS.danger },
 
-  version: { textAlign: 'center', fontSize: 11, color: COLORS.gray[400], marginTop: 16 },
+  version: { textAlign: 'center', fontSize: 11, color: c.textSubtle, marginTop: 16 },
 });

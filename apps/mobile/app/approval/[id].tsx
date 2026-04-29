@@ -8,7 +8,7 @@
  *   · 내가 현재 결재 차례면 "승인" / "반려" (생체 인증 후 서버 호출)
  *   · 기안자이고 pending 상태면 "회수"
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
   TouchableOpacity, Alert, RefreshControl, TextInput,
@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
 import { useBiometric } from '../../src/hooks/useBiometric';
@@ -74,6 +75,8 @@ export default function ApprovalDetailScreen() {
   const currentUserId = useAuthStore((s) => s.user?.id);
   const { authenticate } = useBiometric();
   const insets = useSafeAreaInsets();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
 
   const [doc, setDoc] = useState<ApprovalDoc | null>(null);
   const [loading, setLoading] = useState(false);
@@ -385,7 +388,7 @@ export default function ApprovalDetailScreen() {
                 value={rejectReason}
                 onChangeText={setRejectReason}
                 placeholder="반려 사유를 입력해주세요 (필수)"
-                placeholderTextColor={COLORS.gray[400]}
+                placeholderTextColor={c.placeholder}
                 multiline
                 numberOfLines={4}
                 textAlignVertical="top"
@@ -420,50 +423,50 @@ export default function ApprovalDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { color: COLORS.gray[400] },
+  empty: { color: c.textSubtle },
 
   headerBlock: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  docNumber: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  docNumber: { fontSize: 11, color: c.textSubtle, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   statusText: { fontSize: 11, fontWeight: '700' },
 
-  title: { fontSize: 22, fontWeight: '700', color: COLORS.gray[900], marginBottom: 6 },
-  meta: { fontSize: 12, color: COLORS.gray[500], marginBottom: 2 },
+  title: { fontSize: 22, fontWeight: '700', color: c.text, marginBottom: 6 },
+  meta: { fontSize: 12, color: c.textMuted, marginBottom: 2 },
 
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: COLORS.gray[600], marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
-  card: { backgroundColor: COLORS.white, borderRadius: 14, padding: 14, overflow: 'hidden' },
-  content: { fontSize: 14, lineHeight: 22, color: COLORS.gray[800] },
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: c.textMuted, marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
+  card: { backgroundColor: c.surface, borderRadius: 14, padding: 14, overflow: 'hidden', ...(isDark ? { borderWidth: 1, borderColor: c.border } : {}) },
+  content: { fontSize: 14, lineHeight: 22, color: c.text },
 
-  lineBlock: { backgroundColor: COLORS.white, borderRadius: 14, padding: 14 },
+  lineBlock: { backgroundColor: c.surface, borderRadius: 14, padding: 14, ...(isDark ? { borderWidth: 1, borderColor: c.border } : {}) },
   lineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 8 },
   lineBadge: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   lineBadgeText: { fontSize: 14, fontWeight: '700' },
-  lineName: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
-  lineMe: { color: COLORS.primary[500], fontWeight: '700' },
-  lineDept: { fontSize: 11, color: COLORS.gray[500], marginTop: 1 },
-  lineActed: { fontSize: 11, color: COLORS.gray[400], marginTop: 3 },
-  lineComment: { fontSize: 12, color: COLORS.gray[600], fontStyle: 'italic', marginTop: 4 },
-  lineDivider: { height: 1, backgroundColor: COLORS.gray[100], marginLeft: 44 },
+  lineName: { fontSize: 14, fontWeight: '600', color: c.text },
+  lineMe: { color: COLORS.primary[isDark ? 400 : 500], fontWeight: '700' },
+  lineDept: { fontSize: 11, color: c.textMuted, marginTop: 1 },
+  lineActed: { fontSize: 11, color: c.textSubtle, marginTop: 3 },
+  lineComment: { fontSize: 12, color: c.textMuted, fontStyle: 'italic', marginTop: 4 },
+  lineDivider: { height: 1, backgroundColor: c.divider, marginLeft: 44 },
 
-  attachRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50] },
+  attachRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.divider },
   attachIcon: { fontSize: 18 },
-  attachName: { fontSize: 13, color: COLORS.gray[800], fontWeight: '500' },
-  attachSize: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
-  attachChev: { fontSize: 18, color: COLORS.gray[300] },
+  attachName: { fontSize: 13, color: c.text, fontWeight: '500' },
+  attachSize: { fontSize: 11, color: c.textSubtle, marginTop: 2 },
+  attachChev: { fontSize: 18, color: c.textSubtle },
 
   refRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
-  refName: { fontSize: 13, color: COLORS.gray[800] },
-  refId: { fontSize: 11, color: COLORS.gray[400] },
+  refName: { fontSize: 13, color: c.text },
+  refId: { fontSize: 11, color: c.textSubtle },
 
   actionBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', gap: 10,
     paddingTop: 14, paddingHorizontal: 14,
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1, borderTopColor: COLORS.gray[100],
+    backgroundColor: c.surface,
+    borderTopWidth: 1, borderTopColor: c.divider,
   },
   btn: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
@@ -471,25 +474,28 @@ const styles = StyleSheet.create({
   },
   btnApprove: { backgroundColor: COLORS.primary[500] },
   btnApproveText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  btnReject: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' },
-  btnRejectText: { color: '#dc2626', fontWeight: '700', fontSize: 15 },
-  btnWithdraw: { backgroundColor: '#fef3c7' },
-  btnWithdrawText: { color: '#a16207', fontWeight: '700', fontSize: 15 },
-  btnCancel: { backgroundColor: COLORS.gray[100] },
-  btnCancelText: { color: COLORS.gray[600], fontWeight: '600' },
+  btnReject: {
+    backgroundColor: isDark ? '#3a0f10' : '#fef2f2',
+    borderWidth: 1, borderColor: isDark ? '#7f1d1d' : '#fecaca',
+  },
+  btnRejectText: { color: isDark ? '#fca5a5' : '#dc2626', fontWeight: '700', fontSize: 15 },
+  btnWithdraw: { backgroundColor: isDark ? '#3a2a08' : '#fef3c7' },
+  btnWithdrawText: { color: isDark ? '#fcd34d' : '#a16207', fontWeight: '700', fontSize: 15 },
+  btnCancel: { backgroundColor: c.surfaceAlt },
+  btnCancelText: { color: c.textMuted, fontWeight: '600' },
 
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBg: { flex: 1, backgroundColor: c.scrim, justifyContent: 'flex-end' },
   modalCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor: c.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 20, paddingBottom: 24,
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 12 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 12 },
   modalInput: {
-    backgroundColor: COLORS.gray[50], borderRadius: 10,
-    padding: 12, fontSize: 14, color: COLORS.gray[800],
+    backgroundColor: c.surfaceAlt, borderRadius: 10,
+    padding: 12, fontSize: 14, color: c.text,
     minHeight: 100, marginBottom: 14,
-    borderWidth: 1, borderColor: COLORS.gray[200],
+    borderWidth: 1, borderColor: c.border,
   },
   modalBtnRow: { flexDirection: 'row', gap: 10 },
 });

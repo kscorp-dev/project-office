@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
 
 interface MailItem {
@@ -19,6 +20,8 @@ interface MailItem {
 }
 
 export default function MailScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [mails, setMails] = useState<MailItem[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -174,31 +177,34 @@ export default function MailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   searchWrap: { paddingHorizontal: 16, paddingVertical: 8 },
   searchInput: {
-    backgroundColor: COLORS.white, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
-    fontSize: 14, color: COLORS.gray[800], borderWidth: 1, borderColor: COLORS.gray[200],
+    backgroundColor: c.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+    fontSize: 14, color: c.text, borderWidth: 1, borderColor: c.border,
   },
   statsRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 8,
   },
-  statsText: { fontSize: 13, color: COLORS.gray[500] },
+  statsText: { fontSize: 13, color: c.textMuted },
   errorBox: {
-    marginHorizontal: 16, padding: 10, backgroundColor: '#fef2f2', borderRadius: 10,
-    borderWidth: 1, borderColor: '#fecaca', marginBottom: 6,
+    marginHorizontal: 16, padding: 10,
+    backgroundColor: isDark ? '#3a0f10' : '#fef2f2',
+    borderRadius: 10,
+    borderWidth: 1, borderColor: isDark ? '#7f1d1d' : '#fecaca',
+    marginBottom: 6,
   },
-  errorText: { fontSize: 12, color: '#991b1b' },
+  errorText: { fontSize: 12, color: isDark ? '#fca5a5' : '#991b1b' },
   list: { flex: 1 },
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 14, color: COLORS.gray[400] },
+  emptyText: { fontSize: 14, color: c.textSubtle },
   mailRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50],
+    backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.divider,
   },
-  mailUnread: { backgroundColor: '#f0fdf4' },
+  mailUnread: { backgroundColor: c.highlight },
   mailAvatar: {
     width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.primary[500],
     justifyContent: 'center', alignItems: 'center', marginRight: 12,
@@ -206,16 +212,16 @@ const styles = StyleSheet.create({
   mailAvatarText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
   mailContent: { flex: 1 },
   mailHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  mailFrom: { fontSize: 14, color: COLORS.gray[700], flex: 1, marginRight: 8 },
-  mailDate: { fontSize: 11, color: COLORS.gray[400] },
-  mailSubject: { fontSize: 14, color: COLORS.gray[800], marginBottom: 2 },
-  mailPreview: { fontSize: 12, color: COLORS.gray[400] },
+  mailFrom: { fontSize: 14, color: c.text, flex: 1, marginRight: 8 },
+  mailDate: { fontSize: 11, color: c.textSubtle },
+  mailSubject: { fontSize: 14, color: c.text, marginBottom: 2 },
+  mailPreview: { fontSize: 12, color: c.textSubtle },
   bold: { fontWeight: '700' },
   mailIndicators: { alignItems: 'center', gap: 4, marginLeft: 8 },
   star: { fontSize: 14, color: '#f59e0b' },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary[500] },
   stateBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   stateEmoji: { fontSize: 48, marginBottom: 16 },
-  stateTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 8, textAlign: 'center' },
-  stateHint: { fontSize: 13, color: COLORS.gray[500], textAlign: 'center', lineHeight: 20 },
+  stateTitle: { fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 8, textAlign: 'center' },
+  stateHint: { fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 20 },
 });

@@ -35,27 +35,55 @@ const gray = {
   900: '#111827',
 } as const;
 
-/** 라이트 모드 (기본) */
-const lightSemantic = {
+/** 시맨틱 컬러 (라이트/다크 공통 shape) */
+export interface SemanticColors {
+  bg: string;
+  surface: string;
+  /** 카드/입력 백그라운드 살짝 변형 */
+  surfaceAlt: string;
+  text: string;
+  textMuted: string;
+  textSubtle: string;
+  border: string;
+  divider: string;
+  focus: string;
+  /** 강조 카드 배경 (예: 미읽 메일 강조) */
+  highlight: string;
+  /** 입력창 placeholder */
+  placeholder: string;
+  /** 모달 dim */
+  scrim: string;
+}
+
+const lightSemantic: SemanticColors = {
   bg:        '#f8fdf9',
   surface:   '#ffffff',
+  surfaceAlt: '#f9fafb',
   text:      gray[900],
   textMuted: gray[500],
+  textSubtle: gray[400],
   border:    gray[200],
   divider:   gray[100],
   focus:     primary[500],
-} as const;
+  highlight: '#f0fdf4',
+  placeholder: gray[400],
+  scrim: 'rgba(0,0,0,0.5)',
+};
 
-/** 다크 모드 (Phase 0 후반 적용 예정) */
-const darkSemantic = {
+const darkSemantic: SemanticColors = {
   bg:        '#0b1210',
   surface:   '#111b17',
+  surfaceAlt: '#162019',
   text:      '#f1f5f3',
   textMuted: '#9aa79f',
+  textSubtle: '#6b766e',
   border:    '#1f2b25',
   divider:   '#162019',
   focus:     primary[400],
-} as const;
+  highlight: '#13261c',
+  placeholder: '#5a6660',
+  scrim: 'rgba(0,0,0,0.7)',
+};
 
 export const COLORS = {
   primary,
@@ -142,4 +170,8 @@ export const FONT = {
   medium:  'System',
   bold:    'System',
 } as const;
+
+// ────────────────── ScaledColors 타입 ──────────────────
+
+export type ColorScheme = 'light' | 'dark';
 

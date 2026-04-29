@@ -4,17 +4,20 @@
  * useChatRooms 훅이 SQLite 캐시를 먼저 읽어 즉시 렌더 후 서버 응답으로 갱신한다.
  * 오프라인 상태면 상단에 "오프라인 모드" 배너 표시.
  */
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
 import { useChatRooms, type UiChatRoom } from '../../src/hooks/useChatRooms';
 
 export default function MessengerScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -144,21 +147,26 @@ export default function MessengerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  offlineBanner: { backgroundColor: '#fef3c7', paddingVertical: 8, paddingHorizontal: 16 },
-  offlineBannerText: { fontSize: 12, color: '#92400e', textAlign: 'center' },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  offlineBanner: {
+    backgroundColor: isDark ? '#3a2a08' : '#fef3c7',
+    paddingVertical: 8, paddingHorizontal: 16,
+  },
+  offlineBannerText: {
+    fontSize: 12, color: isDark ? '#fcd34d' : '#92400e', textAlign: 'center',
+  },
   searchWrap: { paddingHorizontal: 16, paddingVertical: 8 },
   searchInput: {
-    backgroundColor: COLORS.white, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
-    fontSize: 14, color: COLORS.gray[800], borderWidth: 1, borderColor: COLORS.gray[200],
+    backgroundColor: c.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+    fontSize: 14, color: c.text, borderWidth: 1, borderColor: c.border,
   },
   list: { flex: 1 },
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 14, color: COLORS.gray[400] },
+  emptyText: { fontSize: 14, color: c.textSubtle },
   chatRow: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50],
+    backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.divider,
   },
   avatar: {
     width: 48, height: 48, borderRadius: 16,
@@ -169,10 +177,10 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
   chatContent: { flex: 1 },
   chatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  chatName: { fontSize: 15, fontWeight: '600', color: COLORS.gray[800], flex: 1, marginRight: 8 },
-  memberCount: { fontSize: 12, fontWeight: '400', color: COLORS.gray[400] },
-  chatTime: { fontSize: 11, color: COLORS.gray[400] },
-  chatMsg: { fontSize: 13, color: COLORS.gray[500] },
+  chatName: { fontSize: 15, fontWeight: '600', color: c.text, flex: 1, marginRight: 8 },
+  memberCount: { fontSize: 12, fontWeight: '400', color: c.textSubtle },
+  chatTime: { fontSize: 11, color: c.textSubtle },
+  chatMsg: { fontSize: 13, color: c.textMuted },
   badge: {
     backgroundColor: COLORS.primary[500], borderRadius: 10, minWidth: 20, height: 20,
     paddingHorizontal: 6, justifyContent: 'center', alignItems: 'center', marginLeft: 8,

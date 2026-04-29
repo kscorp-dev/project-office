@@ -1,8 +1,9 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { useNotifications } from '../../src/hooks/useNotifications';
 
 const QUICK_MENU = [
@@ -18,6 +19,8 @@ const QUICK_MENU = [
 
 export default function DashboardScreen() {
   const { user } = useAuthStore();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [refreshing, setRefreshing] = useState(false);
   const { unreadCount } = useNotifications();
 
@@ -49,13 +52,13 @@ export default function DashboardScreen() {
         {/* 알림 종 */}
         <TouchableOpacity
           onPress={() => router.push('/notifications')}
-          style={dashStyles.bell}
+          style={styles.bell}
           activeOpacity={0.7}
         >
-          <Text style={dashStyles.bellIcon}>🔔</Text>
+          <Text style={styles.bellIcon}>🔔</Text>
           {unreadCount > 0 && (
-            <View style={dashStyles.bellBadge}>
-              <Text style={dashStyles.bellBadgeText}>
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>
                 {unreadCount > 99 ? '99+' : unreadCount}
               </Text>
             </View>
@@ -69,7 +72,7 @@ export default function DashboardScreen() {
           { label: '일정', value: '0건', color: COLORS.primary[500] },
           { label: '메일', value: '2건', color: COLORS.info },
           { label: '결재', value: '0건', color: COLORS.warning },
-          { label: '작업', value: '0건', color: COLORS.gray[500] },
+          { label: '작업', value: '0건', color: c.textMuted },
         ].map((s) => (
           <View key={s.label} style={styles.summaryItem}>
             <Text style={[styles.summaryValue, { color: s.color }]}>{s.value}</Text>
@@ -104,10 +107,10 @@ export default function DashboardScreen() {
           {now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
         </Text>
         <View style={styles.attendBtnRow}>
-          <TouchableOpacity style={styles.attendBtnIn} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.attendBtnIn} activeOpacity={0.8} onPress={() => router.push('/attendance')}>
             <Text style={styles.attendBtnText}>출근</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.attendBtnOut} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.attendBtnOut} activeOpacity={0.8} onPress={() => router.push('/attendance')}>
             <Text style={styles.attendBtnOutText}>퇴근</Text>
           </TouchableOpacity>
         </View>
@@ -131,18 +134,18 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   content: { padding: 16, paddingBottom: 32 },
 
   greetCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
+    backgroundColor: c.surface,
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }),
   },
   avatar: {
     width: 52, height: 52, borderRadius: 16,
@@ -151,90 +154,74 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 22, fontWeight: '700', color: COLORS.white },
   greetInfo: { flex: 1 },
-  greetHello: { fontSize: 13, color: COLORS.gray[500] },
-  greetName: { fontSize: 20, fontWeight: '700', color: COLORS.gray[800], marginTop: 2 },
-  greetDept: { fontSize: 12, color: COLORS.gray[400], marginTop: 2 },
+  greetHello: { fontSize: 13, color: c.textMuted },
+  greetName: { fontSize: 20, fontWeight: '700', color: c.text, marginTop: 2 },
+  greetDept: { fontSize: 12, color: c.textSubtle, marginTop: 2 },
 
   summaryRow: {
     flexDirection: 'row', gap: 10, marginBottom: 24,
   },
   summaryItem: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: 16, padding: 14, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    flex: 1, backgroundColor: c.surface, borderRadius: 16, padding: 14, alignItems: 'center',
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 }),
   },
   summaryValue: { fontSize: 18, fontWeight: '700' },
-  summaryLabel: { fontSize: 11, color: COLORS.gray[500], marginTop: 4 },
+  summaryLabel: { fontSize: 11, color: c.textMuted, marginTop: 4 },
 
   sectionTitle: {
-    fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 12,
+    fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 12,
   },
 
   quickGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24,
   },
   quickItem: {
-    width: '23%' as any, backgroundColor: COLORS.white, borderRadius: 16, padding: 14,
+    width: '23%' as any, backgroundColor: c.surface, borderRadius: 16, padding: 14,
     alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 }),
   },
   quickEmoji: { fontSize: 24, marginBottom: 6 },
-  quickLabel: { fontSize: 11, fontWeight: '600', color: COLORS.gray[700] },
+  quickLabel: { fontSize: 11, fontWeight: '600', color: c.text },
 
   attendCard: {
-    backgroundColor: COLORS.white, borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 24,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    backgroundColor: c.surface, borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 24,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }),
   },
-  attendTime: { fontSize: 36, fontWeight: '700', color: COLORS.gray[800], fontVariant: ['tabular-nums'] },
-  attendDate: { fontSize: 13, color: COLORS.gray[400], marginTop: 4, marginBottom: 20 },
+  attendTime: { fontSize: 36, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] },
+  attendDate: { fontSize: 13, color: c.textSubtle, marginTop: 4, marginBottom: 20 },
   attendBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
   attendBtnIn: {
     flex: 1, backgroundColor: COLORS.primary[500], borderRadius: 14, paddingVertical: 14, alignItems: 'center',
   },
   attendBtnOut: {
-    flex: 1, backgroundColor: COLORS.gray[100], borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+    flex: 1, backgroundColor: c.surfaceAlt, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : {}),
   },
   attendBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
-  attendBtnOutText: { color: COLORS.gray[500], fontSize: 15, fontWeight: '700' },
+  attendBtnOutText: { color: c.textMuted, fontSize: 15, fontWeight: '700' },
 
   noticeCard: {
-    backgroundColor: COLORS.white, borderRadius: 20, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    backgroundColor: c.surface, borderRadius: 20, overflow: 'hidden',
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }),
   },
   noticeRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 10 },
-  noticeBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.gray[100] },
+  noticeBorder: { borderBottomWidth: 1, borderBottomColor: c.divider },
   noticeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary[400] },
-  noticeText: { flex: 1, fontSize: 14, color: COLORS.gray[700] },
-});
+  noticeText: { flex: 1, fontSize: 14, color: c.text },
 
-/* 알림 종 스타일 */
-const dashStyles = StyleSheet.create({
+  // 알림 종
   bell: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.gray[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: c.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center', position: 'relative',
   },
   bellIcon: { fontSize: 20 },
   bellBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 4,
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
     backgroundColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.white,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: c.surface,
   },
-  bellBadgeText: {
-    color: COLORS.white,
-    fontSize: 9,
-    fontWeight: '700',
-  },
+  bellBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
 });

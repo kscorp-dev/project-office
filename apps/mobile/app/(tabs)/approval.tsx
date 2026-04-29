@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
 
 type Tab = 'pending' | 'approved' | 'rejected' | 'mine';
@@ -42,6 +43,8 @@ const TAB_TO_BOX: Record<Tab, 'pending' | 'drafts' | 'approved'> = {
 };
 
 export default function ApprovalScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [tab, setTab] = useState<Tab>('pending');
   const [docs, setDocs] = useState<ApprovalDoc[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,37 +173,37 @@ export default function ApprovalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   tabRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 8, gap: 6 },
   tab: {
-    flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.white, alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.gray[200],
+    flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: c.surface, alignItems: 'center',
+    borderWidth: 1, borderColor: c.border,
   },
   tabActive: { backgroundColor: COLORS.primary[500], borderColor: COLORS.primary[500] },
-  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.gray[500] },
+  tabText: { fontSize: 13, fontWeight: '600', color: c.textMuted },
   tabTextActive: { color: COLORS.white },
   statsRow: { flexDirection: 'row', gap: 10, padding: 16 },
   statItem: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: 14, padding: 12, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
+    flex: 1, backgroundColor: c.surface, borderRadius: 14, padding: 12, alignItems: 'center',
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 }),
   },
   statCount: { fontSize: 22, fontWeight: '700' },
-  statLabel: { fontSize: 11, color: COLORS.gray[500], marginTop: 2 },
+  statLabel: { fontSize: 11, color: c.textMuted, marginTop: 2 },
   list: { flex: 1, paddingHorizontal: 16 },
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 14, color: COLORS.gray[400] },
+  emptyText: { fontSize: 14, color: c.textSubtle },
   card: {
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    backgroundColor: c.surface, borderRadius: 16, padding: 16, marginBottom: 10,
+    ...(isDark ? { borderWidth: 1, borderColor: c.border } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 }),
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   typeText: { fontSize: 11, fontWeight: '600' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   statusText: { fontSize: 11, fontWeight: '600' },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: COLORS.gray[800], marginBottom: 8 },
+  cardTitle: { fontSize: 15, fontWeight: '600', color: c.text, marginBottom: 8 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardAuthor: { fontSize: 12, color: COLORS.gray[500] },
-  cardDate: { fontSize: 12, color: COLORS.gray[400] },
+  cardAuthor: { fontSize: 12, color: c.textMuted },
+  cardDate: { fontSize: 12, color: c.textSubtle },
 });

@@ -9,14 +9,15 @@
  * - 입력창: 텍스트 전송 / 이미지 / 파일 첨부 (expo-document-picker + expo-image-picker)
  * - 오프라인 DB 의 useChatRooms.markRoomRead() 로 뱃지 즉시 감소
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACING, RADIUS } from '../../../src/constants/theme';
+import { COLORS, SPACING, RADIUS, type SemanticColors } from '../../../src/constants/theme';
+import { useTheme } from '../../../src/hooks/useTheme';
 import api from '../../../src/services/api';
 import { useAuthStore } from '../../../src/store/auth';
 import { useMessengerSocket } from '../../../src/hooks/useMessengerSocket';
@@ -54,6 +55,8 @@ export default function MessengerRoomScreen() {
   const { connected, emit, on } = useMessengerSocket();
   const { markRoomRead } = useChatRooms();
   const insets = useSafeAreaInsets();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -361,7 +364,7 @@ export default function MessengerRoomScreen() {
             value={input}
             onChangeText={onChangeText}
             placeholder="메시지 입력..."
-            placeholderTextColor={COLORS.gray[400]}
+            placeholderTextColor={c.placeholder}
             multiline
             maxLength={5000}
             onBlur={() => { if (roomId) emit('typing:stop', { roomId }); }}
@@ -396,20 +399,21 @@ function absUrl(filePath: string): string {
 
 // ─── styles ───
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { color: COLORS.gray[400], fontSize: 14 },
+  empty: { color: c.textSubtle, fontSize: 14 },
 
   offline: {
-    backgroundColor: '#fef3c7', paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
+    backgroundColor: isDark ? '#3a2a08' : '#fef3c7',
+    paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg,
   },
-  offlineText: { fontSize: 11, color: '#92400e', textAlign: 'center' },
+  offlineText: { fontSize: 11, color: isDark ? '#fcd34d' : '#92400e', textAlign: 'center' },
 
   listContent: { paddingVertical: SPACING.lg, paddingHorizontal: SPACING.md },
 
   loadMoreBtn: { alignItems: 'center', padding: SPACING.md },
-  loadMoreText: { fontSize: 12, color: COLORS.primary[600], fontWeight: '600' },
+  loadMoreText: { fontSize: 12, color: COLORS.primary[isDark ? 400 : 600], fontWeight: '600' },
 
   row: { flexDirection: 'row', marginVertical: 3, gap: 6 },
   rowMe: { justifyContent: 'flex-end', paddingLeft: 40 },
@@ -417,43 +421,44 @@ const styles = StyleSheet.create({
 
   systemRow: { alignItems: 'center', paddingVertical: 8 },
   systemText: {
-    fontSize: 11, color: COLORS.gray[500],
-    backgroundColor: COLORS.gray[100], borderRadius: 999,
+    fontSize: 11, color: c.textMuted,
+    backgroundColor: c.surfaceAlt, borderRadius: 999,
     paddingHorizontal: 12, paddingVertical: 4,
   },
 
   avatar: {
     width: 32, height: 32, borderRadius: 10,
-    backgroundColor: COLORS.primary[200], justifyContent: 'center', alignItems: 'center',
+    backgroundColor: isDark ? COLORS.primary[800] : COLORS.primary[200],
+    justifyContent: 'center', alignItems: 'center',
     alignSelf: 'flex-end',
   },
-  avatarText: { color: COLORS.primary[700], fontWeight: '700' },
+  avatarText: { color: isDark ? COLORS.primary[200] : COLORS.primary[700], fontWeight: '700' },
 
   bubble: {
     paddingHorizontal: 12, paddingVertical: 8,
     borderRadius: 16, maxWidth: '80%',
   },
   bubbleMe: {
-    backgroundColor: COLORS.primary[500], borderBottomRightRadius: 4,
+    backgroundColor: COLORS.primary[isDark ? 600 : 500], borderBottomRightRadius: 4,
   },
   bubbleOther: {
-    backgroundColor: COLORS.white, borderBottomLeftRadius: 4,
-    borderWidth: 1, borderColor: COLORS.gray[100],
+    backgroundColor: c.surface, borderBottomLeftRadius: 4,
+    borderWidth: 1, borderColor: c.border,
   },
-  senderName: { fontSize: 11, fontWeight: '600', color: COLORS.gray[600], marginBottom: 3 },
+  senderName: { fontSize: 11, fontWeight: '600', color: c.textMuted, marginBottom: 3 },
   msgText: { fontSize: 14, lineHeight: 20 },
   msgTextMe: { color: COLORS.white },
-  msgTextOther: { color: COLORS.gray[800] },
+  msgTextOther: { color: c.text },
   msgTime: { fontSize: 9, marginTop: 4, alignSelf: 'flex-end' },
   msgTimeMe: { color: 'rgba(255,255,255,0.75)' },
-  msgTimeOther: { color: COLORS.gray[400] },
+  msgTimeOther: { color: c.textSubtle },
 
   image: { width: 200, height: 200, borderRadius: 10, marginBottom: 4 },
   fileRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   fileIcon: { fontSize: 16 },
 
   typing: {
-    fontSize: 11, color: COLORS.gray[500],
+    fontSize: 11, color: c.textMuted,
     paddingHorizontal: SPACING.lg, paddingVertical: 4,
     fontStyle: 'italic',
   },
@@ -461,26 +466,26 @@ const styles = StyleSheet.create({
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: SPACING.sm, paddingTop: SPACING.sm,
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1, borderTopColor: COLORS.gray[100],
+    backgroundColor: c.surface,
+    borderTopWidth: 1, borderTopColor: c.divider,
   },
   attachBtn: {
     width: 40, height: 40, borderRadius: RADIUS.pill,
-    backgroundColor: COLORS.gray[100],
+    backgroundColor: c.surfaceAlt,
     justifyContent: 'center', alignItems: 'center',
   },
-  attachText: { fontSize: 22, color: COLORS.gray[600], fontWeight: '300' },
+  attachText: { fontSize: 22, color: c.textMuted, fontWeight: '300' },
   input: {
     flex: 1, minHeight: 40, maxHeight: 100,
-    backgroundColor: COLORS.gray[50], borderRadius: 20,
+    backgroundColor: c.surfaceAlt, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 10,
-    fontSize: 14, color: COLORS.gray[800],
+    fontSize: 14, color: c.text,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: RADIUS.pill,
     backgroundColor: COLORS.primary[500],
     justifyContent: 'center', alignItems: 'center',
   },
-  sendBtnDisabled: { backgroundColor: COLORS.gray[300] },
+  sendBtnDisabled: { backgroundColor: c.surfaceAlt },
   sendBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700', marginLeft: 2 },
 });
