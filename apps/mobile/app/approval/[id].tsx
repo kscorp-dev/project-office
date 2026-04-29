@@ -8,7 +8,7 @@
  *   · 내가 현재 결재 차례면 "승인" / "반려" (생체 인증 후 서버 호출)
  *   · 기안자이고 pending 상태면 "회수"
  */
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
   TouchableOpacity, Alert, RefreshControl, TextInput,
@@ -70,13 +70,15 @@ const STATUS_META: Record<string, { label: string; bg: string; text: string }> =
 };
 
 export default function ApprovalDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, action } = useLocalSearchParams<{ id: string; action?: 'approve' | 'reject' }>();
   const router = useRouter();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const { authenticate } = useBiometric();
   const insets = useSafeAreaInsets();
   const { c, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  // ?action 처리는 doc 로드 후 1회만 시도
+  const autoActionTriggeredRef = useRef(false);
 
   const [doc, setDoc] = useState<ApprovalDoc | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,6 +102,20 @@ export default function ApprovalDetailScreen() {
   }, [id, router]);
 
   useEffect(() => { fetchDoc(); }, [fetchDoc]);
+
+  // 푸시 인라인 액션 (?action=approve|reject) 자동 처리
+  useEffect(() => {
+    if (autoActionTriggeredRef.current) return;
+    if (!doc || !action) return;
+    autoActionTriggeredRef.current = true;
+    if (action === 'approve') {
+      // 약간의 지연 후 승인 흐름 트리거 (사용자가 화면을 보고 인지할 시간)
+      setTimeout(() => handleApprove(), 600);
+    } else if (action === 'reject') {
+      setTimeout(() => setRejectOpen(true), 600);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, action]);
 
   const myCurrentLine = doc?.lines.find((l) => l.approver.id === currentUserId);
 

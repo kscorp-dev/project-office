@@ -17,6 +17,7 @@
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 
@@ -37,7 +38,6 @@ export function usePushNotifications() {
   useEffect(() => {
     if (!Notifications) return;
     if (!user) return;
-    if (registeredRef.current) return;
 
     // 포그라운드에서 알림 배너 표시
     Notifications.setNotificationHandler({
@@ -47,6 +47,121 @@ export function usePushNotifications() {
         shouldSetBadge: true,
       }),
     });
+
+    // ─── Notification Categories: 인라인 액션 버튼 정의 ───
+    // category=approval (data.type='approval') 알림은 잠금화면에서 [승인] [반려] 버튼 노출
+    Notifications.setNotificationCategoryAsync?.('approval', [
+      {
+        identifier: 'APPROVE',
+        buttonTitle: '✓ 승인',
+        options: { opensAppToForeground: true }, // 생체 인증 필요해서 앱 진입
+      },
+      {
+        identifier: 'REJECT',
+        buttonTitle: '✕ 반려',
+        options: { opensAppToForeground: true },
+      },
+    ]).catch(() => { /* iOS 14 미만 / 환경에 따라 미지원 */ });
+
+    Notifications.setNotificationCategoryAsync?.('message', [
+      {
+        identifier: 'REPLY',
+        buttonTitle: '답장',
+        textInput: { submitButtonTitle: '전송', placeholder: '빠른 답장...' },
+        options: { opensAppToForeground: false },
+      },
+      {
+        identifier: 'MARK_READ',
+        buttonTitle: '읽음',
+        options: { opensAppToForeground: false },
+      },
+    ]).catch(() => { /* ignore */ });
+
+    // ─── 알림 탭 시 딥링크 ───
+    // payload.data.path 가 있으면 router.push, 그 외 typed 변환:
+    //   { type: 'approval', id: 'uuid' }       → /approval/:id
+    //   { type: 'message',  roomId: 'uuid' }   → /messenger/room/:id
+    //   { type: 'mail',     uid: '12345' }     → /mail
+    //   { type: 'meeting',  id: 'uuid' }       → /meeting/:id
+    //   { type: 'calendar', id: 'uuid' }       → /calendar
+    function resolveDeepLink(data: Record<string, unknown> | undefined): string | null {
+      if (!data) return null;
+      if (typeof data.path === 'string' && data.path.startsWith('/')) return data.path;
+      switch (data.type) {
+        case 'approval': return data.id ? `/approval/${data.id}` : null;
+        case 'message':  return data.roomId ? `/messenger/room/${data.roomId}` : null;
+        case 'mail':    return '/mail';
+        case 'meeting':  return data.id ? `/meeting/${data.id}` : null;
+        case 'calendar': return '/calendar';
+        default: return null;
+      }
+    }
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener(
+      async (response: any) => {
+        const content = response?.notification?.request?.content;
+        const data = content?.data ?? {};
+        const actionId = response?.actionIdentifier;
+
+        // ── 인라인 액션 처리 ──
+        // EXPO_DEFAULT_ACTION_IDENTIFIER 또는 'default' 는 알림 본체 탭 → 딥링크 진입
+        const isDefault = !actionId
+          || actionId === 'default'
+          || actionId === 'expo.modules.notifications.actions.DEFAULT';
+
+        if (!isDefault) {
+          try {
+            if (actionId === 'APPROVE' && data.id) {
+              // 결재 인라인 승인은 생체 인증이 필요하므로 앱 foreground 진입 후
+              // approval/[id] 화면이 받도록 딥링크 + ?action=approve 전달
+              router.push(`/approval/${data.id}?action=approve` as any);
+              return;
+            }
+            if (actionId === 'REJECT' && data.id) {
+              router.push(`/approval/${data.id}?action=reject` as any);
+              return;
+            }
+            if (actionId === 'REPLY' && data.roomId) {
+              const text = response?.userText as string | undefined;
+              if (text && text.trim()) {
+                await api.post(`/messenger/rooms/${data.roomId}/messages`, {
+                  type: 'text',
+                  content: text.trim(),
+                });
+              }
+              return;
+            }
+            if (actionId === 'MARK_READ' && data.roomId) {
+              // 서버 측 read mark — Socket 없이도 REST 로 lastReadAt 갱신
+              await api.get(`/messenger/rooms/${data.roomId}/messages?limit=1`);
+              return;
+            }
+          } catch (err) {
+            console.warn('[push] action failed', actionId, err);
+          }
+          return;
+        }
+
+        // ── 본체 탭 → 딥링크 ──
+        const path = resolveDeepLink(data);
+        if (path) {
+          // expo-router 의 router.push 가 즉시 동작하지 않을 수 있으므로 setTimeout
+          setTimeout(() => router.push(path as any), 100);
+        }
+      },
+    );
+
+    // 콜드 스타트 (앱이 죽어 있다 알림 탭으로 부팅)
+    Notifications.getLastNotificationResponseAsync().then((res: any) => {
+      if (!res) return;
+      const data = res?.notification?.request?.content?.data;
+      const path = resolveDeepLink(data);
+      if (path) setTimeout(() => router.push(path as any), 500);
+    }).catch(() => { /* ignore */ });
+
+    if (registeredRef.current) {
+      return () => responseSub.remove();
+    }
 
     (async () => {
       try {
@@ -100,5 +215,7 @@ export function usePushNotifications() {
         console.warn('[push] register failed', e);
       }
     })();
+
+    return () => responseSub.remove();
   }, [user]);
 }

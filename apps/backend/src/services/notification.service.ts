@@ -63,19 +63,66 @@ export async function createNotification(input: CreateNotificationInput): Promis
   } catch { /* ignore — DB 저장은 성공 */ }
 
   // 모바일 FCM/APNs push (앱 미실행 상태에서 알림) — 비동기, 실패해도 무시
+  // 모바일이 인식하는 단순화 type + categoryId (인라인 액션 버튼) 매핑
+  const { mobileType, mobileExtra, categoryId } = mapToMobilePayload(input);
   sendPushToUser(input.recipientId, {
     title: input.title,
     body: input.body ?? '',
+    categoryId,
     data: {
+      // 모바일 hooks/usePushNotifications 가 우선 인식할 단순 타입
+      type: mobileType,
+      // 화면별 식별자 (id / roomId / uid)
+      ...mobileExtra,
+      // 호환용 원본 필드들도 유지
       link: input.link,
       refType: input.refType,
       refId: input.refId,
       notificationId: notification.id,
-      type: input.type,
+      originalType: input.type,
     },
-  }).catch((e) => {
+  }).catch(() => {
     // 로그는 push.service 내부에서 처리
   });
+}
+
+/**
+ * NotificationType (DB enum) → 모바일이 이해하는 단순 타입 + 인라인 액션 카테고리 매핑.
+ * 모바일은 `data.type` 만 봐서 라우팅하므로, 여기서 한 번에 변환.
+ */
+function mapToMobilePayload(input: CreateNotificationInput): {
+  mobileType: string;
+  mobileExtra: Record<string, string | undefined>;
+  categoryId?: string;
+} {
+  const t = String(input.type);
+  // 결재 도착·승인·반려·회수 등은 'approval' 로 통합
+  if (t.startsWith('approval')) {
+    return {
+      mobileType: 'approval',
+      mobileExtra: { id: input.refId },
+      // pending 만 인라인 승인/반려 액션 노출 (이미 처리된 건엔 무의미)
+      categoryId: t === 'approval_pending' ? 'approval' : undefined,
+    };
+  }
+  if (t === 'message_new' || t === 'message_mention') {
+    return {
+      mobileType: 'message',
+      mobileExtra: { roomId: input.refId },
+      categoryId: 'message',
+    };
+  }
+  if (t === 'mail_new' || t.startsWith('mail')) {
+    return { mobileType: 'mail', mobileExtra: { uid: input.refId } };
+  }
+  if (t.startsWith('meeting')) {
+    return { mobileType: 'meeting', mobileExtra: { id: input.refId } };
+  }
+  if (t.startsWith('calendar')) {
+    return { mobileType: 'calendar', mobileExtra: { id: input.refId } };
+  }
+  // 기본: 원본 type 유지
+  return { mobileType: t, mobileExtra: { id: input.refId } };
 }
 
 /** 여러 수신자에게 동일 알림 벌크 생성 */
