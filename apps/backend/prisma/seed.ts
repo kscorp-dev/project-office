@@ -43,6 +43,11 @@ async function main() {
     { key: 'password_min_length', value: '8',                category: 'security',     description: '비밀번호 최소 길이',           minRole: 'super_admin' },
     { key: 'max_login_attempts',  value: '5',                category: 'security',     description: '최대 로그인 시도 횟수',        minRole: 'super_admin' },
     { key: 'maintenance_mode',    value: 'false',            category: 'system',       description: '유지보수 모드 (true 시 비관리자 접근 차단)', minRole: 'super_admin' },
+    // ── 출퇴근 GPS 지오펜스 (모바일 앱 사용) ──
+    { key: 'geofence_enabled',    value: 'false',            category: 'attendance',   description: '지오펜스 출퇴근 검증 사용 여부 (true 시 사무실 반경 밖 체크인은 사유 필수)', minRole: 'super_admin' },
+    { key: 'office_lat',          value: '',                 category: 'attendance',   description: '사무실 위도 (예: 37.5665)',  minRole: 'super_admin' },
+    { key: 'office_lng',          value: '',                 category: 'attendance',   description: '사무실 경도 (예: 126.9780)', minRole: 'super_admin' },
+    { key: 'office_radius_m',     value: '200',              category: 'attendance',   description: '사무실 출퇴근 허용 반경 (미터)', minRole: 'super_admin' },
   ];
   for (const s of systemSettings) {
     await prisma.systemSetting.upsert({

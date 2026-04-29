@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { COLORS } from '../src/constants/theme';
 import api from '../src/services/api';
+import AttendanceCheckSheet from '../src/components/AttendanceCheckSheet';
 
 interface AttRecord {
   id: string;
@@ -21,15 +22,21 @@ export default function AttendanceScreen() {
   const [month, setMonth] = useState<MonthRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkSheet, setCheckSheet] = useState<{ open: boolean; type: 'check_in' | 'check_out' } | null>(null);
 
   const fetch = async () => {
     setLoading(true);
     try {
+      // 백엔드 /attendance/today 는 { checkIn, checkOut, workHours } 형태
       const [tRes, mRes] = await Promise.all([
         api.get('/attendance/today'),
-        api.get('/attendance/month'),
+        api.get('/attendance/monthly'),
       ]);
-      setToday(tRes.data?.data ?? null);
+      const t = tRes.data?.data;
+      setToday({
+        checkInAt: t?.checkIn?.checkTime ?? null,
+        checkOutAt: t?.checkOut?.checkTime ?? null,
+      });
       setMonth(mRes.data?.data ?? []);
     } catch {
       setToday(null);
@@ -40,16 +47,6 @@ export default function AttendanceScreen() {
   };
 
   useEffect(() => { fetch(); }, []);
-
-  const doCheck = async (type: 'check_in' | 'check_out') => {
-    try {
-      await api.post('/attendance/check', { type });
-      await fetch();
-      Alert.alert('완료', type === 'check_in' ? '출근 기록됨' : '퇴근 기록됨');
-    } catch (err: any) {
-      Alert.alert('실패', err.response?.data?.error?.message || '기록 실패');
-    }
-  };
 
   const fmtTime = (iso?: string | null) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
 
@@ -78,21 +75,31 @@ export default function AttendanceScreen() {
           )}
           <View style={styles.btnRow}>
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: COLORS.primary[500] }]}
-              onPress={() => doCheck('check_in')}
+              style={[styles.btn, { backgroundColor: COLORS.primary[500] }, !!today?.checkInAt && { opacity: 0.5 }]}
+              onPress={() => setCheckSheet({ open: true, type: 'check_in' })}
               disabled={!!today?.checkInAt}
             >
-              <Text style={styles.btnText}>출근</Text>
+              <Text style={styles.btnText}>{today?.checkInAt ? '출근 완료' : '출근'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: '#f97316' }]}
-              onPress={() => doCheck('check_out')}
+              style={[styles.btn, { backgroundColor: '#f97316' }, (!today?.checkInAt || !!today?.checkOutAt) && { opacity: 0.5 }]}
+              onPress={() => setCheckSheet({ open: true, type: 'check_out' })}
               disabled={!today?.checkInAt || !!today?.checkOutAt}
             >
-              <Text style={styles.btnText}>퇴근</Text>
+              <Text style={styles.btnText}>{today?.checkOutAt ? '퇴근 완료' : '퇴근'}</Text>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* GPS 출퇴근 시트 */}
+        {checkSheet && (
+          <AttendanceCheckSheet
+            visible={checkSheet.open}
+            type={checkSheet.type}
+            onClose={() => setCheckSheet(null)}
+            onSuccess={() => { fetch(); setCheckSheet(null); }}
+          />
+        )}
 
         {/* 이번 달 */}
         <Text style={styles.sectionTitle}>이번 달 ({month.length}일)</Text>

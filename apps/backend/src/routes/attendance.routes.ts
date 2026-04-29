@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate';
 import { qs, qsOpt } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { recordAttendance } from '../services/attendance.service';
+import { checkGeofence } from '../services/geofence';
 import { AppError } from '../services/auth.service';
 import { logger } from '../config/logger';
 
@@ -24,23 +25,89 @@ const checkSchema = z.object({
 });
 
 // POST /attendance/check - 출퇴근 기록 (service에서 advisory lock으로 동시성 방어)
+//
+// 지오펜스 (선택):
+//   - geofence_enabled=true 이고 사용자가 좌표 보냈는데 반경 밖이면 → 사유(note) 필수
+//   - 사유 있으면 통과 (offsite=true 응답 + note 에 기록)
+//   - 정책 비활성 / 사무실 좌표 미등록 / 클라이언트 좌표 미전송 → 검증 스킵
 router.post('/check', authenticate, validate(checkSchema), async (req: Request, res: Response) => {
   try {
+    const geo = await checkGeofence(req.body.latitude, req.body.longitude);
+    let offsite = false;
+
+    if (geo.enabled && geo.inside === false) {
+      // 반경 밖 + 사유 미기재 → 거부 (모바일에서 사유 입력 다이얼로그 띄울 수 있게)
+      if (!req.body.note || !req.body.note.trim()) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'OUT_OF_GEOFENCE',
+            message: `사무실 반경 ${geo.radiusM}m 밖입니다 (현재 약 ${Math.round(geo.distanceM ?? 0)}m). 사유를 입력해주세요.`,
+            details: { distanceM: geo.distanceM, radiusM: geo.radiusM, inside: false },
+          },
+        });
+        return;
+      }
+      offsite = true;
+    }
+
     const attendance = await recordAttendance({
       userId: req.user!.id,
       type: req.body.type,
       latitude: req.body.latitude,
       longitude: req.body.longitude,
-      note: req.body.note,
+      note: offsite && req.body.note ? `[원격] ${req.body.note}` : req.body.note,
       ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip,
       deviceType: req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'web',
     });
-    res.status(201).json({ success: true, data: attendance });
+    res.status(201).json({
+      success: true,
+      data: {
+        ...attendance,
+        geofence: {
+          enabled: geo.enabled,
+          configured: geo.configured,
+          distanceM: geo.distanceM,
+          radiusM: geo.radiusM,
+          inside: geo.inside,
+          offsite,
+        },
+      },
+    });
   } catch (err) {
     if (err instanceof AppError) {
       res.status(err.statusCode).json({ success: false, error: { code: err.code, message: err.message } });
       return;
     }
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// GET /attendance/geofence - 클라이언트가 사전에 사무실 좌표·반경 조회
+//   (예: 모바일에서 출근 화면에 사무실 위치 마커 표시)
+router.get('/geofence', authenticate, async (_req: Request, res: Response) => {
+  try {
+    const cfg = await checkGeofence(null, null); // 좌표 없이도 cfg 정보만 반환
+    // loadGeofenceConfig 가 직접 노출하지 않으므로 여기서 다시 좌표를 조회
+    const settings = await prisma.systemSetting.findMany({
+      where: { key: { in: ['office_lat', 'office_lng'] } },
+      select: { key: true, value: true },
+    });
+    const map = new Map(settings.map((r) => [r.key, r.value]));
+    const officeLat = parseFloat(map.get('office_lat') ?? '');
+    const officeLng = parseFloat(map.get('office_lng') ?? '');
+    res.json({
+      success: true,
+      data: {
+        enabled: cfg.enabled,
+        configured: cfg.configured,
+        radiusM: cfg.radiusM,
+        officeLat: Number.isFinite(officeLat) ? officeLat : null,
+        officeLng: Number.isFinite(officeLng) ? officeLng : null,
+      },
+    });
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
   }
 });

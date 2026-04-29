@@ -1,10 +1,12 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth';
 import { COLORS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useNotifications } from '../../src/hooks/useNotifications';
+import api from '../../src/services/api';
+import AttendanceCheckSheet from '../../src/components/AttendanceCheckSheet';
 
 const QUICK_MENU = [
   { key: 'mail',     label: '메일',     emoji: '✉️',  route: '/(tabs)/mail' },
@@ -23,12 +25,23 @@ export default function DashboardScreen() {
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [refreshing, setRefreshing] = useState(false);
   const { unreadCount } = useNotifications();
+  const [today, setToday] = useState<{ checkIn?: any; checkOut?: any } | null>(null);
+  const [checkSheet, setCheckSheet] = useState<{ open: boolean; type: 'check_in' | 'check_out' } | null>(null);
+
+  const fetchToday = useCallback(async () => {
+    try {
+      const res = await api.get('/attendance/today');
+      setToday(res.data?.data ?? null);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchToday(); }, [fetchToday]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 1000));
+    await fetchToday();
     setRefreshing(false);
-  }, []);
+  }, [fetchToday]);
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? '좋은 아침이에요' : now.getHours() < 18 ? '좋은 오후에요' : '좋은 저녁이에요';
@@ -107,14 +120,38 @@ export default function DashboardScreen() {
           {now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
         </Text>
         <View style={styles.attendBtnRow}>
-          <TouchableOpacity style={styles.attendBtnIn} activeOpacity={0.8} onPress={() => router.push('/attendance')}>
-            <Text style={styles.attendBtnText}>출근</Text>
+          <TouchableOpacity
+            style={[styles.attendBtnIn, today?.checkIn && styles.attendBtnDone]}
+            activeOpacity={0.8}
+            onPress={() => setCheckSheet({ open: true, type: 'check_in' })}
+            disabled={!!today?.checkIn}
+          >
+            <Text style={styles.attendBtnText}>
+              {today?.checkIn ? '출근 완료' : '출근'}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.attendBtnOut} activeOpacity={0.8} onPress={() => router.push('/attendance')}>
-            <Text style={styles.attendBtnOutText}>퇴근</Text>
+          <TouchableOpacity
+            style={[styles.attendBtnOut, today?.checkOut && styles.attendBtnDone]}
+            activeOpacity={0.8}
+            onPress={() => setCheckSheet({ open: true, type: 'check_out' })}
+            disabled={!today?.checkIn || !!today?.checkOut}
+          >
+            <Text style={styles.attendBtnOutText}>
+              {today?.checkOut ? '퇴근 완료' : '퇴근'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* GPS 출퇴근 시트 */}
+      {checkSheet && (
+        <AttendanceCheckSheet
+          visible={checkSheet.open}
+          type={checkSheet.type}
+          onClose={() => setCheckSheet(null)}
+          onSuccess={() => { fetchToday(); setCheckSheet(null); }}
+        />
+      )}
 
       {/* 공지사항 */}
       <Text style={styles.sectionTitle}>최근 공지</Text>
@@ -199,6 +236,7 @@ const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
   },
   attendBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
   attendBtnOutText: { color: c.textMuted, fontSize: 15, fontWeight: '700' },
+  attendBtnDone: { opacity: 0.55 },
 
   noticeCard: {
     backgroundColor: c.surface, borderRadius: 20, overflow: 'hidden',
