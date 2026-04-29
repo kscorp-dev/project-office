@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { COLORS, SPACING, RADIUS, type SemanticColors } from '../../../src/constants/theme';
 import { useTheme } from '../../../src/hooks/useTheme';
 import api from '../../../src/services/api';
@@ -224,6 +226,77 @@ export default function MessengerRoomScreen() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
   };
 
+  // ── 첨부 업로드 ──
+  const uploadAttachment = async (uri: string, fileName: string, mimeType: string) => {
+    if (!roomId) return;
+    try {
+      const form = new FormData();
+      // RN 의 FormData 는 file 객체로 { uri, name, type } 형태 허용
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      form.append('file', { uri, name: fileName, type: mimeType } as any);
+      await api.post(`/messenger/rooms/${roomId}/upload`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      // 서버가 socket message:new 로 푸시 → 자동 반영
+    } catch (err: any) {
+      Alert.alert('업로드 실패', err.response?.data?.error?.message || '잠시 후 다시 시도해주세요');
+    }
+  };
+
+  const pickImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('권한 필요', '사진 라이브러리 접근 권한이 필요합니다');
+      return;
+    }
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
+    if (r.canceled) return;
+    const a = r.assets?.[0];
+    if (!a) return;
+    const ext = (a.fileName || a.uri).split('.').pop()?.toLowerCase() || 'jpg';
+    const mime = a.mimeType || (ext === 'png' ? 'image/png' : 'image/jpeg');
+    await uploadAttachment(a.uri, a.fileName || `image.${ext}`, mime);
+  };
+
+  const takePhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('권한 필요', '카메라 접근 권한이 필요합니다');
+      return;
+    }
+    const r = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (r.canceled) return;
+    const a = r.assets?.[0];
+    if (!a) return;
+    const fileName = a.fileName || `photo-${Date.now()}.jpg`;
+    await uploadAttachment(a.uri, fileName, a.mimeType || 'image/jpeg');
+  };
+
+  const pickFile = async () => {
+    const r = await DocumentPicker.getDocumentAsync({ multiple: false, copyToCacheDirectory: true });
+    if (r.canceled) return;
+    const a = r.assets?.[0];
+    if (!a) return;
+    await uploadAttachment(a.uri, a.name, a.mimeType || 'application/octet-stream');
+  };
+
+  const showAttachmentMenu = () => {
+    Alert.alert(
+      '첨부',
+      '어떤 파일을 보낼까요?',
+      [
+        { text: '📷 카메라로 촬영', onPress: takePhoto },
+        { text: '🖼 사진 라이브러리', onPress: pickImage },
+        { text: '📎 파일', onPress: pickFile },
+        { text: '취소', style: 'cancel' },
+      ],
+    );
+  };
+
   // 이전 메시지 더 불러오기 (FlatList onEndReached - inverted=false 이므로 스크롤 상단)
   const loadOlder = async () => {
     if (!roomId || !hasMore || loading || messages.length === 0) return;
@@ -351,10 +424,7 @@ export default function MessengerRoomScreen() {
         <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, SPACING.sm) }]}>
           <TouchableOpacity
             style={styles.attachBtn}
-            onPress={() => Alert.alert(
-              '첨부',
-              '파일/사진 첨부 기능은 Phase 2 에서 활성화됩니다.\n(expo-document-picker / expo-image-picker 통합 예정)',
-            )}
+            onPress={showAttachmentMenu}
           >
             <Text style={styles.attachText}>＋</Text>
           </TouchableOpacity>
