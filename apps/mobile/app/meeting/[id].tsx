@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { api } from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
 
@@ -34,16 +35,19 @@ interface MeetingDetail {
   participants: Participant[];
 }
 
-const STATUS_META: Record<Status, { label: string; color: string; bg: string }> = {
-  scheduled:   { label: '예정',   color: '#2563eb', bg: '#dbeafe' },
-  in_progress: { label: '진행중', color: '#dc2626', bg: '#fee2e2' },
-  ended:       { label: '종료',   color: '#6b7280', bg: '#f3f4f6' },
-  cancelled:   { label: '취소',   color: '#9ca3af', bg: '#f3f4f6' },
-};
+const statusMeta = (isDark: boolean): Record<Status, { label: string; color: string; bg: string }> => ({
+  scheduled:   { label: '예정',   color: isDark ? '#60a5fa' : '#2563eb', bg: isDark ? '#1e3a5f' : '#dbeafe' },
+  in_progress: { label: '진행중', color: isDark ? '#f87171' : '#dc2626', bg: isDark ? '#3a1a1a' : '#fee2e2' },
+  ended:       { label: '종료',   color: isDark ? '#9ca3af' : '#6b7280', bg: isDark ? '#1f2937' : '#f3f4f6' },
+  cancelled:   { label: '취소',   color: isDark ? '#6b7280' : '#9ca3af', bg: isDark ? '#1f2937' : '#f3f4f6' },
+});
 
 export default function MeetingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  const STATUS_META = useMemo(() => statusMeta(isDark), [isDark]);
   const currentUser = useAuthStore((s) => s.user);
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,7 +169,7 @@ export default function MeetingDetailScreen() {
 
         {/* 정보 박스 */}
         <View style={styles.infoCard}>
-          <InfoRow icon="👤" label="주최자" value={meeting.host.name} sub={meeting.host.position} />
+          <InfoRow icon="👤" label="주최자" value={meeting.host.name} sub={meeting.host.position} styles={styles} />
           <View style={styles.separator} />
           <InfoRow
             icon="📅"
@@ -174,6 +178,7 @@ export default function MeetingDetailScreen() {
               year: 'numeric', month: 'long', day: 'numeric',
               hour: '2-digit', minute: '2-digit', weekday: 'short',
             })}
+            styles={styles}
           />
           {startedAt && (
             <>
@@ -182,6 +187,7 @@ export default function MeetingDetailScreen() {
                 icon="🟢"
                 label="시작됨"
                 value={startedAt.toLocaleString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                styles={styles}
               />
             </>
           )}
@@ -192,11 +198,12 @@ export default function MeetingDetailScreen() {
                 icon="🔴"
                 label="종료됨"
                 value={endedAt.toLocaleString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                styles={styles}
               />
             </>
           )}
           <View style={styles.separator} />
-          <InfoRow icon="👥" label="최대 인원" value={`${meeting.maxParticipants}명`} />
+          <InfoRow icon="👥" label="최대 인원" value={`${meeting.maxParticipants}명`} styles={styles} />
         </View>
 
         {/* 참가자 */}
@@ -208,7 +215,7 @@ export default function MeetingDetailScreen() {
             <Text style={styles.emptyText}>아직 참여한 사람이 없습니다</Text>
           ) : (
             meeting.participants.map((p) => (
-              <ParticipantRow key={p.userId} p={p} isHost={p.userId === meeting.hostId} />
+              <ParticipantRow key={p.userId} p={p} isHost={p.userId === meeting.hostId} styles={styles} />
             ))
           )}
         </View>
@@ -222,7 +229,7 @@ export default function MeetingDetailScreen() {
               <Text style={styles.secondaryBtnText}>회의 취소</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.primaryBtn} onPress={handleStart} disabled={actionLoading}>
-              {actionLoading ? <ActivityIndicator color={COLORS.white} /> : (
+              {actionLoading ? <ActivityIndicator color="#ffffff" /> : (
                 <Text style={styles.primaryBtnText}>▶  회의 시작</Text>
               )}
             </TouchableOpacity>
@@ -263,7 +270,7 @@ export default function MeetingDetailScreen() {
 }
 
 /* ───────── 서브 컴포넌트 ───────── */
-function InfoRow({ icon, label, value, sub }: { icon: string; label: string; value: string; sub?: string | null }) {
+function InfoRow({ icon, label, value, sub, styles }: { icon: string; label: string; value: string; sub?: string | null; styles: any }) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoIcon}>{icon}</Text>
@@ -276,12 +283,12 @@ function InfoRow({ icon, label, value, sub }: { icon: string; label: string; val
   );
 }
 
-function ParticipantRow({ p, isHost }: { p: Participant; isHost: boolean }) {
+function ParticipantRow({ p, isHost, styles }: { p: Participant; isHost: boolean; styles: any }) {
   const initial = (p.user.name?.[0] || '?').toUpperCase();
   const isActive = !p.leftAt;
   return (
     <View style={styles.participantRow}>
-      <View style={[styles.avatar, { backgroundColor: isHost ? COLORS.primary[500] : COLORS.gray[300] }]}>
+      <View style={[styles.avatar, { backgroundColor: isHost ? COLORS.primary[500] : COLORS.gray[400] }]}>
         <Text style={styles.avatarText}>{initial}</Text>
       </View>
       <View style={{ flex: 1 }}>
@@ -305,61 +312,67 @@ function ParticipantRow({ p, isHost }: { p: Participant; isHost: boolean }) {
 }
 
 /* ───────── 스타일 ───────── */
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: c.bg },
   scrollContent: { padding: 16, paddingBottom: 120 },
 
   heroSection: { marginBottom: 20 },
   badge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginBottom: 10 },
   pulseDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#dc2626' },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  title: { fontSize: 22, fontWeight: '700', color: COLORS.gray[800], marginBottom: 6 },
-  description: { fontSize: 14, color: COLORS.gray[600], lineHeight: 20, marginBottom: 8 },
-  roomCode: { fontSize: 12, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  title: { fontSize: 22, fontWeight: '700', color: c.text, marginBottom: 6 },
+  description: { fontSize: 14, color: c.textMuted, lineHeight: 20, marginBottom: 8 },
+  roomCode: { fontSize: 12, color: c.textSubtle, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
 
   infoCard: {
-    backgroundColor: COLORS.white, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1,
+    backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0 : 0.03, shadowRadius: 6,
+    elevation: isDark ? 0 : 1,
+    borderWidth: isDark ? 1 : 0, borderColor: c.border,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   infoIcon: { fontSize: 20, width: 26, textAlign: 'center' },
-  infoLabel: { fontSize: 11, color: COLORS.gray[400], marginBottom: 2, fontWeight: '600' },
-  infoValue: { fontSize: 14, color: COLORS.gray[800] },
-  infoSub: { fontSize: 12, color: COLORS.gray[500], marginTop: 2 },
-  separator: { height: 1, backgroundColor: COLORS.gray[100] },
+  infoLabel: { fontSize: 11, color: c.textSubtle, marginBottom: 2, fontWeight: '600' },
+  infoValue: { fontSize: 14, color: c.text },
+  infoSub: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+  separator: { height: 1, backgroundColor: c.divider },
 
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: COLORS.gray[700], marginTop: 24, marginBottom: 10, paddingLeft: 4 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: c.text, marginTop: 24, marginBottom: 10, paddingLeft: 4 },
   participantsCard: {
-    backgroundColor: COLORS.white, borderRadius: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1,
+    backgroundColor: c.surface, borderRadius: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0 : 0.03, shadowRadius: 6,
+    elevation: isDark ? 0 : 1,
+    borderWidth: isDark ? 1 : 0, borderColor: c.border,
   },
-  emptyText: { textAlign: 'center', color: COLORS.gray[400], padding: 24, fontSize: 13 },
+  emptyText: { textAlign: 'center', color: c.textSubtle, padding: 24, fontSize: 13 },
   participantRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.gray[100],
+    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.divider,
   },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
-  participantName: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
-  hostTag: { fontSize: 10, fontWeight: '700', color: COLORS.primary[600], backgroundColor: COLORS.primary[50], paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  participantSub: { fontSize: 11, color: COLORS.gray[500], marginTop: 2 },
-  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  avatarText: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  participantName: { fontSize: 14, fontWeight: '600', color: c.text },
+  hostTag: { fontSize: 10, fontWeight: '700', color: COLORS.primary[600], backgroundColor: isDark ? '#1a3328' : COLORS.primary[50], paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  participantSub: { fontSize: 11, color: c.textMuted, marginTop: 2 },
+  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: isDark ? '#3a3215' : '#fef3c7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#16a34a' },
   liveText: { fontSize: 11, fontWeight: '600', color: '#16a34a' },
-  leftText: { fontSize: 11, color: COLORS.gray[400] },
+  leftText: { fontSize: 11, color: c.textSubtle },
 
   /* CTA */
   ctaBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', gap: 10, padding: 16, paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-    backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.gray[100],
+    backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.divider,
   },
   primaryBtn: { flex: 1, backgroundColor: COLORS.primary[500], borderRadius: 12, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnDisabled: { backgroundColor: COLORS.gray[300] },
-  primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
-  secondaryBtn: { flex: 1, backgroundColor: COLORS.gray[100], borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  secondaryBtnText: { color: COLORS.gray[700], fontSize: 15, fontWeight: '600' },
-  dangerBtn: { backgroundColor: '#fee2e2', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
+  primaryBtnDisabled: { backgroundColor: c.border },
+  primaryBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  secondaryBtn: { flex: 1, backgroundColor: c.surfaceAlt, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  secondaryBtnText: { color: c.text, fontSize: 15, fontWeight: '600' },
+  dangerBtn: { backgroundColor: isDark ? '#3a1a1a' : '#fee2e2', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
   dangerBtnText: { color: '#dc2626', fontSize: 15, fontWeight: '700' },
 });

@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, Modal, TextInput, Alert, Platform,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { COLORS } from '../../src/constants/theme';
+import { COLORS, type SemanticColors } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { api } from '../../src/services/api';
 
 type Status = 'scheduled' | 'in_progress' | 'ended' | 'cancelled';
@@ -23,15 +24,20 @@ interface Meeting {
   participants?: Array<{ userId: string; joinedAt?: string; leftAt?: string }>;
 }
 
-const STATUS_META: Record<Status, { label: string; color: string; bg: string }> = {
-  scheduled:   { label: '예정',   color: '#2563eb', bg: '#dbeafe' },
-  in_progress: { label: '진행중', color: '#dc2626', bg: '#fee2e2' },
-  ended:       { label: '종료',   color: '#6b7280', bg: '#f3f4f6' },
-  cancelled:   { label: '취소',   color: '#9ca3af', bg: '#f3f4f6' },
-};
+// 상태별 색상은 light/dark 양쪽에서 적당히 보이도록 라이트 다크 양쪽을 분기
+const statusMeta = (isDark: boolean): Record<Status, { label: string; color: string; bg: string }> => ({
+  scheduled:   { label: '예정',   color: isDark ? '#60a5fa' : '#2563eb', bg: isDark ? '#1e3a5f' : '#dbeafe' },
+  in_progress: { label: '진행중', color: isDark ? '#f87171' : '#dc2626', bg: isDark ? '#3a1a1a' : '#fee2e2' },
+  ended:       { label: '종료',   color: isDark ? '#9ca3af' : '#6b7280', bg: isDark ? '#1f2937' : '#f3f4f6' },
+  cancelled:   { label: '취소',   color: isDark ? '#6b7280' : '#9ca3af', bg: isDark ? '#1f2937' : '#f3f4f6' },
+});
 
 export default function MeetingListScreen() {
   const router = useRouter();
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  const STATUS_META = useMemo(() => statusMeta(isDark), [isDark]);
+
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +68,7 @@ export default function MeetingListScreen() {
       <Stack.Screen
         options={{
           title: '화상회의',
-          headerStyle: { backgroundColor: COLORS.white },
+          headerStyle: { backgroundColor: c.surface },
           headerShadowVisible: false,
         }}
       />
@@ -83,7 +89,7 @@ export default function MeetingListScreen() {
               <Text style={[styles.chipText, active && styles.chipTextActive]}>
                 {labelMap[f]}
                 {f === 'in_progress' && inProgressCount > 0 && (
-                  <Text style={{ color: active ? COLORS.white : '#dc2626' }}> · {inProgressCount}</Text>
+                  <Text style={{ color: active ? '#ffffff' : '#dc2626' }}> · {inProgressCount}</Text>
                 )}
               </Text>
             </TouchableOpacity>
@@ -111,7 +117,14 @@ export default function MeetingListScreen() {
               </Text>
             </View>
           )}
-          renderItem={({ item }) => <MeetingCard meeting={item} onPress={() => router.push(`/meeting/${item.id}` as any)} />}
+          renderItem={({ item }) => (
+            <MeetingCard
+              meeting={item}
+              meta={STATUS_META[item.status]}
+              styles={styles}
+              onPress={() => router.push(`/meeting/${item.id}` as any)}
+            />
+          )}
         />
       )}
 
@@ -123,6 +136,8 @@ export default function MeetingListScreen() {
       {/* 생성 모달 */}
       <CreateMeetingModal
         visible={showCreate}
+        styles={styles}
+        c={c}
         onClose={() => setShowCreate(false)}
         onCreated={(m) => {
           setShowCreate(false);
@@ -135,8 +150,14 @@ export default function MeetingListScreen() {
 }
 
 /* ───────── 회의 카드 ───────── */
-function MeetingCard({ meeting, onPress }: { meeting: Meeting; onPress: () => void }) {
-  const meta = STATUS_META[meeting.status];
+function MeetingCard({
+  meeting, meta, styles, onPress,
+}: {
+  meeting: Meeting;
+  meta: { label: string; color: string; bg: string };
+  styles: any;
+  onPress: () => void;
+}) {
   const when = new Date(meeting.scheduledAt);
   const dateStr = when.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   const timeStr = when.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -179,11 +200,13 @@ function MeetingCard({ meeting, onPress }: { meeting: Meeting; onPress: () => vo
 
 /* ───────── 회의 생성 모달 ───────── */
 function CreateMeetingModal({
-  visible, onClose, onCreated,
+  visible, onClose, onCreated, styles, c,
 }: {
   visible: boolean;
   onClose: () => void;
   onCreated: (m: Meeting) => void;
+  styles: any;
+  c: SemanticColors;
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -219,7 +242,7 @@ function CreateMeetingModal({
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>새 회의</Text>
-            <TouchableOpacity onPress={onClose}><Text style={{ fontSize: 22, color: COLORS.gray[400] }}>×</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose}><Text style={{ fontSize: 22, color: c.textSubtle }}>×</Text></TouchableOpacity>
           </View>
 
           <View style={styles.modalBody}>
@@ -228,6 +251,7 @@ function CreateMeetingModal({
               value={title}
               onChangeText={setTitle}
               placeholder="예: 주간 전체 회의"
+              placeholderTextColor={c.placeholder}
               style={styles.input}
               maxLength={100}
             />
@@ -237,6 +261,7 @@ function CreateMeetingModal({
               value={description}
               onChangeText={setDescription}
               placeholder="회의 내용 간단히"
+              placeholderTextColor={c.placeholder}
               style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
               multiline
               maxLength={500}
@@ -247,6 +272,7 @@ function CreateMeetingModal({
               value={maxParticipants}
               onChangeText={(v) => setMaxParticipants(v.replace(/[^0-9]/g, '').slice(0, 2))}
               keyboardType="number-pad"
+              placeholderTextColor={c.placeholder}
               style={styles.input}
             />
 
@@ -256,7 +282,7 @@ function CreateMeetingModal({
               style={[styles.submitBtn, (submitting || !title.trim()) && styles.submitBtnDisabled]}
             >
               {submitting ? (
-                <ActivityIndicator color={COLORS.white} />
+                <ActivityIndicator color="#ffffff" />
               ) : (
                 <Text style={styles.submitBtnText}>회의 만들기</Text>
               )}
@@ -269,32 +295,34 @@ function CreateMeetingModal({
 }
 
 /* ───────── 스타일 ───────── */
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   filterRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.gray[100],
+    backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.divider,
   },
   chip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: COLORS.gray[100],
+    backgroundColor: c.surfaceAlt,
   },
   chipActive: { backgroundColor: COLORS.primary[500] },
-  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.gray[600] },
-  chipTextActive: { color: COLORS.white },
+  chipText: { fontSize: 13, fontWeight: '600', color: c.textMuted },
+  chipTextActive: { color: '#ffffff' },
 
   listContent: { padding: 16, paddingBottom: 100 },
   empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
   emptyEmoji: { fontSize: 52, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[700] },
-  emptySub: { fontSize: 13, color: COLORS.gray[400], marginTop: 4 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: c.text },
+  emptySub: { fontSize: 13, color: c.textSubtle, marginTop: 4 },
 
   card: {
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: c.surface, borderRadius: 16, padding: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 8,
+    elevation: isDark ? 0 : 2,
+    borderWidth: isDark ? 1 : 0, borderColor: c.border,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   badge: {
@@ -303,14 +331,14 @@ const styles = StyleSheet.create({
   },
   pulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#dc2626' },
   badgeText: { fontSize: 11, fontWeight: '700' },
-  roomCode: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  roomCode: { fontSize: 11, color: c.textSubtle, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
 
-  cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.gray[800], marginBottom: 4 },
-  cardDesc: { fontSize: 13, color: COLORS.gray[500], marginBottom: 10, lineHeight: 18 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 4 },
+  cardDesc: { fontSize: 13, color: c.textMuted, marginBottom: 10, lineHeight: 18 },
   cardMeta: { gap: 6, marginTop: 4 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metaIcon: { fontSize: 12 },
-  metaText: { fontSize: 12, color: COLORS.gray[600] },
+  metaText: { fontSize: 12, color: c.textMuted },
 
   fab: {
     position: 'absolute', bottom: 24, right: 20,
@@ -320,27 +348,27 @@ const styles = StyleSheet.create({
     shadowColor: COLORS.primary[500], shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
-  fabText: { fontSize: 28, color: COLORS.white, fontWeight: '300', marginTop: -2 },
+  fabText: { fontSize: 28, color: '#ffffff', fontWeight: '300', marginTop: -2 },
 
   /* 모달 */
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalContainer: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 24 },
+  modalOverlay: { flex: 1, backgroundColor: c.scrim, justifyContent: 'flex-end' },
+  modalContainer: { backgroundColor: c.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 24 },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.gray[100],
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.divider,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.gray[800] },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: c.text },
   modalBody: { paddingHorizontal: 20, paddingTop: 16 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: COLORS.gray[700], marginBottom: 6, marginTop: 12 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: c.textMuted, marginBottom: 6, marginTop: 12 },
   input: {
-    borderWidth: 1, borderColor: COLORS.gray[200], borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.gray[800],
-    backgroundColor: COLORS.gray[50],
+    borderWidth: 1, borderColor: c.border, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: c.text,
+    backgroundColor: c.surfaceAlt,
   },
   submitBtn: {
     marginTop: 20, backgroundColor: COLORS.primary[500],
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
   },
-  submitBtnDisabled: { backgroundColor: COLORS.gray[300] },
-  submitBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
+  submitBtnDisabled: { backgroundColor: c.border },
+  submitBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
 });

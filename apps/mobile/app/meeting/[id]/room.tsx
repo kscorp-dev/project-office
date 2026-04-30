@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Constants from 'expo-constants';
 import { COLORS } from '../../../src/constants/theme';
+import { useTheme } from '../../../src/hooks/useTheme';
 import { api } from '../../../src/services/api';
 import { useAuthStore } from '../../../src/store/auth';
 
@@ -477,6 +478,7 @@ function ChatBottomSheet({
   onSend: () => void;
 }) {
   const listRef = useRef<FlatList>(null);
+  const { c, isDark } = useTheme();
   useEffect(() => {
     if (visible && messages.length > 0) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
@@ -489,14 +491,14 @@ function ChatBottomSheet({
         <TouchableOpacity style={styles.chatBackdrop} onPress={onClose} activeOpacity={1} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.chatContainer}
+          style={[styles.chatContainer, { backgroundColor: c.surface }]}
         >
-          <View style={styles.chatHeader}>
-            <View style={styles.chatHandle} />
+          <View style={[styles.chatHeader, { borderBottomColor: c.divider }]}>
+            <View style={[styles.chatHandle, { backgroundColor: c.border }]} />
             <View style={styles.chatHeaderRow}>
-              <Text style={styles.chatTitle}>채팅 ({messages.length})</Text>
+              <Text style={[styles.chatTitle, { color: c.text }]}>채팅 ({messages.length})</Text>
               <TouchableOpacity onPress={onClose}>
-                <Text style={{ fontSize: 22, color: COLORS.gray[400] }}>×</Text>
+                <Text style={{ fontSize: 22, color: c.textSubtle }}>×</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -510,28 +512,40 @@ function ChatBottomSheet({
             ListEmptyComponent={() => (
               <View style={{ alignItems: 'center', paddingVertical: 40 }}>
                 <Text style={{ fontSize: 40, marginBottom: 8 }}>💬</Text>
-                <Text style={{ color: COLORS.gray[400] }}>아직 메시지가 없습니다</Text>
+                <Text style={{ color: c.textSubtle }}>아직 메시지가 없습니다</Text>
               </View>
             )}
             renderItem={({ item }) => (
               <View style={[styles.msgRow, item.isLocal && styles.msgRowMine]}>
-                {!item.isLocal && <Text style={styles.msgName}>{item.name}</Text>}
-                <View style={[styles.msgBubble, item.isLocal ? styles.msgBubbleMine : styles.msgBubbleOther]}>
-                  <Text style={[styles.msgText, item.isLocal && { color: COLORS.white }]}>{item.message}</Text>
+                {!item.isLocal && <Text style={[styles.msgName, { color: c.textMuted }]}>{item.name}</Text>}
+                <View style={[
+                  styles.msgBubble,
+                  item.isLocal ? styles.msgBubbleMine : { backgroundColor: c.surfaceAlt, borderBottomLeftRadius: 4 },
+                ]}>
+                  <Text style={[
+                    styles.msgText,
+                    item.isLocal ? { color: '#ffffff' } : { color: c.text },
+                  ]}>{item.message}</Text>
                 </View>
-                <Text style={styles.msgTime}>
+                <Text style={[styles.msgTime, { color: c.textSubtle }]}>
                   {new Date(item.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </View>
             )}
           />
 
-          <View style={styles.chatInputRow}>
+          <View style={[styles.chatInputRow, { borderTopColor: c.divider }]}>
             <TextInput
               value={input}
               onChangeText={onInputChange}
               placeholder="메시지 입력..."
-              style={styles.chatInput}
+              placeholderTextColor={c.placeholder}
+              style={[styles.chatInput, {
+                backgroundColor: c.surfaceAlt,
+                color: c.text,
+                borderWidth: isDark ? 1 : 0,
+                borderColor: c.border,
+              }]}
               multiline
               maxLength={500}
               onSubmitEditing={onSend}
