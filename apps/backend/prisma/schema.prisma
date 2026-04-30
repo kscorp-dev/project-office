@@ -1416,6 +1416,8 @@ enum AuditAction {
   approval_withdraw
   approval_attachment_upload
   approval_attachment_delete
+  delegation_create
+  delegation_cancel
 }
 
 enum RiskLevel {

@@ -23,6 +23,7 @@ const listUsersQuery = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
 });
 
+/** 명시적 화이트리스트 — strict 모드로 unknown 필드(employeeId/password/loginFailCount 등) 거부 (audit 10B H3) */
 const updateUserSchema = z.object({
   name: z.string().min(2).max(50).optional(),
   email: z.string().email().optional(),
@@ -31,7 +32,7 @@ const updateUserSchema = z.object({
   departmentId: z.string().uuid().nullable().optional(),
   role: z.enum(['super_admin', 'admin', 'dept_admin', 'user', 'guest']).optional(),
   status: z.enum(['active', 'inactive', 'locked', 'pending']).optional(),
-});
+}).strict();
 
 // GET /users - 사용자 목록
 router.get('/', authenticate, validateQuery(listUsersQuery), async (req: Request, res: Response) => {

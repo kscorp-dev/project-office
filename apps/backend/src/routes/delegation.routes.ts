@@ -19,6 +19,7 @@ import {
 } from '../services/delegation.service';
 import { logger } from '../config/logger';
 import { AppError } from '../services/auth.service';
+import { createAuditLog } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -56,6 +57,11 @@ router.post('/', validate(createSchema), async (req: Request, res: Response) => 
       endDate: new Date(req.body.endDate),
       reason: req.body.reason,
     });
+    // audit log (10B H2) — 본인 결재 권한을 타인에게 양도하는 sensitive 작업
+    await createAuditLog({
+      req, action: 'delegation_create', resourceType: 'approval_delegation',
+      resourceId: dlg.id, riskLevel: 'medium',
+    });
     res.status(201).json({ success: true, data: dlg });
   } catch (err) {
     if (err instanceof AppError) {
@@ -72,6 +78,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const isAdmin = ['admin', 'super_admin'].includes(req.user!.role);
     await cancelDelegation(String(req.params.id), req.user!.id, isAdmin);
+    await createAuditLog({
+      req, action: 'delegation_cancel', resourceType: 'approval_delegation',
+      resourceId: String(req.params.id), riskLevel: 'medium',
+    });
     res.json({ success: true });
   } catch (err) {
     if (err instanceof AppError) {

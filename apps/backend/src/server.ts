@@ -53,6 +53,9 @@ const io = new SocketIOServer(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
+  // payload 크기 제한 (audit 10B C2) — 거대 메시지/메타데이터 인서트 차단
+  // 일반 채팅: 5KB / 회의 transcript: 64KB / 첨부 메타: 16KB → 256KB 한도면 충분
+  maxHttpBufferSize: 256_000,
 });
 
 // Trust proxy (behind Nginx reverse proxy)
@@ -106,7 +109,11 @@ app.use(rateLimit({
 
 // Body Parser
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// urlencoded 는 form 제출 거의 안 쓰지만 보안상 best-practice 설정 (audit 10B H4)
+//   extended: false — qs 파서 대신 querystring 사용 (parameter pollution / prototype pollution 차단)
+//   parameterLimit: 100 — Hash collision DoS 방지
+//   limit: '1mb' — 폼 본문 충분 (대용량은 multipart 사용)
+app.use(express.urlencoded({ extended: false, parameterLimit: 100, limit: '1mb' }));
 
 // Static file serving (uploads) — 인증 필수 (audit 7차 C1)
 //   과거 무인증 노출이라 첨부 파일 IDOR 취약점이었음. 인증된 사용자만 접근 가능.

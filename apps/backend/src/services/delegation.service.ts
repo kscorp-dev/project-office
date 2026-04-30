@@ -50,6 +50,23 @@ export async function createDelegation(input: CreateDelegationInput) {
     throw new AppError(400, 'TARGET_INACTIVE', '비활성 사용자에게는 위임할 수 없습니다');
   }
 
+  // 위임 cycle 검사 (audit 10B H2) — A→B 가 있을 때 B→A 위임 시 무한 우회 가능
+  //   본인이 받은 활성 위임의 fromUser 가 새 toUser 와 같으면 cycle (역방향)
+  //   현재는 단순 1-hop 검사로 충분 (실제 결재 시 canActOnLine 도 1-hop)
+  const reverseChain = await prisma.approvalDelegation.findFirst({
+    where: {
+      fromUserId: input.toUserId,   // 새 toUser 가 누군가에게 위임 만든 적
+      toUserId: input.fromUserId,   // 그게 본인이면 cycle
+      isActive: true,
+      startDate: { lte: input.endDate },
+      endDate: { gte: input.startDate },
+    },
+  });
+  if (reverseChain) {
+    throw new AppError(409, 'CIRCULAR_DELEGATION',
+      '상대가 본인에게 이미 위임을 만들었습니다 (위임 순환)');
+  }
+
   // 동시 생성 race 방지 (audit H3) — advisory lock + 트랜잭션 안에서 검사 → 생성
   //   같은 from-to 동시 두 요청이 둘 다 overlap 검사 통과해서 둘 다 create 되는 케이스 차단
   return prisma.$transaction(async (tx) => {
