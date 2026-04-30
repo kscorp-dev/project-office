@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/prisma';
@@ -10,6 +11,15 @@ import { logger } from '../config/logger';
 import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
 import { pushHealthCheck, sendTestPush } from '../services/push.service';
+
+// 어드민 자가 푸시 테스트 — abuse 방지 (분당 5회, 운영자 1명에 충분)
+const pushTestLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  message: { success: false, error: { code: 'RATE_LIMITED', message: '테스트 푸시는 분당 5회만 가능합니다' } },
+  keyGenerator: (req) => `${req.user?.id ?? 'anon'}:push-test`,
+  skip: () => process.env.NODE_ENV === 'test',
+});
 
 const router = Router();
 
@@ -745,10 +755,11 @@ router.get('/push/health', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /admin/push/test - 본인 등록 디바이스로 테스트 푸시 발송
+// POST /admin/push/test - 본인 등록 디바이스로 테스트 푸시 발송 (분당 5회 rate limit)
 //   - 누구의 토큰도 노출하지 않으며 결과 카운트만 반환
 //   - 운영 환경에서 "푸시 진짜 가나?" 체크하는 가장 빠른 수단
-router.post('/push/test', async (req: Request, res: Response) => {
+//   - 어드민이 탈취당해도 본인/타인 단말 푸시 폭격 차단
+router.post('/push/test', pushTestLimiter, async (req: Request, res: Response) => {
   try {
     const result = await sendTestPush(req.user!.id);
     res.json({ success: true, data: result });

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
@@ -533,9 +534,20 @@ const addMembersSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1).max(50),
 });
 
+// 대량 초대 abuse 방지 — 사용자별 분당 5회 (방당 50명 × 5 = 분당 최대 250명 초대)
+// NODE_ENV=test 면 비활성화 (각 it() 사이 reset 없이 sequential 호출 시 false-positive)
+const memberAddLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  message: { success: false, error: { code: 'RATE_LIMITED', message: '멤버 초대는 분당 5회까지 가능합니다' } },
+  keyGenerator: (req) => `${req.user?.id ?? 'anon'}:room-member-add`,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
 router.post(
   '/rooms/:id/members',
   authenticate,
+  memberAddLimiter,
   validate(addMembersSchema),
   async (req: Request, res: Response) => {
     try {
