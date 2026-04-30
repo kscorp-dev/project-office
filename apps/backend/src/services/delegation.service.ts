@@ -12,6 +12,7 @@
  *   - 자기 자신에게 위임 불가 (fromUserId === toUserId 차단)
  *   - 결재 처리 시 권한 검증은 `canActOnLine()` 으로 단일화
  */
+import type { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { AppError } from './auth.service';
 
@@ -49,35 +50,41 @@ export async function createDelegation(input: CreateDelegationInput) {
     throw new AppError(400, 'TARGET_INACTIVE', '비활성 사용자에게는 위임할 수 없습니다');
   }
 
-  // 같은 from→to 활성 위임에 시간 겹침이 있으면 차단 (감사 로그 어지러움 방지)
-  // 겹침 조건: 새 [start, end] 와 기존 [s, e] 가 교차
-  //   기존.startDate <= 새.endDate AND 기존.endDate >= 새.startDate
-  const overlapping = await prisma.approvalDelegation.findFirst({
-    where: {
-      fromUserId: input.fromUserId,
-      toUserId: input.toUserId,
-      isActive: true,
-      startDate: { lte: input.endDate },
-      endDate: { gte: input.startDate },
-    },
-  });
-  if (overlapping) {
-    throw new AppError(409, 'DUPLICATE_DELEGATION',
-      '이미 같은 대상에게 겹치는 기간의 활성 위임이 존재합니다');
-  }
+  // 동시 생성 race 방지 (audit H3) — advisory lock + 트랜잭션 안에서 검사 → 생성
+  //   같은 from-to 동시 두 요청이 둘 다 overlap 검사 통과해서 둘 다 create 되는 케이스 차단
+  return prisma.$transaction(async (tx) => {
+    // (fromUserId, toUserId) 페어에 대한 트랜잭션 단위 직렬화
+    const lockKey = `${input.fromUserId}:${input.toUserId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-  return prisma.approvalDelegation.create({
-    data: {
-      fromUserId: input.fromUserId,
-      toUserId: input.toUserId,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      reason: input.reason,
-      isActive: true,
-    },
-    include: {
-      toUser: { select: { id: true, name: true, position: true, employeeId: true, department: { select: { name: true } } } },
-    },
+    // 같은 from→to 활성 위임에 시간 겹침이 있으면 차단
+    const overlapping = await tx.approvalDelegation.findFirst({
+      where: {
+        fromUserId: input.fromUserId,
+        toUserId: input.toUserId,
+        isActive: true,
+        startDate: { lte: input.endDate },
+        endDate: { gte: input.startDate },
+      },
+    });
+    if (overlapping) {
+      throw new AppError(409, 'DUPLICATE_DELEGATION',
+        '이미 같은 대상에게 겹치는 기간의 활성 위임이 존재합니다');
+    }
+
+    return tx.approvalDelegation.create({
+      data: {
+        fromUserId: input.fromUserId,
+        toUserId: input.toUserId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        reason: input.reason,
+        isActive: true,
+      },
+      include: {
+        toUser: { select: { id: true, name: true, position: true, employeeId: true, department: { select: { name: true } } } },
+      },
+    });
   });
 }
 
@@ -127,18 +134,22 @@ export async function cancelDelegation(delegationId: string, userId: string, isA
  * - 본인이 line.approverId 면 항상 가능
  * - 위임 받은 사용자(toUserId === userId)고 위임 활성 + 시간 내면 가능
  *
+ * @param tx 호출자가 트랜잭션 안에서 호출 시 tx 전달 — 위임 cancel 과의 race 방지
+ *           (audit H4). 미전달 시 전역 prisma 사용.
  * @returns 처리 권한이 있으면 actor 정보, 없으면 null
  */
 export async function canActOnLine(
   line: { approverId: string },
   actorUserId: string,
+  tx?: Prisma.TransactionClient,
 ): Promise<{ asOriginal: boolean; viaDelegation: boolean; delegationId: string | null }> {
   if (line.approverId === actorUserId) {
     return { asOriginal: true, viaDelegation: false, delegationId: null };
   }
-  // 위임 검색
+  // 위임 검색 — 트랜잭션이 주어지면 그 안에서 일관된 read 보장
+  const client = tx ?? prisma;
   const now = new Date();
-  const dlg = await prisma.approvalDelegation.findFirst({
+  const dlg = await client.approvalDelegation.findFirst({
     where: {
       fromUserId: line.approverId,
       toUserId: actorUserId,
