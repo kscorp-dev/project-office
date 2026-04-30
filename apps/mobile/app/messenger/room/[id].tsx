@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Image,
+  Modal,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,6 +67,9 @@ export default function MessengerRoomScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [typingUserIds, setTypingUserIds] = useState<Set<string>>(new Set());
   const [roomTitle, setRoomTitle] = useState<string>('대화');
+  const [roomType, setRoomType] = useState<string>('direct');
+  const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
+  const [showMembers, setShowMembers] = useState(false);
 
   const listRef = useRef<FlatList<Message>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,20 +94,23 @@ export default function MessengerRoomScreen() {
     }
   }, [roomId, markRoomRead, emit]);
 
-  // ── 방 정보 로드 (타이틀) ──
+  // ── 방 정보 로드 (타이틀 + 타입 + 방장) ──
   const loadRoom = useCallback(async () => {
     if (!roomId) return;
     try {
-      const res = await api.get('/messenger/rooms');
-      const room = (res.data?.data ?? []).find((r: any) => r.id === roomId);
+      // 정확한 멤버 정보를 위해 /rooms/:id 사용 (그룹 룸 멤버 모달도 이걸 호출)
+      const res = await api.get(`/messenger/rooms/${roomId}`);
+      const room = res.data?.data;
       if (room) {
+        setRoomType(room.type ?? 'direct');
+        setRoomCreatorId(room.creatorId ?? null);
         if (room.name) {
           setRoomTitle(room.name);
         } else if (room.type === 'direct') {
-          const other = room.participants.find((p: any) => p.userId !== currentUserId);
+          const other = (room.members ?? []).find((m: any) => m.userId !== currentUserId);
           setRoomTitle(other?.user?.name ?? '(상대방 없음)');
         } else {
-          setRoomTitle(`단체 (${room.participants?.length ?? 0})`);
+          setRoomTitle(`단체 (${room.members?.length ?? 0})`);
         }
       }
     } catch { /* ignore */ }
@@ -374,8 +381,28 @@ export default function MessengerRoomScreen() {
         options={{
           title: roomTitle,
           headerBackTitle: '뒤로',
+          // 그룹 룸에선 우측 상단에 멤버 아이콘 노출
+          headerRight: roomType === 'group' ? () => (
+            <TouchableOpacity onPress={() => setShowMembers(true)} style={{ paddingHorizontal: 6 }}>
+              <Text style={{ fontSize: 22 }}>👥</Text>
+            </TouchableOpacity>
+          ) : undefined,
         }}
       />
+
+      {/* 멤버 모달 */}
+      {showMembers && (
+        <RoomMembersModal
+          visible={showMembers}
+          roomId={roomId}
+          currentUserId={currentUserId ?? ''}
+          isCreator={!!currentUserId && roomCreatorId === currentUserId}
+          onClose={() => setShowMembers(false)}
+          onChanged={loadRoom}
+          c={c}
+          isDark={isDark}
+        />
+      )}
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -451,6 +478,268 @@ export default function MessengerRoomScreen() {
     </>
   );
 }
+
+// ─── 그룹 룸 멤버 관리 모달 ───
+
+interface MemberInfo {
+  userId: string;
+  joinedAt: string;
+  isCreator: boolean;
+  user: {
+    id: string; name: string; profileImage?: string | null; position?: string | null;
+    employeeId?: string | null;
+    department?: { name: string | null } | null;
+  };
+}
+
+interface UserBrief {
+  id: string;
+  name: string;
+  position?: string | null;
+  employeeId?: string | null;
+  department?: { name: string | null } | null;
+}
+
+function RoomMembersModal({
+  visible, roomId, currentUserId, isCreator, onClose, onChanged, c, isDark,
+}: {
+  visible: boolean;
+  roomId: string;
+  currentUserId: string;
+  isCreator: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+  c: SemanticColors;
+  isDark: boolean;
+}) {
+  const [members, setMembers] = useState<MemberInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<UserBrief[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!roomId) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/messenger/rooms/${roomId}`);
+      setMembers(res.data?.data?.members ?? []);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, [roomId]);
+
+  useEffect(() => { if (visible) load(); }, [visible, load]);
+
+  // 사용자 검색
+  useEffect(() => {
+    if (!showAdd || !search.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get(`/users?search=${encodeURIComponent(search.trim())}&limit=10`);
+        const list = res.data?.data?.users ?? res.data?.data ?? [];
+        const memberIds = new Set(members.map((m) => m.userId));
+        setSearchResults(
+          (Array.isArray(list) ? list : []).filter((u: UserBrief) => !memberIds.has(u.id)),
+        );
+      } catch { setSearchResults([]); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, showAdd, members]);
+
+  const handleAdd = async (user: UserBrief) => {
+    setAdding(true);
+    try {
+      await api.post(`/messenger/rooms/${roomId}/members`, { userIds: [user.id] });
+      setSearch('');
+      setSearchResults([]);
+      await load();
+      onChanged();
+    } catch (err: any) {
+      Alert.alert('실패', err?.response?.data?.error?.message ?? '멤버 추가 실패');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = (m: MemberInfo) => {
+    const isSelf = m.userId === currentUserId;
+    Alert.alert(
+      isSelf ? '대화방 나가기' : '멤버 내보내기',
+      isSelf ? '정말 이 대화방을 나가시겠습니까?' : `${m.user.name}님을 내보내시겠습니까?`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: isSelf ? '나가기' : '내보내기',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/messenger/rooms/${roomId}/members/${m.userId}`);
+              await load();
+              onChanged();
+              if (isSelf) onClose();
+            } catch (err: any) {
+              Alert.alert('실패', err?.response?.data?.error?.message ?? '실패');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={[modalStyles.overlay, { backgroundColor: c.scrim }]}>
+        <View style={[modalStyles.container, { backgroundColor: c.surface }]}>
+          <View style={[modalStyles.header, { borderBottomColor: c.divider }]}>
+            <Text style={[modalStyles.title, { color: c.text }]}>참가자 ({members.length})</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Text style={{ fontSize: 22, color: c.textSubtle }}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showAdd ? (
+            <View style={modalStyles.body}>
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="이름/사번으로 사용자 검색"
+                placeholderTextColor={c.placeholder}
+                style={{
+                  borderWidth: 1, borderColor: c.border, borderRadius: 10,
+                  padding: 12, fontSize: 14, color: c.text, backgroundColor: c.surfaceAlt,
+                }}
+              />
+              <FlatList
+                data={searchResults}
+                keyExtractor={(u) => u.id}
+                style={{ maxHeight: 360, marginTop: 12 }}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  search.trim() && searchResults.length === 0 ? (
+                    <Text style={{ textAlign: 'center', padding: 20, color: c.textSubtle }}>
+                      검색 결과가 없습니다
+                    </Text>
+                  ) : null
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => handleAdd(item)}
+                    disabled={adding}
+                    style={{
+                      padding: 12, borderRadius: 10, backgroundColor: c.surfaceAlt, marginTop: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: c.text }}>
+                      {item.name}
+                      {item.position ? <Text style={{ color: c.textSubtle }}> · {item.position}</Text> : null}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: c.textSubtle, marginTop: 2 }}>
+                      {item.employeeId ?? ''} {item.department?.name ? `· ${item.department.name}` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+              <TouchableOpacity
+                onPress={() => { setShowAdd(false); setSearch(''); setSearchResults([]); }}
+                style={{ marginTop: 16, padding: 12, alignItems: 'center' }}
+              >
+                <Text style={{ color: c.textMuted, fontSize: 13 }}>← 멤버 목록으로</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={modalStyles.body}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary[500]} />
+              ) : (
+                <FlatList
+                  data={members}
+                  keyExtractor={(m) => m.userId}
+                  style={{ maxHeight: 400 }}
+                  renderItem={({ item }) => {
+                    const isSelf = item.userId === currentUserId;
+                    const canRemove = isSelf || isCreator;
+                    return (
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center', padding: 12,
+                        borderBottomWidth: 1, borderBottomColor: c.divider, gap: 10,
+                      }}>
+                        <View style={{
+                          width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary[500],
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Text style={{ color: '#ffffff', fontWeight: '700' }}>
+                            {item.user.name?.[0] ?? '?'}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: c.text }}>
+                            {item.user.name}
+                            {item.isCreator && (
+                              <Text style={{ fontSize: 10, color: COLORS.primary[600], fontWeight: '700' }}> · 방장</Text>
+                            )}
+                            {isSelf && (
+                              <Text style={{ fontSize: 10, color: c.textSubtle }}> · 나</Text>
+                            )}
+                          </Text>
+                          {(item.user.position || item.user.department?.name) && (
+                            <Text style={{ fontSize: 11, color: c.textSubtle }}>
+                              {item.user.position ?? ''}
+                              {item.user.department?.name ? ` · ${item.user.department.name}` : ''}
+                            </Text>
+                          )}
+                        </View>
+                        {canRemove && !item.isCreator && (
+                          <TouchableOpacity
+                            onPress={() => handleRemove(item)}
+                            style={{
+                              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+                              backgroundColor: isDark ? '#3a1a1a' : '#fee2e2',
+                            }}
+                          >
+                            <Text style={{ color: '#dc2626', fontSize: 11, fontWeight: '600' }}>
+                              {isSelf ? '나가기' : '내보내기'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  }}
+                />
+              )}
+              <TouchableOpacity
+                onPress={() => setShowAdd(true)}
+                style={{
+                  marginTop: 16, padding: 14, borderRadius: 10,
+                  backgroundColor: COLORS.primary[500], alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700' }}>＋ 멤버 추가</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  container: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: Platform.OS === 'ios' ? 30 : 16, maxHeight: '80%' },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, borderBottomWidth: 1,
+  },
+  title: { fontSize: 17, fontWeight: '700' },
+  body: { padding: 16 },
+});
 
 // ─── utils ───
 

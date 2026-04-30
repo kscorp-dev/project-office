@@ -472,4 +472,252 @@ router.delete('/rooms/:roomId/messages/:msgId', authenticate, async (req: Reques
   }
 });
 
+// ===== 그룹 채팅 멤버 관리 (P1-C) =====
+
+// GET /messenger/rooms/:id - 채팅방 정보 + 멤버 (활성)
+router.get('/rooms/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const roomId = qs(req.params.id);
+    const room = await prisma.chatRoom.findUnique({
+      where: { id: roomId },
+      include: {
+        participants: {
+          where: { leftAt: null },
+          include: {
+            user: {
+              select: {
+                id: true, name: true, profileImage: true, position: true, employeeId: true,
+                department: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!room) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '채팅방을 찾을 수 없습니다' } });
+      return;
+    }
+    // 본인이 참가자인지 확인
+    const isMember = room.participants.some((p) => p.userId === req.user!.id);
+    if (!isMember && !['admin', 'super_admin'].includes(req.user!.role)) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '참가자만 정보를 볼 수 있습니다' } });
+      return;
+    }
+    res.json({
+      success: true,
+      data: {
+        id: room.id,
+        name: room.name,
+        type: room.type,
+        creatorId: room.creatorId,
+        isActive: room.isActive,
+        createdAt: room.createdAt,
+        members: room.participants.map((p) => ({
+          userId: p.userId,
+          joinedAt: p.joinedAt,
+          isCreator: p.userId === room.creatorId,
+          user: p.user,
+        })),
+      },
+    });
+  } catch (err) {
+    logger.warn({ err, path: req.path }, 'get room failed');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /messenger/rooms/:id/members - 그룹 채팅방에 멤버 추가
+const addMembersSchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1).max(50),
+});
+
+router.post(
+  '/rooms/:id/members',
+  authenticate,
+  validate(addMembersSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const roomId = qs(req.params.id);
+      const { userIds } = req.body as { userIds: string[] };
+
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: roomId },
+        include: { participants: true },
+      });
+      if (!room) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '채팅방을 찾을 수 없습니다' } });
+        return;
+      }
+      if (room.type !== 'group') {
+        res.status(400).json({ success: false, error: { code: 'NOT_GROUP', message: '1:1 채팅에는 멤버를 추가할 수 없습니다' } });
+        return;
+      }
+      // 권한: 활성 멤버만 추가 가능
+      const requester = room.participants.find((p) => p.userId === req.user!.id && !p.leftAt);
+      if (!requester) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '참가자만 멤버를 추가할 수 있습니다' } });
+        return;
+      }
+
+      // 이미 활성 멤버인 사용자 제외 — 떠난 사람(leftAt 존재)은 다시 합류 처리
+      const existingActiveIds = new Set(
+        room.participants.filter((p) => !p.leftAt).map((p) => p.userId),
+      );
+      const toAdd = userIds.filter((uid) => !existingActiveIds.has(uid));
+      const rejoinIds: string[] = [];
+      const newCreateIds: string[] = [];
+      for (const uid of toAdd) {
+        const existed = room.participants.find((p) => p.userId === uid);
+        if (existed) rejoinIds.push(uid);
+        else newCreateIds.push(uid);
+      }
+
+      // 활성 사용자만 추가 (검증)
+      if (newCreateIds.length > 0 || rejoinIds.length > 0) {
+        const targets = await prisma.user.findMany({
+          where: { id: { in: [...newCreateIds, ...rejoinIds] }, status: 'active' },
+          select: { id: true },
+        });
+        const validIds = new Set(targets.map((u) => u.id));
+        const invalid = [...newCreateIds, ...rejoinIds].filter((id) => !validIds.has(id));
+        if (invalid.length > 0) {
+          res.status(400).json({ success: false, error: { code: 'INVALID_USERS', message: '비활성 또는 존재하지 않는 사용자가 포함되어 있습니다' } });
+          return;
+        }
+      }
+
+      // 트랜잭션으로 추가
+      const adderName = (await prisma.user.findUnique({ where: { id: req.user!.id }, select: { name: true } }))?.name ?? '관리자';
+      await prisma.$transaction(async (tx) => {
+        if (newCreateIds.length > 0) {
+          await tx.chatParticipant.createMany({
+            data: newCreateIds.map((userId) => ({ roomId, userId })),
+            skipDuplicates: true,
+          });
+        }
+        if (rejoinIds.length > 0) {
+          // 떠났던 사람들 재합류 — leftAt=null 로 복원, joinedAt 새로
+          await tx.chatParticipant.updateMany({
+            where: { roomId, userId: { in: rejoinIds } },
+            data: { leftAt: null, joinedAt: new Date() },
+          });
+        }
+        // 시스템 메시지 작성 (그룹 룸 메시지 흐름에 자연스럽게 노출)
+        if (toAdd.length > 0) {
+          const targets = await tx.user.findMany({
+            where: { id: { in: toAdd } },
+            select: { name: true },
+          });
+          const names = targets.map((t) => t.name).join(', ');
+          await tx.message.create({
+            data: {
+              roomId,
+              senderId: req.user!.id,
+              type: 'system',
+              content: `${adderName}님이 ${names}님을 초대했습니다`,
+            },
+          });
+        }
+      });
+
+      // 실시간 룸 멤버 변경 알림
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const io = req.app.get('io') as any;
+      if (io) {
+        io.of('/messenger').to(roomId).emit('room:members:added', {
+          roomId, addedUserIds: toAdd, byUserId: req.user!.id,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { added: toAdd.length, alreadyMember: userIds.length - toAdd.length },
+      });
+    } catch (err) {
+      logger.warn({ err, path: req.path }, 'add members failed');
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
+// DELETE /messenger/rooms/:id/members/:userId - 멤버 제거 (방장 또는 본인 leave)
+router.delete(
+  '/rooms/:id/members/:userId',
+  authenticate,
+  async (req: Request, res: Response) => {
+    try {
+      const roomId = qs(req.params.id);
+      const targetUserId = qs(req.params.userId);
+
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: roomId },
+        include: { participants: { where: { leftAt: null } } },
+      });
+      if (!room) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '채팅방을 찾을 수 없습니다' } });
+        return;
+      }
+      if (room.type !== 'group') {
+        res.status(400).json({ success: false, error: { code: 'NOT_GROUP', message: '1:1 채팅에는 멤버 제거가 없습니다' } });
+        return;
+      }
+
+      const requester = room.participants.find((p) => p.userId === req.user!.id);
+      if (!requester) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '참가자만 가능합니다' } });
+        return;
+      }
+
+      const isSelf = targetUserId === req.user!.id;
+      const isCreator = room.creatorId === req.user!.id;
+      const isAdmin = ['admin', 'super_admin'].includes(req.user!.role);
+      // 방장 본인이 자신을 제거하려는 경우는 허용 (그룹 떠나기) — 마지막 멤버라면 룸 비활성화는 별도 처리
+      if (!isSelf && !isCreator && !isAdmin) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '방장만 다른 멤버를 제거할 수 있습니다' } });
+        return;
+      }
+
+      const targetParticipant = room.participants.find((p) => p.userId === targetUserId);
+      if (!targetParticipant) {
+        res.status(404).json({ success: false, error: { code: 'MEMBER_NOT_FOUND', message: '해당 멤버는 이미 떠났거나 참가자가 아닙니다' } });
+        return;
+      }
+
+      const targetName = (await prisma.user.findUnique({ where: { id: targetUserId }, select: { name: true } }))?.name ?? '?';
+      const actorName = (await prisma.user.findUnique({ where: { id: req.user!.id }, select: { name: true } }))?.name ?? '관리자';
+
+      await prisma.$transaction(async (tx) => {
+        await tx.chatParticipant.update({
+          where: { id: targetParticipant.id },
+          data: { leftAt: new Date() },
+        });
+        await tx.message.create({
+          data: {
+            roomId,
+            senderId: req.user!.id,
+            type: 'system',
+            content: isSelf
+              ? `${targetName}님이 나갔습니다`
+              : `${actorName}님이 ${targetName}님을 내보냈습니다`,
+          },
+        });
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const io = req.app.get('io') as any;
+      if (io) {
+        io.of('/messenger').to(roomId).emit('room:members:removed', {
+          roomId, removedUserId: targetUserId, byUserId: req.user!.id, isSelf,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      logger.warn({ err, path: req.path }, 'remove member failed');
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+    }
+  },
+);
+
 export default router;
