@@ -56,6 +56,7 @@ model User {
   // 전자결재
   draftedDocuments    ApprovalDocument[]   @relation("DraftedDocuments")
   approvalLines       ApprovalLine[]       @relation("ApprovalLines")
+  approvalLinesActedBy ApprovalLine[]      @relation("ApprovalLineActedBy")
   approvalReferences  ApprovalReference[]  @relation("ApprovalReferences")
   delegationsFrom     ApprovalDelegation[] @relation("DelegationsFrom")
   delegationsTo       ApprovalDelegation[] @relation("DelegationsTo")
@@ -300,21 +301,25 @@ model ApprovalDocument {
 }
 
 model ApprovalLine {
-  id         String             @id @default(uuid())
-  documentId String             @map("document_id")
-  approverId String             @map("approver_id")
-  step       Int                // 결재 순서
-  type       ApprovalLineType   @default(serial)
-  status     ApprovalLineStatus @default(pending)
-  comment    String?
-  actedAt    DateTime?          @map("acted_at")
-  createdAt  DateTime           @default(now()) @map("created_at")
+  id              String             @id @default(uuid())
+  documentId      String             @map("document_id")
+  approverId      String             @map("approver_id")
+  /// 위임으로 대신 처리한 사용자 ID — null 이면 본인이 직접 처리
+  actedByUserId   String?            @map("acted_by_user_id")
+  step            Int                // 결재 순서
+  type            ApprovalLineType   @default(serial)
+  status          ApprovalLineStatus @default(pending)
+  comment         String?
+  actedAt         DateTime?          @map("acted_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
 
-  document ApprovalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  approver User             @relation("ApprovalLines", fields: [approverId], references: [id])
+  document  ApprovalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  approver  User             @relation("ApprovalLines", fields: [approverId], references: [id])
+  actedBy   User?            @relation("ApprovalLineActedBy", fields: [actedByUserId], references: [id])
 
   @@index([documentId])
   @@index([approverId])
+  @@index([actedByUserId])
   @@index([status])
   @@map("approval_lines")
 }

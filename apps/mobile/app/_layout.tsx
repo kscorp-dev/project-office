@@ -79,6 +79,7 @@ export default function RootLayout() {
             <Stack.Screen name="task-orders/[id]" options={{ headerShown: true, ...headerOpts }} />
             <Stack.Screen name="notifications" options={{ headerShown: true, title: '알림', ...headerOpts }} />
             <Stack.Screen name="settings/calendar-sync" options={{ headerShown: true, title: '외부 캘린더 연동', ...headerOpts }} />
+            <Stack.Screen name="settings/delegation" options={{ headerShown: true, title: '결재 위임', ...headerOpts }} />
           </Stack>
         </PaperProvider>
       </SafeAreaProvider>

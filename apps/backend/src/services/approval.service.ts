@@ -5,6 +5,7 @@ import {
   applyVacationOnRejection,
 } from './vacation-approval.service';
 import { createNotification } from './notification.service';
+import { canActOnLine } from './delegation.service';
 
 interface CreateDocumentData {
   templateId: string;
@@ -191,16 +192,31 @@ export class ApprovalService {
       }
 
       const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
-      if (!currentLine || currentLine.approverId !== approverId) {
+      if (!currentLine) {
+        throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
+      }
+      // 본인 결재 또는 위임 받은 결재인지 확인
+      const auth = await canActOnLine(currentLine, approverId);
+      if (!auth.asOriginal && !auth.viaDelegation) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
 
       const isLastStep = doc.currentStep >= doc.lines.length;
+      // 위임 처리 시 코멘트 앞에 [대결] 표기 자동 추가 (감사 추적용)
+      const finalComment = auth.viaDelegation
+        ? `[대결] ${comment ?? ''}`.trim()
+        : comment;
 
       // 현재 결재선 승인 (pending 상태일 때만 — 중복 승인 차단)
+      // actedByUserId 기록 — 본인 직접 처리면 null, 위임이면 처리한 사용자
       const lineUpdate = await tx.approvalLine.updateMany({
         where: { id: currentLine.id, status: 'pending' },
-        data: { status: 'approved', comment, actedAt: new Date() },
+        data: {
+          status: 'approved',
+          comment: finalComment || null,
+          actedAt: new Date(),
+          actedByUserId: auth.viaDelegation ? approverId : null,
+        },
       });
       if (lineUpdate.count === 0) {
         throw new AppError(409, 'ALREADY_ACTED', '이미 처리된 결재입니다');
@@ -221,7 +237,8 @@ export class ApprovalService {
           include: { template: { select: { code: true } } },
         });
         if (fullDoc && fullDoc.template.code.toUpperCase() === 'VACATION') {
-          await applyVacationOnFinalApproval(tx, fullDoc, approverId);
+          // 휴가 후처리에는 원래 결재자(approverId) 기준 사용 — 위임이어도 라인의 approver 가 acting
+          await applyVacationOnFinalApproval(tx, fullDoc, currentLine.approverId);
         }
       } else {
         const docUpdate = await tx.approvalDocument.updateMany({
@@ -260,13 +277,23 @@ export class ApprovalService {
       }
 
       const currentLine = doc.lines.find((l) => l.step === doc.currentStep && l.status === 'pending');
-      if (!currentLine || currentLine.approverId !== approverId) {
+      if (!currentLine) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
+      const auth = await canActOnLine(currentLine, approverId);
+      if (!auth.asOriginal && !auth.viaDelegation) {
+        throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
+      }
+      const finalComment = auth.viaDelegation ? `[대결] ${comment}` : comment;
 
       const lineUpdate = await tx.approvalLine.updateMany({
         where: { id: currentLine.id, status: 'pending' },
-        data: { status: 'rejected', comment, actedAt: new Date() },
+        data: {
+          status: 'rejected',
+          comment: finalComment,
+          actedAt: new Date(),
+          actedByUserId: auth.viaDelegation ? approverId : null,
+        },
       });
       if (lineUpdate.count === 0) {
         throw new AppError(409, 'ALREADY_ACTED', '이미 처리된 결재입니다');

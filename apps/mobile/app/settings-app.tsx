@@ -17,6 +17,10 @@ export default function SettingsAppScreen() {
     <>
       <Stack.Screen options={{ title: '앱 설정' }} />
       <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+        <Section styles={styles} title="결재">
+          <Row styles={styles} label="결재 위임 (대결자 지정)" onPress={() => router.push('/settings/delegation' as any)} chevron />
+        </Section>
+
         <Section styles={styles} title="알림 & 동기화">
           <Row styles={styles} label="외부 캘린더 연동" onPress={() => router.push('/settings/calendar-sync')} chevron />
           <Row styles={styles} label="푸시 알림 설정" onPress={() => Alert.alert('준비 중', 'OS 설정 앱에서 알림을 관리해 주세요')} chevron />
