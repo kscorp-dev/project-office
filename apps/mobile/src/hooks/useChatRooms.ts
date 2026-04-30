@@ -73,40 +73,38 @@ function safeParse(s: string): Array<{ id: string; name: string }> {
 
 async function saveToCache(list: UiChatRoom[]) {
   const now = Date.now();
-  await db.transaction(async (tx) => {
-    // upsert
-    for (const r of list) {
-      await tx.insert(chatRooms).values({
-        id: r.id,
-        type: r.type,
-        name: r.name,
-        lastMessageAt: r.lastMessageAt,
-        lastMessagePreview: r.lastMessagePreview,
-        unreadCount: r.unreadCount,
-        participantsJson: JSON.stringify(r.participants),
-        syncedAt: now,
-      }).onConflictDoUpdate({
+  // drizzle expo-sqlite 의 transaction 은 sync API — async 콜백을 쓰면 BEGIN/COMMIT 가 콜백 완료 전에
+  // 닫혀버려서 inner inserts 가 트랜잭션 밖에서 실행됨. 단건 upsert 로 처리 (auto-commit).
+  for (const r of list) {
+    const data = {
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      lastMessageAt: r.lastMessageAt,
+      lastMessagePreview: r.lastMessagePreview,
+      unreadCount: r.unreadCount,
+      participantsJson: JSON.stringify(r.participants),
+      syncedAt: now,
+    };
+    try {
+      await db.insert(chatRooms).values(data).onConflictDoUpdate({
         target: chatRooms.id,
-        set: {
-          type: r.type,
-          name: r.name,
-          lastMessageAt: r.lastMessageAt,
-          lastMessagePreview: r.lastMessagePreview,
-          unreadCount: r.unreadCount,
-          participantsJson: JSON.stringify(r.participants),
-          syncedAt: now,
-        },
+        set: data,
       });
-    }
-    // 서버에 없는 로컬 방 제거 (isActive=false 처리된 방 등)
+    } catch { /* 단건 실패는 무시 */ }
+  }
+  // 서버에 없는 로컬 방 제거
+  try {
     const ids = list.map((r) => r.id);
-    const existing = await tx.select({ id: chatRooms.id }).from(chatRooms);
+    const existing = await db.select({ id: chatRooms.id }).from(chatRooms);
     const orphan = existing.map((e) => e.id).filter((id) => !ids.includes(id));
     if (orphan.length > 0) {
-      await tx.delete(chatRooms).where(inArray(chatRooms.id, orphan));
+      await db.delete(chatRooms).where(inArray(chatRooms.id, orphan));
     }
-    // sync meta
-    await tx.insert(syncMeta).values({
+  } catch { /* ignore */ }
+  // sync meta
+  try {
+    await db.insert(syncMeta).values({
       key: 'rooms',
       lastSyncedAt: now,
       errorCount: 0,
@@ -114,7 +112,7 @@ async function saveToCache(list: UiChatRoom[]) {
       target: syncMeta.key,
       set: { lastSyncedAt: now, errorCount: 0 },
     });
-  });
+  } catch { /* ignore */ }
 }
 
 export function useChatRooms() {

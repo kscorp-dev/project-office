@@ -81,9 +81,10 @@ async function loadFromCache(roomId: string, limit = 50): Promise<UiMessage[]> {
 
 async function upsertToCache(messages: UiMessage[]) {
   if (messages.length === 0) return;
-  await db.transaction(async (tx) => {
-    for (const m of messages) {
-      await tx
+  // drizzle expo-sqlite 의 transaction 은 sync API — async 콜백을 안 받으므로 단건 upsert.
+  for (const m of messages) {
+    try {
+      await db
         .insert(chatMessages)
         .values({
           id: m.id,
@@ -102,8 +103,8 @@ async function upsertToCache(messages: UiMessage[]) {
             attachmentUrl: m.attachmentUrl,
           },
         });
-    }
-  });
+    } catch { /* 단건 실패 무시 */ }
+  }
 }
 
 export function useMessagesCache(roomId: string | undefined) {

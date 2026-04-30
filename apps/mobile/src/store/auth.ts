@@ -68,11 +68,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
       });
       const { accessToken, refreshToken, user } = data.data;
+      const previousUserId = get().user?.id;
 
       // SecureStore 저장
       const SecureStore = require('expo-secure-store');
       await SecureStore.setItemAsync('accessToken', accessToken);
       await SecureStore.setItemAsync('refreshToken', refreshToken);
+
+      // 다른 계정으로 로그인 시 이전 사용자의 캐시 wipe (PII 보호)
+      if (previousUserId && previousUserId !== user.id) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { clearOfflineDb } = require('../offline-db');
+          await clearOfflineDb().catch(() => { /* ignore */ });
+        } catch { /* offline-db 미초기화 */ }
+      }
 
       set({ user, accessToken, refreshToken, isLoading: false });
     } catch (err: any) {
@@ -91,6 +101,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const SecureStore = require('expo-secure-store');
     SecureStore.deleteItemAsync('accessToken').catch(() => {});
     SecureStore.deleteItemAsync('refreshToken').catch(() => {});
+
+    // 보안 — 다음 사용자가 이전 사용자의 캐시(메시지/메일/캘린더 본문)를 보지 못하도록
+    // 로컬 SQLite 데이터 wipe. 실패해도 로그아웃 자체는 진행.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { clearOfflineDb } = require('../offline-db');
+      clearOfflineDb().catch(() => { /* ignore */ });
+    } catch { /* offline-db 미초기화 환경 */ }
 
     set({ user: null, accessToken: null, refreshToken: null });
   },

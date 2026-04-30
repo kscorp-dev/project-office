@@ -110,11 +110,11 @@ export default function CalendarScreen() {
       const list = (res.data?.data ?? []) as CalendarEvent[];
       setEvents(list);
 
-      // 3) 캐시 비동기 저장 (현재 범위만 갱신)
+      // 3) 캐시 비동기 저장 (단건 upsert — drizzle transaction 은 sync API 라 async 콜백이 안 됨)
       if (list.length > 0) {
-        db.transaction(async (tx) => {
+        (async () => {
           for (const ev of list) {
-            await tx.insert(calendarEvents).values({
+            const data = {
               id: ev.id,
               title: ev.title,
               startAt: new Date(ev.startDate).getTime(),
@@ -125,22 +125,15 @@ export default function CalendarScreen() {
               categoryName: ev.category?.name ?? null,
               creatorName: ev.creator?.name ?? null,
               syncedAt: Date.now(),
-            }).onConflictDoUpdate({
-              target: calendarEvents.id,
-              set: {
-                title: ev.title,
-                startAt: new Date(ev.startDate).getTime(),
-                endAt: new Date(ev.endDate).getTime(),
-                allDay: ev.allDay,
-                location: ev.location ?? null,
-                color: ev.color ?? null,
-                categoryName: ev.category?.name ?? null,
-                creatorName: ev.creator?.name ?? null,
-                syncedAt: Date.now(),
-              },
-            });
+            };
+            try {
+              await db.insert(calendarEvents).values(data).onConflictDoUpdate({
+                target: calendarEvents.id,
+                set: data,
+              });
+            } catch { /* 단건 실패 시 다음 건 진행 */ }
           }
-        }).catch(() => { /* ignore */ });
+        })();
       }
     } catch {
       // 서버 실패 → 캐시 데이터 유지 (이미 set 됨), events 비우지 않음

@@ -120,25 +120,28 @@ export default function MessengerRoomScreen() {
       markRoomRead(roomId);
       emit('message:read', { roomId });
 
-      // 3) 캐시 갱신 (비동기, UI 막지 않음)
+      // 3) 캐시 갱신 (UI 막지 않게 비동기) — drizzle expo-sqlite 의 transaction 은 sync API 라
+      //    async 콜백을 쓰면 BEGIN/COMMIT 가 콜백 완료 전에 닫혀버림. 그래서 메시지마다 단건 upsert.
       if (list.length > 0) {
-        db.transaction(async (tx) => {
+        (async () => {
           for (const m of list) {
-            await tx.insert(chatMessages).values({
-              id: m.id,
-              roomId,
-              senderId: m.senderId ?? null,
-              senderName: m.sender?.name ?? null,
-              type: m.type,
-              content: m.content ?? null,
-              attachmentUrl: (m as any).fileUrl ?? null,
-              createdAt: new Date(m.createdAt).getTime(),
-            }).onConflictDoUpdate({
-              target: chatMessages.id,
-              set: { content: m.content ?? null, attachmentUrl: (m as any).fileUrl ?? null },
-            });
+            try {
+              await db.insert(chatMessages).values({
+                id: m.id,
+                roomId,
+                senderId: m.senderId ?? null,
+                senderName: m.sender?.name ?? null,
+                type: m.type,
+                content: m.content ?? null,
+                attachmentUrl: (m as any).fileUrl ?? null,
+                createdAt: new Date(m.createdAt).getTime(),
+              }).onConflictDoUpdate({
+                target: chatMessages.id,
+                set: { content: m.content ?? null, attachmentUrl: (m as any).fileUrl ?? null },
+              });
+            } catch { /* 단건 실패 시 다음 건 진행 */ }
           }
-        }).catch(() => { /* 캐시 실패 무시 */ });
+        })();
       }
     } catch (err: any) {
       // 캐시가 있으면 조용히 폴백 (배너로만 알림), 없으면 alert

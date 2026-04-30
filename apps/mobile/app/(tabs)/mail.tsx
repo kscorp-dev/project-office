@@ -75,10 +75,11 @@ export default function MailScreen() {
       setAccountLinked(true);
 
       // 3) 검색 결과는 캐시 안 함 (정상 INBOX 만)
+      //    drizzle expo-sqlite transaction 이 sync API 라 async 콜백 우회 — 단건 upsert
       if (!opts.searchQuery && list.length > 0) {
-        db.transaction(async (tx) => {
+        (async () => {
           for (const m of list) {
-            await tx.insert(mailMessages).values({
+            const data = {
               uid: m.uid,
               folder: 'INBOX',
               subject: m.subject,
@@ -90,18 +91,15 @@ export default function MailScreen() {
               hasAttachment: m.hasAttachment,
               sentAt: m.sentAt ? new Date(m.sentAt).getTime() : null,
               syncedAt: Date.now(),
-            }).onConflictDoUpdate({
-              target: mailMessages.uid,
-              set: {
-                subject: m.subject, fromEmail: m.fromEmail, fromName: m.fromName,
-                snippet: m.snippet, isSeen: m.isSeen, isFlagged: m.isFlagged,
-                hasAttachment: m.hasAttachment,
-                sentAt: m.sentAt ? new Date(m.sentAt).getTime() : null,
-                syncedAt: Date.now(),
-              },
-            });
+            };
+            try {
+              await db.insert(mailMessages).values(data).onConflictDoUpdate({
+                target: mailMessages.uid,
+                set: data,
+              });
+            } catch { /* 단건 실패 시 다음 건 진행 */ }
           }
-        }).catch(() => { /* ignore */ });
+        })();
       }
     } catch (err: any) {
       const code = err.response?.data?.error?.code;
