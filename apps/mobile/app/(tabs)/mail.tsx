@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { router } from 'expo-router';
 import { COLORS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
@@ -147,6 +148,7 @@ export default function MailScreen() {
               key={mail.uid}
               style={[styles.mailRow, !mail.isSeen && styles.mailUnread]}
               activeOpacity={0.7}
+              onPress={() => router.push(`/mail/${mail.uid}` as any)}
             >
               <View style={styles.mailAvatar}>
                 <Text style={styles.mailAvatarText}>{senderName(mail)[0]?.toUpperCase()}</Text>
@@ -173,12 +175,30 @@ export default function MailScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* 새 메일 작성 FAB */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/mail/compose' as any)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabIcon}>✉️</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.bg },
+  fab: {
+    position: 'absolute', right: 20, bottom: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: COLORS.primary[500],
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: COLORS.primary[500], shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
+  },
+  fabIcon: { fontSize: 22 },
   searchWrap: { paddingHorizontal: 16, paddingVertical: 8 },
   searchInput: {
     backgroundColor: c.surfaceAlt, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
