@@ -10,7 +10,9 @@
         "simulator": false
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api",
+        "APP_ENV": "development",
+        "EXPO_PUBLIC_APS_ENV": "development"
       }
     },
     "development-simulator": {
@@ -19,18 +21,27 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://localhost:3000/api"
+        "EXPO_PUBLIC_API_URL": "http://localhost:3000/api",
+        "APP_ENV": "development",
+        "EXPO_PUBLIC_APS_ENV": "development"
       }
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api",
+        "APP_ENV": "preview",
+        "EXPO_PUBLIC_APS_ENV": "production"
       }
     },
     "production": {
+      "channel": "production",
+      "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api"
+        "EXPO_PUBLIC_API_URL": "https://43-200-29-148.sslip.io/api",
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_APS_ENV": "production"
       }
     }
   },
