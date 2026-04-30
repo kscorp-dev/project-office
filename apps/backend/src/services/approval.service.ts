@@ -61,6 +61,8 @@ export class ApprovalService {
 
     const docNumber = await this.generateDocNumber(template.code);
 
+    // 결재 문서 + 결재선 + 참조자 + (휴가 양식이면 vacation 까지) 트랜잭션
+    // default 5초가 짧을 수 있어 15초 + maxWait 5초 명시 (audit ops H3)
     const document = await prisma.$transaction(async (tx) => {
       const doc = await tx.approvalDocument.create({
         data: {
@@ -101,6 +103,9 @@ export class ApprovalService {
       }
 
       return doc;
+    }, {
+      timeout: 15_000, // 휴가 양식 등 부하 시 5초 초과 가능
+      maxWait: 5_000,
     });
 
     return this.getDocumentDetail(document.id);

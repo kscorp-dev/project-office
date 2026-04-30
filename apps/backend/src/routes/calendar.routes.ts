@@ -58,6 +58,7 @@ router.get('/events', authenticate, async (req: Request, res: Response) => {
         category: { select: { id: true, name: true, color: true } },
       },
       orderBy: { startDate: 'asc' },
+      take: 2000, // 한 번 query 에 안전 상한 — 큰 범위는 클라이언트가 분할 조회
     });
 
     res.json({ success: true, data: events });

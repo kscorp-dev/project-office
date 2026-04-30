@@ -1,0 +1,9 @@
+-- CCTV 감사 로그 enum 확장 (audit 10B H1)
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_create';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_update';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_delete';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_permission_grant';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_permission_revoke';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_ptz_command';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_stream_start';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'camera_stream_stop';

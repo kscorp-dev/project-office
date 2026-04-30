@@ -11,6 +11,7 @@ import { logger } from '../config/logger';
 import { qs } from '../utils/query';
 import { parsePagination, buildMeta } from '../utils/pagination';
 import { config } from '../config';
+import { createAuditLog } from '../middleware/auditLog';
 import {
   getCameraAccessLevel,
   listAllowedCameraIds,
@@ -48,8 +49,9 @@ async function buildAccessUser(req: Request): Promise<AccessUser> {
 router.get('/groups', authenticate, async (req, res: Response) => {
   try {
     const groups = await prisma.cameraGroup.findMany({
-      include: { cameras: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } },
+      include: { cameras: { where: { isActive: true }, orderBy: { sortOrder: 'asc' }, take: 500 } },
       orderBy: { sortOrder: 'asc' },
+      take: 200, // 회사 규모 1000개 카메라 그룹은 비현실적 — 안전 상한
     });
     res.json({ success: true, data: groups });
   } catch (err) {
@@ -103,6 +105,7 @@ router.get('/cameras', authenticate, async (req: Request, res: Response) => {
       where,
       include: { group: { select: { id: true, name: true } } },
       orderBy: { sortOrder: 'asc' },
+      take: 1000, // 사이트 규모 카메라 안전 상한
     });
     // ptzPassword는 응답에서 제거 (민감)
     const sanitized = cameras.map(({ ptzPassword, ...c }) => c);
@@ -143,6 +146,7 @@ router.post('/cameras', authenticate, authorize('super_admin', 'admin'), validat
     }
     const camera = await prisma.camera.create({ data });
     const { ptzPassword, ...sanitized } = camera;
+    await createAuditLog({ req, action: 'camera_create', resourceType: 'camera', resourceId: camera.id, riskLevel: 'medium' });
     res.status(201).json({ success: true, data: sanitized });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
@@ -160,6 +164,7 @@ router.patch('/cameras/:id', authenticate, authorize('super_admin', 'admin'), va
     }
     const camera = await prisma.camera.update({ where: { id: qs(req.params.id) }, data });
     const { ptzPassword, ...sanitized } = camera;
+    await createAuditLog({ req, action: 'camera_update', resourceType: 'camera', resourceId: camera.id, riskLevel: 'medium' });
     res.json({ success: true, data: sanitized });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
@@ -201,6 +206,7 @@ router.delete('/cameras/:id', authenticate, authorize('super_admin', 'admin'), a
     await prisma.camera.update({ where: { id: qs(req.params.id) }, data: { isActive: false } });
     // 스트리밍 중이면 중지
     await stopStream(qs(req.params.id));
+    await createAuditLog({ req, action: 'camera_delete', resourceType: 'camera', resourceId: qs(req.params.id), riskLevel: 'high' });
     res.json({ success: true, data: { message: '카메라가 비활성화되었습니다' } });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
@@ -311,6 +317,11 @@ router.post('/cameras/:id/ptz', authenticate, validate(ptzSchema), async (req: R
       res.status(400).json({ success: false, error: { code: 'PTZ_FAILED', message: result.message ?? 'PTZ 실패' } });
       return;
     }
+    await createAuditLog({
+      req, action: 'camera_ptz_command', resourceType: 'camera',
+      resourceId: camera.id, riskLevel: 'low',
+      details: { action: req.body.action, value: req.body.value },
+    });
     res.json({ success: true, data: { message: result.message ?? 'OK' } });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
@@ -364,6 +375,10 @@ router.post('/cameras/:id/stream/start', authenticate, async (req: Request, res:
       });
       return;
     }
+    await createAuditLog({
+      req, action: 'camera_stream_start', resourceType: 'camera',
+      resourceId: camera.id, riskLevel: 'low',
+    });
     res.json({
       success: true,
       data: {

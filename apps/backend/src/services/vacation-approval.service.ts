@@ -114,6 +114,27 @@ export async function createVacationWithApproval(
     throw new AppError(400, 'INVALID_RANGE', '종료일은 시작일 이후여야 합니다');
   }
 
+  // days 무결성 검증 (운영 audit) — 클라이언트가 days 부풀려 보내 잔여 부정 차단
+  //   범위: 1~31 일 한도 + start~end 일수와 ±1 이내 일치 (반차 0.5 허용)
+  if (input.days <= 0 || input.days > 31) {
+    throw new AppError(400, 'INVALID_DAYS', '휴가 일수는 1~31일이어야 합니다');
+  }
+  const calendarDays = Math.floor(
+    (input.endDate.getTime() - input.startDate.getTime()) / 86400000,
+  ) + 1;
+  // 반차(0.5) 는 같은 날짜
+  if (input.days === 0.5) {
+    if (calendarDays !== 1) {
+      throw new AppError(400, 'DAYS_MISMATCH', '반차는 시작일과 종료일이 같은 날이어야 합니다');
+    }
+  } else {
+    // 일반 휴가는 days <= calendarDays (주말/공휴일 제외 시 days < calendarDays 가능)
+    if (input.days > calendarDays) {
+      throw new AppError(400, 'DAYS_MISMATCH',
+        `${calendarDays}일 기간에 ${input.days}일 사용은 불가능합니다`);
+    }
+  }
+
   // 연차 유형이면 잔여일수 검증 (트랜잭션 밖에서 빠른 실패)
   const year = input.startDate.getFullYear();
   const isConsumingAnnual =

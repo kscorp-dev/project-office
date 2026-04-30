@@ -1418,6 +1418,15 @@ enum AuditAction {
   approval_attachment_delete
   delegation_create
   delegation_cancel
+  // CCTV (audit 10B H1)
+  camera_create
+  camera_update
+  camera_delete
+  camera_permission_grant
+  camera_permission_revoke
+  camera_ptz_command
+  camera_stream_start
+  camera_stream_stop
 }
 
 enum RiskLevel {

@@ -221,17 +221,51 @@ describe('Vacation ↔ Approval 통합', () => {
   });
 
   it('잔여 연차 부족 시 신청 거부 (INSUFFICIENT_BALANCE)', async () => {
+    // 잔여 연차 부족 — drafter 의 잔여를 0으로 set 후 1일 신청
+    await prisma.vacationBalance.upsert({
+      where: { userId_year: { userId: drafter.id, year: 2026 } },
+      update: { totalDays: 5, usedDays: 5, remainDays: 0 },
+      create: { userId: drafter.id, year: 2026, totalDays: 5, usedDays: 5, remainDays: 0 },
+    });
     await expect(
       createVacationWithApproval({
         userId: drafter.id,
         type: 'annual',
         startDate: new Date('2026-12-20T00:00:00Z'),
-        endDate: new Date('2026-12-30T00:00:00Z'),
-        days: 100, // 명백히 초과
-        reason: '장기휴가',
+        endDate: new Date('2026-12-20T00:00:00Z'),
+        days: 1,
+        reason: '연말휴가',
         approverIds: [approver1.id],
       }),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
+  });
+
+  it('days 가 31일 초과 → INVALID_DAYS', async () => {
+    await expect(
+      createVacationWithApproval({
+        userId: drafter.id,
+        type: 'annual',
+        startDate: new Date('2026-12-01T00:00:00Z'),
+        endDate: new Date('2027-02-01T00:00:00Z'),
+        days: 60,
+        reason: '장기휴가',
+        approverIds: [approver1.id],
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_DAYS' });
+  });
+
+  it('days 가 calendar 일수보다 큼 → DAYS_MISMATCH', async () => {
+    await expect(
+      createVacationWithApproval({
+        userId: drafter.id,
+        type: 'annual',
+        startDate: new Date('2026-12-01T00:00:00Z'),
+        endDate: new Date('2026-12-01T00:00:00Z'), // 1일 기간
+        days: 5, // 5일 사용 시도
+        reason: '부정 시도',
+        approverIds: [approver1.id],
+      }),
+    ).rejects.toMatchObject({ code: 'DAYS_MISMATCH' });
   });
 
   it('결재선 없으면 NO_APPROVER', async () => {
