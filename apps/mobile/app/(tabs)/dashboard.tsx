@@ -12,7 +12,7 @@ const QUICK_MENU = [
   { key: 'mail',     label: '메일',     emoji: '✉️',  route: '/(tabs)/mail' },
   { key: 'approval', label: '전자결재', emoji: '📋',  route: '/(tabs)/approval' },
   { key: 'messenger',label: '메신저',   emoji: '💬',  route: '/(tabs)/messenger' },
-  { key: 'calendar', label: '캘린더',   emoji: '📅',  route: '/(tabs)/more' },
+  { key: 'calendar', label: '캘린더',   emoji: '📅',  route: '/calendar' },
   { key: 'attend',   label: '근태',     emoji: '⏰',  route: '/(tabs)/more' },
   { key: 'board',    label: '게시판',   emoji: '📰',  route: '/(tabs)/more' },
   { key: 'parking',  label: '주차관리', emoji: '🚗',  route: '/(tabs)/more' },
