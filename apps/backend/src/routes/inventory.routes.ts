@@ -225,8 +225,8 @@ router.delete('/items/:id', authenticate, authorize('super_admin', 'admin'), asy
 const transactionSchema = z.object({
   itemId: z.string().uuid(),
   type: z.enum(['in_stock', 'out_stock', 'return_stock', 'adjust']),
-  quantity: z.number().int().min(1),
-  unitPrice: z.number().optional(),
+  quantity: z.number().int().min(1).max(1_000_000),
+  unitPrice: z.number().nonnegative().optional(),
   reason: z.string().max(500).optional(),
   reference: z.string().max(100).optional(),
 });
@@ -237,12 +237,24 @@ router.post('/transactions', authenticate, validate(transactionSchema), async (r
     const { itemId, type, quantity, unitPrice, reason, reference } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
+      // FOR UPDATE row lock — 동시 입출고 race 방지 (audit 10A C3 — 음수 재고 방지)
+      const rows = await tx.$queryRaw<Array<{ id: string; current_stock: number; is_active: boolean }>>`
+        SELECT id, current_stock, is_active
+        FROM inventory_items
+        WHERE id = ${itemId}::uuid
+        FOR UPDATE
+      `;
+      const locked = rows[0];
+      if (!locked || !locked.is_active) {
+        throw new Error('NOT_FOUND');
+      }
+      // ORM 객체로 다시 조회 (lock 은 row 단위로 유지됨)
       const item = await tx.inventoryItem.findUnique({ where: { id: itemId } });
       if (!item || !item.isActive) {
         throw new Error('NOT_FOUND');
       }
 
-      const beforeStock = item.currentStock;
+      const beforeStock = locked.current_stock; // raw 에서 읽은 최신 값
       let afterStock: number;
 
       switch (type) {

@@ -23,8 +23,14 @@ const eventSchema = z.object({
   repeatUntil: z.string().datetime().optional().nullable(),
   exceptionDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   scope: z.enum(['personal', 'department', 'company']).default('personal'),
-  attendeeIds: z.array(z.string().uuid()).optional(),
-});
+  attendeeIds: z.array(z.string().uuid()).max(200).optional(),
+}).refine(
+  (d) => new Date(d.endDate) >= new Date(d.startDate),
+  { message: '종료 시각은 시작 시각보다 같거나 이후여야 합니다', path: ['endDate'] },
+).refine(
+  (d) => !d.repeatUntil || new Date(d.repeatUntil) >= new Date(d.startDate),
+  { message: '반복 종료일은 시작일보다 같거나 이후여야 합니다', path: ['repeatUntil'] },
+);
 
 // GET /calendar/events - 일정 조회
 router.get('/events', authenticate, async (req: Request, res: Response) => {

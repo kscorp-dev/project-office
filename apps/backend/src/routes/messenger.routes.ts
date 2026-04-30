@@ -112,6 +112,23 @@ router.post('/rooms', authenticate, validate(createRoomSchema), async (req: Requ
     const { type, name, participantIds } = req.body;
     const allParticipants = [...new Set([req.user!.id, ...participantIds])];
 
+    // 1:1 인데 자기 자신만 (또는 0명) → 의미 없는 방 차단 (audit 10A)
+    if (type === 'direct' && allParticipants.length < 2) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_PARTICIPANTS', message: '1:1 채팅에는 본인 외 1명이 필요합니다' },
+      });
+      return;
+    }
+    // 1:1 인데 3명 이상도 차단
+    if (type === 'direct' && allParticipants.length > 2) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_PARTICIPANTS', message: '1:1 채팅은 본인 외 1명만 가능합니다 (그룹은 type=group 사용)' },
+      });
+      return;
+    }
+
     // 1:1 채팅은 기존 방 확인
     if (type === 'direct' && allParticipants.length === 2) {
       const existing = await prisma.chatRoom.findFirst({
@@ -222,6 +239,29 @@ router.post('/rooms/:id/messages', authenticate, validate(sendMessageSchema), as
     }
 
     const { mentionIds, ...messageData } = req.body;
+
+    // parentId 검증 — 다른 룸 또는 삭제된 메시지에 답장 차단 (audit 10A H6)
+    if (messageData.parentId) {
+      const parent = await prisma.message.findUnique({
+        where: { id: messageData.parentId },
+        select: { roomId: true, isDeleted: true },
+      });
+      if (!parent || parent.roomId !== roomId || parent.isDeleted) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_PARENT', message: '답장 대상 메시지를 찾을 수 없습니다' },
+        });
+        return;
+      }
+    }
+    // mention 폭주 방지 — 최대 50명까지 (audit 10B M3)
+    if (Array.isArray(mentionIds) && mentionIds.length > 50) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'TOO_MANY_MENTIONS', message: '한 번에 최대 50명까지 멘션 가능합니다' },
+      });
+      return;
+    }
 
     const message = await prisma.$transaction(async (tx) => {
       const msg = await tx.message.create({

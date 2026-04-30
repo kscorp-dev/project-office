@@ -925,6 +925,15 @@ router.post(
         res.status(400).json({ success: false, error: { code: 'ALREADY_APPROVED', message: '이미 승인된 파일입니다' } });
         return;
       }
+      // 자기 승인 차단 — 업로더 본인이 승인 시 견제 무효화 (audit 10A H10)
+      // admin 은 운영 목적으로 강제 승인 가능
+      if (!isAdmin && file.uploadedBy === req.user!.id) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'SELF_APPROVAL', message: '본인이 업로드한 디자인 파일은 직접 승인할 수 없습니다' },
+        });
+        return;
+      }
 
       const updated = await prisma.taskDesignFile.update({
         where: { id: fileId },

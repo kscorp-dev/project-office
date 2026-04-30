@@ -222,6 +222,14 @@ router.post('/:id/ring', authenticate, ringLimiter, async (req: Request, res: Re
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트만 호출할 수 있습니다' } });
       return;
     }
+    // ended/cancelled 회의는 ring 의미 없음 (audit 10A H9)
+    if (meeting.status === 'ended' || meeting.status === 'cancelled') {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_STATUS', message: '종료/취소된 회의는 호출할 수 없습니다' },
+      });
+      return;
+    }
 
     const targets = meeting.participants
       .map((p) => p.userId)

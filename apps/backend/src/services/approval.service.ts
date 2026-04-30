@@ -48,6 +48,17 @@ export class ApprovalService {
       throw new AppError(400, 'INVALID_TEMPLATE', '유효하지 않은 결재 양식입니다');
     }
 
+    // 결재선 무결성 검증 (audit 10A)
+    //  1) drafter 가 본인 결재선에 포함되면 자기 결재 우회 가능 → 차단
+    //  2) 같은 결재자 중복 시 두 번째 라인 영원히 stuck → 차단
+    if (data.approverIds.includes(drafterId)) {
+      throw new AppError(400, 'SELF_APPROVAL', '본인을 결재자로 지정할 수 없습니다');
+    }
+    const uniqueApprovers = new Set(data.approverIds);
+    if (uniqueApprovers.size !== data.approverIds.length) {
+      throw new AppError(400, 'DUPLICATE_APPROVER', '결재선에 중복된 결재자가 있습니다');
+    }
+
     const docNumber = await this.generateDocNumber(template.code);
 
     const document = await prisma.$transaction(async (tx) => {

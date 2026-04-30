@@ -267,6 +267,18 @@ export async function applyVacationOnFinalApproval(
     updatedVacation.type === 'half_pm';
   if (isConsumingAnnual) {
     const year = updatedVacation.startDate.getFullYear();
+    // 신청 시점 잔여 검증 후 결재 도중 다른 휴가가 승인되면 잔여 부족 가능 (audit 10A).
+    // 승인 시점에 잔여 재검증 후 차감. 부족 시 트랜잭션 롤백 → 결재 자체도 무효화.
+    const balance = await tx.vacationBalance.findUnique({
+      where: { userId_year: { userId: updatedVacation.userId, year } },
+    });
+    if (balance && balance.remainDays < updatedVacation.days) {
+      throw new AppError(
+        400,
+        'INSUFFICIENT_BALANCE',
+        `잔여 연차가 부족합니다 (${balance.remainDays}일 남음). 결재 진행 중 다른 휴가가 먼저 승인되었습니다.`,
+      );
+    }
     await tx.vacationBalance.upsert({
       where: { userId_year: { userId: updatedVacation.userId, year } },
       update: {
