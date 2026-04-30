@@ -80,12 +80,16 @@ router.get('/items', authenticate, async (req: Request, res: Response) => {
       ];
     }
     if (categoryId) where.categoryId = categoryId;
+    // currentStock <= minStock 비교는 Prisma 가 column-vs-column 을 직접 지원하지 않으므로
+    // raw SQL 로 ID 후보 추출 후 in-memory IN 필터 (페이지네이션 + total 정확성 유지)
     if (lowStock) {
-      where.currentStock = { lte: prisma.inventoryItem.fields.minStock };
-      // Use raw filter for comparing columns
-      where.AND = [
-        ...(where.AND || []),
-      ];
+      const lowStockRows = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM inventory_items
+        WHERE is_active = true
+          AND current_stock <= min_stock
+      `;
+      const lowIds = lowStockRows.map((r) => r.id);
+      where.id = { in: lowIds.length > 0 ? lowIds : ['__none__'] };
     }
 
     const [items, total] = await Promise.all([
@@ -102,14 +106,9 @@ router.get('/items', authenticate, async (req: Request, res: Response) => {
       prisma.inventoryItem.count({ where }),
     ]);
 
-    // 부족재고 필터를 위해 후처리
-    const filteredItems = lowStock
-      ? items.filter(item => item.currentStock <= item.minStock)
-      : items;
-
     res.json({
       success: true,
-      data: filteredItems,
+      data: items,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {

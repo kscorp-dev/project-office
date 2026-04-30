@@ -76,13 +76,14 @@ router.get('/summary', async (req: Request, res: Response) => {
           endDate: { gte: today },
           OR: [
             { creatorId: userId },
-            { scope: 'all' },
-            // 부서 필터 — 사용자 부서 일치 시 노출 (없으면 무시)
-            req.user!.departmentId
-              ? { scope: 'personal_dept', departmentId: req.user!.departmentId }
-              : { id: '__never__' },
-            // 참석자로 등록된 경우
-            { attendees: { some: { userId } } },
+            // 전사 일정
+            { scope: 'company' },
+            // 부서 일정 — 사용자 소속 부서와 일치할 때만 (departmentId 없으면 부서 일정 X)
+            ...(req.user!.departmentId
+              ? [{ scope: 'department', departmentId: req.user!.departmentId } as const]
+              : []),
+            // 참석자(declined 제외)
+            { attendees: { some: { userId, status: { not: 'declined' as const } } } },
           ],
         },
       }),
