@@ -36,6 +36,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Refresh token 동시 갱신 race 방지 (audit H2):
+ *   여러 요청이 동시에 401 받으면 각자 /auth/refresh 호출 → 첫 요청 성공, 나머지는 회전된 구
+ *   refresh 로 401 → 강제 logout. module-level promise 캐시로 동일 promise 를 await.
+ */
+let refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -51,8 +58,17 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-        const { accessToken, refreshToken: newRefreshToken } = data.data;
+        // 진행 중 refresh 가 있으면 결과 공유, 없으면 시작
+        if (!refreshPromise) {
+          refreshPromise = axios
+            .post(`${API_BASE_URL}/auth/refresh`, { refreshToken })
+            .then((res) => res.data.data as { accessToken: string; refreshToken: string })
+            .finally(() => {
+              // 다음 401 사이클을 위해 즉시 cleanup
+              setTimeout(() => { refreshPromise = null; }, 0);
+            });
+        }
+        const { accessToken, refreshToken: newRefreshToken } = await refreshPromise;
         useAuthStore.getState().setTokens(accessToken, newRefreshToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);

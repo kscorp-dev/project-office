@@ -118,7 +118,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data } = await api.get('/auth/me');
       set({ user: data.data });
     } catch {
-      set({ user: null, accessToken: null, refreshToken: null });
+      // 토큰 만료/유효성 실패 시 — logout() 통해 캐시도 함께 wipe (PII 누출 방지)
+      // 직접 set 해서 user만 null 로 두면 다음 로그인 사용자에게 이전 사용자 캐시가 노출됨
+      get().logout();
     }
   },
 
