@@ -232,6 +232,13 @@ export class ApprovalService {
       if (!auth.asOriginal && !auth.viaDelegation) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
+      // 위임을 통한 자기 결재 우회 차단 (audit 11차 C1)
+      // 시나리오: A 기안 → 결재선 B → B가 A에게 위임 → A 가 본인 문서 자기 결재
+      // createDocument 의 SELF_APPROVAL 검증을 위임으로 우회 가능했음
+      if (auth.viaDelegation && approverId === doc.drafterId) {
+        throw new AppError(403, 'SELF_APPROVAL_VIA_DELEGATION',
+          '위임을 통한 자기 결재는 허용되지 않습니다');
+      }
 
       const isLastStep = doc.currentStep >= doc.lines.length;
       // 위임 처리 시 코멘트 앞에 [대결] 표기 자동 추가 (감사 추적용)
@@ -315,6 +322,11 @@ export class ApprovalService {
       const auth = await canActOnLine(currentLine, approverId, tx);
       if (!auth.asOriginal && !auth.viaDelegation) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
+      }
+      // 위임을 통한 자기 결재 우회 차단 (audit 11차 C1)
+      if (auth.viaDelegation && approverId === doc.drafterId) {
+        throw new AppError(403, 'SELF_APPROVAL_VIA_DELEGATION',
+          '위임을 통한 자기 결재(반려)는 허용되지 않습니다');
       }
       const finalComment = auth.viaDelegation ? `[대결] ${comment}` : comment;
 

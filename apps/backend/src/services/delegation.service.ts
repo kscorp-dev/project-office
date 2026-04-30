@@ -50,29 +50,26 @@ export async function createDelegation(input: CreateDelegationInput) {
     throw new AppError(400, 'TARGET_INACTIVE', '비활성 사용자에게는 위임할 수 없습니다');
   }
 
-  // 위임 cycle 검사 (audit 10B H2) — A→B 가 있을 때 B→A 위임 시 무한 우회 가능
-  //   본인이 받은 활성 위임의 fromUser 가 새 toUser 와 같으면 cycle (역방향)
-  //   현재는 단순 1-hop 검사로 충분 (실제 결재 시 canActOnLine 도 1-hop)
-  const reverseChain = await prisma.approvalDelegation.findFirst({
-    where: {
-      fromUserId: input.toUserId,   // 새 toUser 가 누군가에게 위임 만든 적
-      toUserId: input.fromUserId,   // 그게 본인이면 cycle
-      isActive: true,
-      startDate: { lte: input.endDate },
-      endDate: { gte: input.startDate },
-    },
-  });
-  if (reverseChain) {
-    throw new AppError(409, 'CIRCULAR_DELEGATION',
-      '상대가 본인에게 이미 위임을 만들었습니다 (위임 순환)');
-  }
-
-  // 동시 생성 race 방지 (audit H3) — advisory lock + 트랜잭션 안에서 검사 → 생성
-  //   같은 from-to 동시 두 요청이 둘 다 overlap 검사 통과해서 둘 다 create 되는 케이스 차단
+  // 동시 생성 race + cycle 검사 — 모두 트랜잭션 안에서 advisory lock 확보 후 검증
+  //   lock 키를 페어 정렬 → A→B 와 B→A 가 같은 lock 을 잡아 race 방지 (audit 11차 H2)
   return prisma.$transaction(async (tx) => {
-    // (fromUserId, toUserId) 페어에 대한 트랜잭션 단위 직렬화
-    const lockKey = `${input.fromUserId}:${input.toUserId}`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+    const pair = [input.fromUserId, input.toUserId].sort().join(':');
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${pair}))`;
+
+    // cycle (B→A) — 같은 lock 안에서 read 라 race 안전
+    const reverseChain = await tx.approvalDelegation.findFirst({
+      where: {
+        fromUserId: input.toUserId,
+        toUserId: input.fromUserId,
+        isActive: true,
+        startDate: { lte: input.endDate },
+        endDate: { gte: input.startDate },
+      },
+    });
+    if (reverseChain) {
+      throw new AppError(409, 'CIRCULAR_DELEGATION',
+        '상대가 본인에게 이미 위임을 만들었습니다 (위임 순환)');
+    }
 
     // 같은 from→to 활성 위임에 시간 겹침이 있으면 차단
     const overlapping = await tx.approvalDelegation.findFirst({

@@ -134,6 +134,27 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
       startDate, endDate, attendeeIds, repeatUntil,
     } = req.body as Record<string, unknown>;
 
+    // 시간 검증 — POST 와 동일하게 PATCH 도 startDate/endDate/repeatUntil 일관성 검사 (11차 H1)
+    const finalStart = startDate ? new Date(startDate as string) : event.startDate;
+    const finalEnd = endDate ? new Date(endDate as string) : event.endDate;
+    if (finalEnd < finalStart) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_DATE_RANGE', message: '종료 시각은 시작 시각보다 같거나 이후여야 합니다' },
+      });
+      return;
+    }
+    if (repeatUntil) {
+      const ru = new Date(repeatUntil as string);
+      if (ru < finalStart) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_REPEAT_UNTIL', message: '반복 종료일은 시작일보다 같거나 이후여야 합니다' },
+        });
+        return;
+      }
+    }
+
     // scope 격상은 관리자만 (일반 사용자가 personal → company 변경 차단)
     const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
     const isDeptAdmin = req.user!.role === 'dept_admin';
