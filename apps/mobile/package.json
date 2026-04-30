@@ -1,6 +1,6 @@
 {
   "name": "@project-office/mobile",
-  "version": "0.23.4",
+  "version": "0.23.5",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
