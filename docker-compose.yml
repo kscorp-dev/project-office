@@ -76,7 +76,8 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-8080}:80"
+      # nginx 가 비루트로 8080 listen (audit 7차 H3 — Dockerfile USER nginx)
+      - "${WEB_PORT:-8080}:8080"
 
   # ── Detection (YOLO) ──
   detection:

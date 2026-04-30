@@ -72,7 +72,13 @@ router.post('/groups', authenticate, authorize('super_admin', 'admin'), async (r
 
 const cameraSchema = z.object({
   name: z.string().min(1).max(100),
-  rtspUrl: z.string().min(1),
+  // rtspUrl 은 명시적 rtsp:// 스킴만 허용 (audit 7차 H2 — SSRF 방지)
+  //   IP 카메라 인증 정보 형식 user:pass@host 도 허용 (cctv-ptz.service 가 사용)
+  //   사설망 차단은 운영자 책임 — 사내 카메라가 사설 IP 일 수 있어 schema 단계 차단 X
+  rtspUrl: z.string().regex(
+    /^rtsps?:\/\/(?:[^@\s/]+@)?[\w.\-]+(:\d+)?(\/[\S]*)?$/i,
+    'rtsp:// 또는 rtsps:// 로 시작하는 URL이어야 합니다',
+  ),
   location: z.string().max(200).optional(),
   groupId: z.string().uuid().optional(),
   isPtz: z.boolean().default(false),

@@ -153,6 +153,10 @@ router.post('/documents/:id/reject', authenticate, async (req: Request, res: Res
 router.post('/documents/:id/withdraw', authenticate, async (req: Request, res: Response) => {
   try {
     const doc = await approvalService.withdraw(qs(req.params.id), req.user!.id);
+    if (!doc) {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '회수 처리 후 문서를 찾을 수 없습니다' } });
+      return;
+    }
     await createAuditLog({ req, action: 'approval_withdraw', resourceType: 'approval', resourceId: doc.id });
     res.json({ success: true, data: doc });
   } catch (err) {

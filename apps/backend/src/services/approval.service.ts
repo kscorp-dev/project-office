@@ -492,25 +492,38 @@ export class ApprovalService {
   }
 
   /**
-   * 문서 회수 (상신 취소)
+   * 문서 회수 (상신 취소) — 동시 approve 와 race 방지 (audit 7차 H1)
+   *   find→update 사이에 approve 가 들어오면 둘 다 적용될 수 있어, 트랜잭션 + 조건부
+   *   updateMany 로 직렬화. 결재가 1단계라도 이미 처리됐으면 0건 update → 409.
    */
   async withdraw(documentId: string, userId: string) {
-    const doc = await prisma.approvalDocument.findUnique({ where: { id: documentId } });
-    if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
-    if (doc.drafterId !== userId) throw new AppError(403, 'FORBIDDEN', '본인의 문서만 회수할 수 있습니다');
-    if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태의 문서만 회수할 수 있습니다');
-
-    // 첫 결재자가 아직 미처리일 때만 회수 가능
-    const firstLine = await prisma.approvalLine.findFirst({
-      where: { documentId, step: 1 },
-    });
-    if (firstLine && firstLine.status !== 'pending') {
-      throw new AppError(400, 'ALREADY_ACTED', '이미 결재가 진행되어 회수할 수 없습니다');
-    }
-
-    return prisma.approvalDocument.update({
-      where: { id: documentId },
-      data: { status: 'withdrawn' },
+    return prisma.$transaction(async (tx) => {
+      const doc = await tx.approvalDocument.findUnique({
+        where: { id: documentId },
+        include: { lines: { orderBy: { step: 'asc' } } },
+      });
+      if (!doc) throw new AppError(404, 'NOT_FOUND', '문서를 찾을 수 없습니다');
+      if (doc.drafterId !== userId) throw new AppError(403, 'FORBIDDEN', '본인의 문서만 회수할 수 있습니다');
+      if (doc.status !== 'pending') throw new AppError(400, 'INVALID_STATUS', '결재 대기 상태의 문서만 회수할 수 있습니다');
+      // 어떤 라인도 이미 처리됐으면 회수 불가
+      if (doc.lines.some((l) => l.status !== 'pending')) {
+        throw new AppError(400, 'ALREADY_ACTED', '이미 결재가 진행되어 회수할 수 없습니다');
+      }
+      // 조건부 update — 동시 approve 가 currentStep 변경 / status pending → not 으로 옮겼다면 0건
+      const result = await tx.approvalDocument.updateMany({
+        where: {
+          id: documentId,
+          status: 'pending',
+          currentStep: doc.currentStep,
+          // 모든 라인이 여전히 pending 인지 (재확인)
+          lines: { every: { status: 'pending' } },
+        },
+        data: { status: 'withdrawn' },
+      });
+      if (result.count === 0) {
+        throw new AppError(409, 'CONCURRENT_UPDATE', '다른 요청에 의해 상태가 변경되었습니다');
+      }
+      return tx.approvalDocument.findUnique({ where: { id: documentId } });
     });
   }
 
