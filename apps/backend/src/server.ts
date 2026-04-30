@@ -159,11 +159,29 @@ import { startAllMailIdle, stopAllMailIdle } from './workers/mailIdle.worker';
 import { shutdownMailPool } from './services/mail.service';
 import { startVacationAccrualScheduler, stopVacationAccrualScheduler } from './workers/vacationAccrual.worker';
 import { shutdownAllStreams } from './services/cctv-stream.service';
+import { pushHealthCheck } from './services/push.service';
 
 httpServer.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv, version: pkg.version }, '🚀 Server started');
   // 기존 콘솔 로그도 유지 (startup 가시성)
   console.log(`Server running on port ${config.port} [${config.nodeEnv}]`);
+
+  // 푸시 환경 헬스체크 — 부팅 시 1회 (운영자가 "왜 푸시 안 가지?" 디버그 시간 단축)
+  setTimeout(() => {
+    pushHealthCheck()
+      .then((h) => {
+        logger.info(
+          {
+            enabled: h.enabled,
+            hasAccessToken: h.hasAccessToken,
+            devices: { ios: h.iosDevices, android: h.androidDevices, total: h.totalActiveDevices },
+          },
+          '📱 Push notifications health',
+        );
+        for (const w of h.warnings) logger.warn({ msg: w }, '[push] warning');
+      })
+      .catch((err) => logger.warn({ err: (err as Error).message }, '[push] health check failed'));
+  }, 1500);
 
   // 메일 동기화 스케줄러 시작 (기본 5분 주기)
   // 환경변수 DISABLE_MAIL_SYNC=1이면 비활성화 (테스트/CI용)

@@ -9,6 +9,7 @@ import { validate } from '../middleware/validate';
 import { logger } from '../config/logger';
 import { config } from '../config';
 import { qs, qsOpt } from '../utils/query';
+import { pushHealthCheck, sendTestPush } from '../services/push.service';
 
 const router = Router();
 
@@ -728,6 +729,32 @@ router.get('/stats/dashboard', async (req: Request, res: Response) => {
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// ===== 푸시 알림 진단 =====
+
+// GET /admin/push/health - 현재 푸시 발송 환경 헬스체크 (admin/super_admin)
+router.get('/push/health', async (_req: Request, res: Response) => {
+  try {
+    const h = await pushHealthCheck();
+    res.json({ success: true, data: h });
+  } catch (err) {
+    logger.warn({ err, path: _req.path, method: _req.method }, 'push health failed');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '헬스체크 실패' } });
+  }
+});
+
+// POST /admin/push/test - 본인 등록 디바이스로 테스트 푸시 발송
+//   - 누구의 토큰도 노출하지 않으며 결과 카운트만 반환
+//   - 운영 환경에서 "푸시 진짜 가나?" 체크하는 가장 빠른 수단
+router.post('/push/test', async (req: Request, res: Response) => {
+  try {
+    const result = await sendTestPush(req.user!.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'test push failed');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '테스트 푸시 실패' } });
   }
 });
 

@@ -181,3 +181,81 @@ export async function unregisterPushToken(userId: string, deviceId: string): Pro
     data: { isActive: false, pushToken: null },
   });
 }
+
+/**
+ * 푸시 발송 환경 헬스체크.
+ * 서버 부팅 시 호출 → logger 로 현재 푸시 설정 상태를 출력해서
+ * 운영자가 "왜 푸시가 안 가지?" 디버그 시간을 줄여준다.
+ */
+export interface PushHealth {
+  enabled: boolean;
+  hasAccessToken: boolean;
+  totalActiveDevices: number;
+  iosDevices: number;
+  androidDevices: number;
+  warnings: string[];
+}
+
+export async function pushHealthCheck(): Promise<PushHealth> {
+  const enabled = process.env.DISABLE_PUSH !== 'true';
+  const hasAccessToken = !!process.env.EXPO_ACCESS_TOKEN;
+  const warnings: string[] = [];
+
+  if (!enabled) warnings.push('DISABLE_PUSH=true — 푸시 발송 OFF (테스트 모드)');
+  if (enabled && !hasAccessToken) {
+    warnings.push('EXPO_ACCESS_TOKEN 미설정 — Expo rate limit 엄격 (분당 ~600건)');
+  }
+  if (process.env.NODE_ENV === 'production' && !hasAccessToken) {
+    warnings.push('⚠️ PRODUCTION 환경에서 EXPO_ACCESS_TOKEN 가 비어있음 — 즉시 설정 권장');
+  }
+
+  let totalActiveDevices = 0;
+  let iosDevices = 0;
+  let androidDevices = 0;
+  try {
+    const counts = await prisma.userDevice.groupBy({
+      by: ['deviceType'],
+      where: { isActive: true, pushToken: { not: null } },
+      _count: { _all: true },
+    });
+    for (const row of counts) {
+      const n = row._count._all;
+      totalActiveDevices += n;
+      if (row.deviceType === 'ios') iosDevices = n;
+      if (row.deviceType === 'android') androidDevices = n;
+    }
+  } catch (e) {
+    warnings.push(`디바이스 카운트 실패: ${(e as Error).message}`);
+  }
+
+  if (enabled && totalActiveDevices === 0) {
+    warnings.push('등록된 활성 디바이스 0개 — 모바일 앱이 토큰 등록을 못 했거나 첫 사용자 부재');
+  }
+
+  return { enabled, hasAccessToken, totalActiveDevices, iosDevices, androidDevices, warnings };
+}
+
+/**
+ * 관리자 콘솔에서 본인에게 테스트 푸시 보내기.
+ * 라우트 핸들러가 이 함수를 호출 → 본인 디바이스에 알림 도착하면 "프로덕션 푸시 OK" 검증 완료.
+ */
+export async function sendTestPush(userId: string): Promise<{
+  attempted: number;
+  sent: number;
+  failed: number;
+  invalidTokens: string[];
+  reason?: string;
+}> {
+  if (process.env.DISABLE_PUSH === 'true') {
+    return { attempted: 0, sent: 0, failed: 0, invalidTokens: [], reason: 'DISABLE_PUSH=true' };
+  }
+  const result = await sendPushToUser(userId, {
+    title: '🔔 테스트 알림',
+    body: `Project Office 푸시 발송 검증 — ${new Date().toLocaleString('ko-KR')}`,
+    data: { type: 'system', test: '1' },
+  });
+  const devices = await prisma.userDevice.count({
+    where: { userId, isActive: true, pushToken: { not: null } },
+  });
+  return { attempted: devices, ...result };
+}

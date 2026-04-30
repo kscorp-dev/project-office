@@ -131,6 +131,32 @@ export default function AdminScreen() {
                 );
               })}
             </View>
+
+            <Text style={styles.sectionTitle}>푸시 알림 진단</Text>
+            <Text style={styles.hint}>
+              "테스트 푸시" 버튼을 누르면 본 기기로 검증 알림 1건이 발송됩니다.
+              알림이 도착하지 않으면 EXPO_ACCESS_TOKEN / APNs 환경 / 디바이스 토큰을 확인하세요.
+            </Text>
+            <TouchableOpacity
+              style={styles.testPushBtn}
+              onPress={async () => {
+                try {
+                  const res = await api.post('/admin/push/test');
+                  const d = res.data?.data ?? {};
+                  if (d.reason === 'DISABLE_PUSH=true') {
+                    Alert.alert('비활성', 'DISABLE_PUSH=true 상태입니다. 백엔드 환경 변수를 확인하세요.');
+                  } else if (d.attempted === 0) {
+                    Alert.alert('등록된 디바이스 없음', '먼저 앱에 로그인해 푸시 토큰을 등록하세요.');
+                  } else {
+                    Alert.alert('발송됨', `시도 ${d.attempted}건 / 성공 ${d.sent}건 / 실패 ${d.failed}건`);
+                  }
+                } catch (err: any) {
+                  Alert.alert('실패', err?.response?.data?.error?.message || '서버 오류');
+                }
+              }}
+            >
+              <Text style={styles.testPushBtnText}>📲 테스트 푸시 발송</Text>
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -168,4 +194,9 @@ const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
   toggleOff: { backgroundColor: c.border },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#ffffff' },
   toggleKnobOn: { transform: [{ translateX: 20 }] },
+  testPushBtn: {
+    marginTop: 12, backgroundColor: COLORS.primary[500], borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center',
+  },
+  testPushBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
 });
