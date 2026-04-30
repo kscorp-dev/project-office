@@ -118,6 +118,37 @@ router.get('/items', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// GET /inventory/lookup?code=ABC-001 - 바코드/QR 스캔 lookup (모바일)
+//   code 필드에 정확히 일치하는 자재를 1건 반환 (없으면 404).
+//   바코드 스캐너로 읽은 문자열이 code 필드와 1:1 대응 — 존재 시 즉시 자재 상세 진입 가능
+router.get('/lookup', authenticate, async (req: Request, res: Response) => {
+  try {
+    const code = qsOpt(req.query.code)?.trim();
+    if (!code) {
+      res.status(400).json({ success: false, error: { code: 'CODE_REQUIRED', message: '코드 파라미터가 필요합니다' } });
+      return;
+    }
+    const item = await prisma.inventoryItem.findUnique({
+      where: { code },
+      include: {
+        category: { select: { id: true, name: true } },
+        supplier: { select: { id: true, companyName: true } },
+      },
+    });
+    if (!item || !item.isActive) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: '해당 코드의 자재가 없습니다' },
+      });
+      return;
+    }
+    res.json({ success: true, data: item });
+  } catch (err) {
+    logger.warn({ err }, 'Internal error');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
 // GET /inventory/items/:id - 자재 상세
 router.get('/items/:id', authenticate, async (req: Request, res: Response) => {
   try {
