@@ -376,4 +376,52 @@ describe('결재 승인 — 위임 권한 적용', () => {
     expect(line.comment).toContain('[대결]');
     expect(line.comment).toContain('반려 사유');
   });
+
+  it('위임 받은 사용자도 결재 문서 detail 조회 가능 (2차 감사)', async () => {
+    await prisma.approvalDelegation.create({
+      data: {
+        fromUserId: alice.id,
+        toUserId: bob.id,
+        startDate: new Date(Date.now() - 60_000),
+        endDate: new Date(Date.now() + 86400_000),
+        isActive: true,
+      },
+    });
+    const doc = await makeDoc(alice.id);
+    const svc = new ApprovalService();
+    // 위임 받은 bob 이 detail 조회 시 200 (이전엔 403 이었음)
+    const result = await svc.getDocumentDetail(doc.id, bob.id, 'user');
+    expect(result.id).toBe(doc.id);
+  });
+
+  it('위임 없는 외부인은 detail 조회 시 403', async () => {
+    const doc = await makeDoc(alice.id);
+    const svc = new ApprovalService();
+    // carol 은 drafter 라 의미 없음 → 진짜 외부인 outsider 생성
+    const outsider = await createTestUser({ role: 'user' as any });
+    try {
+      await expect(svc.getDocumentDetail(doc.id, outsider.id, 'user')).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    } finally {
+      await prisma.user.delete({ where: { id: outsider.id } }).catch(() => {});
+    }
+  });
+
+  it('getDocuments(box=pending) 에 위임 받은 결재가 포함됨', async () => {
+    await prisma.approvalDelegation.create({
+      data: {
+        fromUserId: alice.id,
+        toUserId: bob.id,
+        startDate: new Date(Date.now() - 60_000),
+        endDate: new Date(Date.now() + 86400_000),
+        isActive: true,
+      },
+    });
+    const doc = await makeDoc(alice.id);
+    const svc = new ApprovalService();
+    const result = await svc.getDocuments(bob.id, 'pending', 1, 50);
+    const found = result.documents.find((d: any) => d.id === doc.id);
+    expect(found).toBeTruthy();
+  });
 });

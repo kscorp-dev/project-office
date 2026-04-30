@@ -164,12 +164,25 @@ router.post('/documents/:id/withdraw', authenticate, async (req: Request, res: R
   }
 });
 
-// GET /approvals/count - 결재 대기 건수
+// GET /approvals/count - 결재 대기 건수 (본인 + 위임받은 분까지 합산)
 router.get('/count', authenticate, async (req: Request, res: Response) => {
   try {
+    const now = new Date();
+    // 활성 위임 받은 사용자 (위임자) 들의 ID 도 함께 카운트 — 모바일 결재 탭 뱃지 정확성
+    const incomingDelegators = await prisma.approvalDelegation.findMany({
+      where: {
+        toUserId: req.user!.id,
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      select: { fromUserId: true },
+    });
+    const approverIds = [req.user!.id, ...incomingDelegators.map((d) => d.fromUserId)];
+
     const pendingCount = await prisma.approvalLine.count({
       where: {
-        approverId: req.user!.id,
+        approverId: { in: approverIds },
         status: 'pending',
         document: { status: 'pending' },
       },
@@ -207,7 +220,7 @@ const approvalUpload = multer({
   fileFilter: approvalFileFilter,
 });
 
-/** 첨부 권한 체크: 기안자(draft/pending), 결재자, 참조자, 관리자 */
+/** 첨부 권한 체크: 기안자(draft/pending), 결재자, 위임받은 사용자, 참조자, 관리자 */
 async function canAccessAttachment(
   documentId: string,
   userId: string,
@@ -229,7 +242,27 @@ async function canAccessAttachment(
   const isApprover = doc.lines.some((l) => l.approverId === userId);
   const isReference = doc.references.some((r) => r.userId === userId);
 
+  // 위임 — 결재자 중 누구라도 userId 에게 활성 위임을 만들었으면 접근 가능
+  let isDelegate = false;
   if (!isAdmin && !isDrafter && !isApprover && !isReference) {
+    const approverIds = doc.lines.map((l) => l.approverId);
+    if (approverIds.length > 0) {
+      const now = new Date();
+      const dlg = await prisma.approvalDelegation.findFirst({
+        where: {
+          fromUserId: { in: approverIds },
+          toUserId: userId,
+          isActive: true,
+          startDate: { lte: now },
+          endDate: { gte: now },
+        },
+        select: { id: true },
+      });
+      isDelegate = !!dlg;
+    }
+  }
+
+  if (!isAdmin && !isDrafter && !isApprover && !isReference && !isDelegate) {
     return { ok: false, reason: 'FORBIDDEN' };
   }
   return { ok: true, doc: { drafterId: doc.drafterId, status: doc.status } };

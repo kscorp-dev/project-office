@@ -138,7 +138,28 @@ export class ApprovalService {
       const isApprover = doc.lines.some((l) => l.approverId === requesterId);
       const isReference = doc.references.some((r) => r.userId === requesterId);
 
+      // 위임 권한도 포함 — approver 들 중 누구라도 requesterId 에게 활성 위임을 만들었으면 조회 가능
+      // (approve/reject 는 이미 위임 인식하므로 detail 조회도 일치시켜야 UI 모순 없음)
+      let isDelegate = false;
       if (!isAdmin && !isDrafter && !isApprover && !isReference) {
+        const approverIds = doc.lines.map((l) => l.approverId);
+        if (approverIds.length > 0) {
+          const now = new Date();
+          const dlg = await prisma.approvalDelegation.findFirst({
+            where: {
+              fromUserId: { in: approverIds },
+              toUserId: requesterId,
+              isActive: true,
+              startDate: { lte: now },
+              endDate: { gte: now },
+            },
+            select: { id: true },
+          });
+          isDelegate = !!dlg;
+        }
+      }
+
+      if (!isAdmin && !isDrafter && !isApprover && !isReference && !isDelegate) {
         throw new AppError(403, 'FORBIDDEN', '이 문서를 조회할 권한이 없습니다');
       }
     }
@@ -196,7 +217,7 @@ export class ApprovalService {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
       // 본인 결재 또는 위임 받은 결재인지 확인
-      const auth = await canActOnLine(currentLine, approverId);
+      const auth = await canActOnLine(currentLine, approverId, tx);
       if (!auth.asOriginal && !auth.viaDelegation) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
@@ -280,7 +301,7 @@ export class ApprovalService {
       if (!currentLine) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
-      const auth = await canActOnLine(currentLine, approverId);
+      const auth = await canActOnLine(currentLine, approverId, tx);
       if (!auth.asOriginal && !auth.viaDelegation) {
         throw new AppError(403, 'NOT_YOUR_TURN', '현재 결재 순서가 아닙니다');
       }
@@ -500,21 +521,38 @@ export class ApprovalService {
     const skip = (page - 1) * limit;
     let where: Record<string, unknown> = {};
 
+    // 활성 위임 받은 사용자 ID 들 — 결재 대기/완료 목록에 위임자의 결재 문서도 포함시키기 위함
+    const now = new Date();
+    const incomingDelegators = await prisma.approvalDelegation.findMany({
+      where: {
+        toUserId: userId,
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      select: { fromUserId: true },
+    });
+    const delegatorIds = incomingDelegators.map((d) => d.fromUserId);
+    const approverIdsForMatching = [userId, ...delegatorIds];
+
     switch (box) {
       case 'drafts': // 기안함 (내가 작성한 문서)
         where = { drafterId: userId };
         break;
-      case 'pending': // 결재함 (내가 결재할 문서)
+      case 'pending': // 결재함 (내가 결재할 문서 + 위임 받은 결재)
         where = {
           status: 'pending',
-          lines: { some: { approverId: userId, status: 'pending' } },
+          lines: { some: { approverId: { in: approverIdsForMatching }, status: 'pending' } },
         };
         break;
-      case 'approved': // 완료함
+      case 'approved': // 완료함 (내가 처리한 결재 + 위임 처리한 결재)
+        //   actedByUserId 가 본인이거나 line.approverId 가 본인이거나 위임 처리 시 actedBy=본인
         where = {
           OR: [
             { drafterId: userId, status: { in: ['approved', 'rejected'] } },
             { lines: { some: { approverId: userId, status: { in: ['approved', 'rejected'] } } } },
+            // 위임으로 본인이 처리한 라인 — actedByUserId 매칭
+            { lines: { some: { actedByUserId: userId } } },
           ],
         };
         break;
