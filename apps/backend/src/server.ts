@@ -108,9 +108,32 @@ app.use(rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Static file serving (uploads)
+// Static file serving (uploads) — 인증 필수 (audit 7차 C1)
+//   과거 무인증 노출이라 첨부 파일 IDOR 취약점이었음. 인증된 사용자만 접근 가능.
+//   resource 별 세밀한 권한 검증은 각 모듈의 별도 download route(예: /api/approvals/.../file)
+//   에서 처리. /uploads 는 fallback 으로 메신저 첨부, 회의 자료 등 UUID 파일명 기반 noise.
+//   이미지 토큰을 헤더로 못 보내는 케이스(<img> 직접 src) 는 token 쿼리스트링도 허용.
 import path from 'path';
-app.use('/uploads', express.static(path.resolve(config.upload.dir)));
+import jwt from 'jsonwebtoken';
+import type { Request, Response, NextFunction } from 'express';
+app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
+  // 1) Authorization 헤더 우선
+  let token: string | undefined;
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) token = auth.slice(7);
+  // 2) <img>/native Image 같이 헤더 못 보내는 경우 query.token 허용
+  if (!token && typeof req.query.token === 'string') token = req.query.token;
+  if (!token) {
+    res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: '인증이 필요합니다' } });
+    return;
+  }
+  try {
+    jwt.verify(token, config.jwt.accessSecret);
+    next();
+  } catch {
+    res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: '토큰이 유효하지 않습니다' } });
+  }
+}, express.static(path.resolve(config.upload.dir)));
 
 // Health check
 app.get('/health', (_req, res) => {

@@ -101,14 +101,20 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // 호스트이거나 참여자인 경우만 상세 조회 가능
+    // 호스트이거나 참여자(과거 참여이력 포함)인 경우만 상세 조회 가능
     const isParticipant = meeting.participants.some(p => p.userId === req.user!.id);
-    if (meeting.hostId !== req.user!.id && !isParticipant && !['super_admin', 'admin'].includes(req.user!.role)) {
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
+    if (meeting.hostId !== req.user!.id && !isParticipant && !isAdmin) {
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '접근 권한이 없습니다' } });
       return;
     }
 
-    res.json({ success: true, data: meeting });
+    // 응답에서는 현재 활성 참가자만 노출 — 과거 leftAt 참여자 정보 누설 차단 (audit 7차 C3)
+    // admin 은 전체 참여자(이력 포함) 조회 가능 — 운영/감사 목적
+    const responseMeeting = isAdmin
+      ? meeting
+      : { ...meeting, participants: meeting.participants.filter(p => !p.leftAt) };
+    res.json({ success: true, data: responseMeeting });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

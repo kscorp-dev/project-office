@@ -810,8 +810,17 @@ function formatTime(iso: string): string {
 function absUrl(filePath: string): string {
   if (filePath.startsWith('http')) return filePath;
   // api.ts 의 baseURL 에서 /api 제거한 domain + filePath
+  // 백엔드 /uploads 가 인증 필수 (audit 7차 C1) — Image 컴포넌트가 헤더 못 보내므로
+  // 쿼리스트링 token 으로 인증 (서버 검증 동일).
   const base = require('../../../src/services/api').API_BASE_URL as string;
   const root = base.replace(/\/api\/?$/, '');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useAuthStore } = require('../../../src/store/auth');
+  const token = useAuthStore.getState?.().accessToken as string | undefined;
+  if (filePath.startsWith('/uploads/') && token) {
+    const sep = filePath.includes('?') ? '&' : '?';
+    return `${root}${filePath}${sep}token=${encodeURIComponent(token)}`;
+  }
   return root + filePath;
 }
 

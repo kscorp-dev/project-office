@@ -19,6 +19,7 @@
  *
  * 토큰 저장: mailCrypto의 AES-256-GCM 재사용 (별도 키 관리 필요 없음)
  */
+import crypto from 'crypto';
 import { google, type Auth, type calendar_v3 } from 'googleapis';
 import type { CalendarEvent as PoCalendarEvent } from '@prisma/client';
 import prisma from '../config/prisma';
@@ -26,6 +27,42 @@ import { logger } from '../config/logger';
 import { config } from '../config';
 import { AppError } from './auth.service';
 import { encryptMailPassword, decryptMailPassword } from '../utils/mailCrypto';
+
+// ── OAuth state CSRF 방지 (audit 7차 C2) ──
+// 공격자가 본인 Google code + 피해자 userId 를 callback 에 보내면 피해자 계정에
+// 본인 토큰이 저장되는 계정 강탈 가능. state 에 HMAC + nonce 적용해 차단.
+const usedNonces = new Set<string>();
+const STATE_TTL_MS = 10 * 60_000; // 10분
+const NONCE_GC_MS = 15 * 60_000; // 15분 후 정리
+
+function signState(userId: string): string {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const expiresAt = Date.now() + STATE_TTL_MS;
+  const payload = `${userId}|${nonce}|${expiresAt}`;
+  const sig = crypto.createHmac('sha256', config.jwt.accessSecret).update(payload).digest('hex');
+  return Buffer.from(`${payload}|${sig}`).toString('base64url');
+}
+
+function verifyState(state: string): { ok: true; userId: string } | { ok: false; reason: string } {
+  let decoded: string;
+  try { decoded = Buffer.from(state, 'base64url').toString('utf8'); }
+  catch { return { ok: false, reason: 'INVALID_STATE_FORMAT' }; }
+  const parts = decoded.split('|');
+  if (parts.length !== 4) return { ok: false, reason: 'INVALID_STATE_PARTS' };
+  const [userId, nonce, expiresStr, sig] = parts;
+  const expectedSig = crypto.createHmac('sha256', config.jwt.accessSecret)
+    .update(`${userId}|${nonce}|${expiresStr}`).digest('hex');
+  const a = Buffer.from(sig, 'hex');
+  const b = Buffer.from(expectedSig, 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return { ok: false, reason: 'STATE_TAMPERED' };
+  }
+  if (Date.now() > Number(expiresStr)) return { ok: false, reason: 'STATE_EXPIRED' };
+  if (usedNonces.has(nonce)) return { ok: false, reason: 'STATE_REPLAY' };
+  usedNonces.add(nonce);
+  setTimeout(() => usedNonces.delete(nonce), NONCE_GC_MS).unref();
+  return { ok: true, userId };
+}
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -46,20 +83,26 @@ function getOAuth2Client(): Auth.OAuth2Client {
   );
 }
 
-/** 동의 화면 URL — state에 userId 포함해서 콜백에서 매핑 */
+/** 동의 화면 URL — state에 HMAC(userId|nonce|expires) 로 CSRF 차단 */
 export function getAuthorizationUrl(userId: string): string {
   const oauth2 = getOAuth2Client();
   return oauth2.generateAuthUrl({
     access_type: 'offline',  // refresh token 받기 위함
     prompt: 'consent',       // refresh token 재발급 보장
     scope: SCOPES,
-    state: userId,           // callback에서 신원 확인
+    state: signState(userId),
     include_granted_scopes: true,
   });
 }
 
 /** code → token 교환 + Google 계정 정보 조회 + DB upsert */
-export async function handleOAuthCallback(code: string, userId: string): Promise<void> {
+export async function handleOAuthCallback(code: string, signedState: string): Promise<void> {
+  const verification = verifyState(signedState);
+  if (!verification.ok) {
+    throw new AppError(400, 'INVALID_OAUTH_STATE',
+      `OAuth state 검증 실패: ${verification.reason}`);
+  }
+  const userId = verification.userId;
   const oauth2 = getOAuth2Client();
   const { tokens } = await oauth2.getToken(code);
 
