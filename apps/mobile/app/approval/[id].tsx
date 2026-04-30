@@ -21,6 +21,7 @@ import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
 import { useBiometric } from '../../src/hooks/useBiometric';
+import { useScreenCaptureBlock } from '../../src/hooks/useScreenCaptureBlock';
 
 interface Drafter {
   id: string; name: string; employeeId: string; position?: string | null;
@@ -77,6 +78,8 @@ export default function ApprovalDetailScreen() {
   const insets = useSafeAreaInsets();
   const { c, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  // 결재 본문은 민감 정보 — 스크린샷 차단 (Android FLAG_SECURE)
+  useScreenCaptureBlock();
   // ?action 처리는 doc 로드 후 1회만 시도
   const autoActionTriggeredRef = useRef(false);
 

@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { COLORS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useScreenCaptureBlock } from '../../src/hooks/useScreenCaptureBlock';
 import api, { API_BASE_URL } from '../../src/services/api';
 import { useAuthStore } from '../../src/store/auth';
 
@@ -40,6 +41,8 @@ export default function MailDetailScreen() {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const accessToken = useAuthStore((s) => s.accessToken);
+  // 메일 본문은 민감 — 스크린샷 차단
+  useScreenCaptureBlock();
 
   const [mail, setMail] = useState<MailDetail | null>(null);
   const [loading, setLoading] = useState(true);

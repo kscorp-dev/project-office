@@ -133,6 +133,39 @@ const callkeepPath = path.join(ROOT, 'src/services/callkeep.ts');
 check('callkeep.ts 존재', fs.existsSync(callkeepPath), 'callkeep 서비스 파일 없음');
 
 // ──────────────────────────────────────────────────────
+// 9. 스크린샷 차단 (Phase 3-B) — 민감 화면 3종에 적용
+// ──────────────────────────────────────────────────────
+const screenCaptureHook = path.join(ROOT, 'src/hooks/useScreenCaptureBlock.ts');
+check('useScreenCaptureBlock 훅 존재', fs.existsSync(screenCaptureHook),
+  '스크린샷 차단 훅 누락 — Phase 3-B 미적용');
+const sensitiveScreens = [
+  'app/approval/[id].tsx',
+  'app/mail/[uid].tsx',
+  'app/messenger/room/[id].tsx',
+];
+for (const rel of sensitiveScreens) {
+  const filePath = path.join(ROOT, rel);
+  if (!fs.existsSync(filePath)) {
+    checkWarn(`screen-capture: ${rel}`, false, '파일 미존재');
+    continue;
+  }
+  const src = fs.readFileSync(filePath, 'utf8');
+  check(`screen-capture: ${rel}`,
+    src.includes('useScreenCaptureBlock'),
+    '민감 화면에 스크린샷 차단 미적용');
+}
+
+// ──────────────────────────────────────────────────────
+// 10. 오프라인 캐시 (Phase 3-A) — offline-db 기본 구조
+// ──────────────────────────────────────────────────────
+const offlineDbIndex = path.join(ROOT, 'src/offline-db/index.ts');
+check('offline-db: 초기화 모듈', fs.existsSync(offlineDbIndex),
+  'SQLite 캐시 모듈 누락 — Phase 3-A 미적용');
+const offlineDbSchema = path.join(ROOT, 'src/offline-db/schema.ts');
+check('offline-db: drizzle 스키마', fs.existsSync(offlineDbSchema),
+  'drizzle 스키마 파일 누락');
+
+// ──────────────────────────────────────────────────────
 // 결과
 // ──────────────────────────────────────────────────────
 console.log('');
