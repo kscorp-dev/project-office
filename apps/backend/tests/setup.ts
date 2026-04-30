@@ -13,3 +13,5 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test-access-secret-at-least-32-characters';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret-at-least-32-characters';
+// 테스트에서는 Expo Push SDK 실제 호출 차단 — push.service 가 noop 반환
+process.env.DISABLE_PUSH = 'true';
