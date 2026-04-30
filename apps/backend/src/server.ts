@@ -82,8 +82,25 @@ app.use(pinoHttp({
   },
 }));
 
-// Security Middleware
-app.use(helmet());
+// Security Middleware (helmet + CSP)
+//   API 서버는 직접 HTML 응답 없으나, 잘못된 응답에 사용자 콘텐츠 echo 시 XSS 차단.
+//   /uploads 가 인증된 사용자에게 첨부 file 을 직접 서빙하므로 inline script 차단 필요.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // /uploads 의 메일 HTML 본문에서 인라인 style 허용
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"], // SAMEORIGIN — clickjacking 방지
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // /uploads 의 미디어 cross-origin 사용 허용
+}));
 
 // CORS — config.corsOrigin은 단일 또는 콤마 구분 여러 Origin 허용
 const corsAllowList = config.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean);
@@ -142,9 +159,49 @@ app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
   }
 }, express.static(path.resolve(config.upload.dir)));
 
-// Health check
+// Health check — liveness (단순 process alive 확인)
+//   container orchestrator(K8s/Compose) 의 healthcheck 가 호출
+//   DB 연결 끊겨도 200 — 그 사이 회복 가능. liveness는 process crash 만 감지.
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: pkg.version, timestamp: new Date().toISOString() });
+});
+
+// Readiness — DB + Redis 정상 connectivity 까지 확인 (트래픽 받을 준비 됐는지)
+//   외부에서 트래픽 라우팅 결정 시 사용 — DB 끊긴 상태에서 503 반환해 새 트래픽 차단.
+app.get('/ready', async (_req, res) => {
+  const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+  // DB ping
+  try {
+    const t0 = Date.now();
+    const prismaModule = await import('./config/prisma');
+    await prismaModule.default.$queryRaw`SELECT 1`;
+    checks.db = { ok: true, latencyMs: Date.now() - t0 };
+  } catch (err) {
+    checks.db = { ok: false, error: (err as Error).message };
+  }
+  // Redis ping (옵션 — REDIS_URL 설정된 경우만)
+  if (process.env.REDIS_URL) {
+    try {
+      const t0 = Date.now();
+      // ioredis 가 lazy connect 라 ping 까지는 connect 시도
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Redis = require('ioredis');
+      const r = new Redis(process.env.REDIS_URL, { lazyConnect: true, connectTimeout: 2000 });
+      await r.connect();
+      await r.ping();
+      checks.redis = { ok: true, latencyMs: Date.now() - t0 };
+      r.disconnect();
+    } catch (err) {
+      checks.redis = { ok: false, error: (err as Error).message };
+    }
+  }
+  const allOk = Object.values(checks).every((c) => c.ok);
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ready' : 'not_ready',
+    version: pkg.version,
+    timestamp: new Date().toISOString(),
+    checks,
+  });
 });
 
 // API Routes
@@ -238,15 +295,61 @@ httpServer.listen(config.port, () => {
   startVacationAccrualScheduler();
 });
 
-// Graceful shutdown — IMAP 풀 + IDLE 워커 정리
+// Graceful shutdown — IMAP / IDLE / FFmpeg / Socket.IO / Prisma 모두 정리
+//   K8s default grace 30s — 진행중 요청 완료 대기 + 새 요청 차단 + 리소스 close
+let shutdownInProgress = false;
 const shutdown = async (signal: string) => {
+  if (shutdownInProgress) return; // 중복 호출 방지
+  shutdownInProgress = true;
   logger.info({ signal }, 'Shutdown requested');
+
+  // 1) 새 요청 차단 — httpServer.close() 는 listen 중지 + 진행중 요청은 완료 대기
+  httpServer.close((err) => {
+    if (err) logger.warn({ err }, 'httpServer close error');
+  });
+
+  // 2) Socket.IO 연결 종료 (모든 클라이언트 disconnect 알림)
+  try {
+    io.disconnectSockets();
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+  } catch (err) {
+    logger.warn({ err }, 'Socket.IO close error');
+  }
+
+  // 3) 워커 / 스케줄러 정리
   stopVacationAccrualScheduler();
-  await Promise.allSettled([stopAllMailIdle(), shutdownMailPool(), shutdownAllStreams()]);
-  httpServer.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000).unref();
+  await Promise.allSettled([
+    stopAllMailIdle(),
+    shutdownMailPool(),
+    shutdownAllStreams(),
+  ]);
+
+  // 4) DB 연결 정리 (prisma 종료) — 마지막에 (앞에서 진행중 트랜잭션 완료 대기)
+  try {
+    const prismaModule = await import('./config/prisma');
+    await prismaModule.default.$disconnect();
+  } catch (err) {
+    logger.warn({ err }, 'Prisma disconnect error');
+  }
+
+  logger.info({ signal }, 'Shutdown complete');
+  process.exit(0);
 };
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+// 강제 종료 fallback — 25초 (K8s default 30s grace 안에)
+process.on('SIGTERM', () => setTimeout(() => process.exit(1), 25000).unref());
+process.on('SIGINT', () => setTimeout(() => process.exit(1), 25000).unref());
+
+// Unhandled error 로깅 — process 가 silent 하게 죽지 않게
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, 'Unhandled promise rejection');
+  // production 에선 process exit 안 함 — 단일 unhandled rejection 으로 전체 서버 죽이지 않음
+});
+process.on('uncaughtException', (err) => {
+  logger.error({ err: { message: err.message, stack: err.stack } }, 'Uncaught exception — exiting');
+  // 진짜 위험한 상태 — graceful shutdown 후 종료
+  shutdown('uncaughtException').catch(() => process.exit(1));
+});
 
 export { app, io };

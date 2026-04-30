@@ -22,20 +22,19 @@ function requireEnv(key: string, devFallback?: string): string {
   );
 }
 
-const jwtAccessSecret = requireEnv('JWT_ACCESS_SECRET', 'dev-access-secret-change-in-production');
-const jwtRefreshSecret = requireEnv('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-in-production');
+// dev fallback 도 32자 이상 보장 — 검증을 모든 환경 공통으로 강제 (audit 10B M2)
+const jwtAccessSecret = requireEnv('JWT_ACCESS_SECRET', 'dev-access-secret-change-in-production-32chars');
+const jwtRefreshSecret = requireEnv('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-in-production-32chars');
 
-// 시크릿 길이 검증 (최소 32자)
-if (isProd) {
-  if (jwtAccessSecret.length < 32) {
-    throw new Error('[config] JWT_ACCESS_SECRET은 32자 이상이어야 합니다.');
-  }
-  if (jwtRefreshSecret.length < 32) {
-    throw new Error('[config] JWT_REFRESH_SECRET은 32자 이상이어야 합니다.');
-  }
-  if (jwtAccessSecret === jwtRefreshSecret) {
-    throw new Error('[config] JWT_ACCESS_SECRET과 JWT_REFRESH_SECRET은 서로 달라야 합니다.');
-  }
+// 시크릿 길이 검증 — 모든 환경에서 (개발도 32자 미만은 위험)
+if (jwtAccessSecret.length < 32) {
+  throw new Error('[config] JWT_ACCESS_SECRET은 32자 이상이어야 합니다.');
+}
+if (jwtRefreshSecret.length < 32) {
+  throw new Error('[config] JWT_REFRESH_SECRET은 32자 이상이어야 합니다.');
+}
+if (jwtAccessSecret === jwtRefreshSecret) {
+  throw new Error('[config] JWT_ACCESS_SECRET과 JWT_REFRESH_SECRET은 서로 달라야 합니다.');
 }
 
 export const config = {

@@ -1,6 +1,7 @@
 import { Request } from 'express';
 import prisma from '../config/prisma';
 import { AuditAction, RiskLevel } from '@prisma/client';
+import { logger } from '../config/logger';
 
 interface AuditLogParams {
   req: Request;
@@ -28,7 +29,9 @@ export async function createAuditLog({
         action,
         resourceType,
         resourceId,
-        ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip,
+        // req.ip 만 사용 (audit 운영 H6) — express trust proxy 가 처리.
+        // headers['x-forwarded-for'] 직접 read 는 spoofing 가능 (프록시 없을 때 client 임의 보냄)
+        ipAddress: req.ip ?? null,
         userAgent: req.headers['user-agent'] ?? null,
         deviceId: req.user?.deviceId ?? null,
         details: (details ?? undefined) as any,
@@ -37,6 +40,7 @@ export async function createAuditLog({
       },
     });
   } catch (err) {
-    console.error('Audit log error:', err);
+    // 감사 실패는 보안 이벤트 — structured log + alert 우선순위
+    logger.error({ err, action, resourceType, resourceId }, '[audit-log] CRITICAL: 감사 로그 저장 실패');
   }
 }
