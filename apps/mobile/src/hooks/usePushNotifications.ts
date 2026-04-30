@@ -15,11 +15,12 @@
  *   - 앱 재시작 시 토큰 갱신되는 경우 있으므로 매 부팅마다 호출 권장
  */
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
+import { displayIncomingMeetingCall, endIncomingCall } from '../services/callkeep';
 
 // expo-notifications를 조건부 require — Expo Go/일부 환경에서 없을 수 있음
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +30,18 @@ try {
   Notifications = require('expo-notifications');
 } catch {
   // 모듈 없으면 noop
+}
+
+// 알림 ID → CallKit UUID 매핑 (거절 시 endIncomingCall 호출용)
+const recentRingUuids = new Map<string, string>();
+
+function generateCallUUID(): string {
+  // RFC 4122 v4 간이 구현
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 export function usePushNotifications() {
@@ -77,6 +90,22 @@ export function usePushNotifications() {
       },
     ]).catch(() => { /* ignore */ });
 
+    // 회의 초대: 잠금화면에서 [수락]/[거절] 버튼 노출
+    // - 수락: 앱 포그라운드 진입 → /meeting/:id
+    // - 거절: 백그라운드에서 단순 dismiss (TODO: 서버에 거절 신호 전송)
+    Notifications.setNotificationCategoryAsync?.('meeting', [
+      {
+        identifier: 'ACCEPT',
+        buttonTitle: '✓ 수락',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'DECLINE',
+        buttonTitle: '✕ 거절',
+        options: { opensAppToForeground: false, isDestructive: true },
+      },
+    ]).catch(() => { /* ignore */ });
+
     // ─── 알림 탭 시 딥링크 ───
     // payload.data.path 가 있으면 router.push, 그 외 typed 변환:
     //   { type: 'approval', id: 'uuid' }       → /approval/:id
@@ -108,6 +137,36 @@ export function usePushNotifications() {
           return null;
       }
     }
+
+    // 메시지 수신 리스너 — 포그라운드에서 회의 초대(ring) 도착 시 CallKit UI 트리거
+    // (백그라운드/lockscreen 은 OS 가 categoryId='meeting' 으로 처리)
+    const receivedSub = Notifications.addNotificationReceivedListener?.(
+      (notification: any) => {
+        const data = notification?.request?.content?.data ?? {};
+        if (data.type !== 'meeting') return;
+        if (data.ring !== '1' && data.ring !== true) return;
+        const meetingId = typeof data.id === 'string' ? data.id : null;
+        if (!meetingId) return;
+
+        // 포그라운드에서만 CallKit 띄움 (백그라운드는 OS 알림이 처리)
+        const appState = AppState.currentState;
+        if (appState !== 'active') return;
+
+        const callerName = typeof data.hostName === 'string' && data.hostName
+          ? data.hostName
+          : '회의 초대';
+        const uuid = generateCallUUID();
+        try {
+          displayIncomingMeetingCall(uuid, meetingId, callerName, true);
+          // 알림 ID 와 UUID 매핑 — 거절 시 endIncomingCall 호출 가능
+          if (typeof data.notificationId === 'string') {
+            recentRingUuids.set(data.notificationId, uuid);
+          }
+        } catch (e) {
+          console.warn('[push] CallKit display failed', e);
+        }
+      },
+    );
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       async (response: any) => {
@@ -148,6 +207,24 @@ export function usePushNotifications() {
               await api.get(`/messenger/rooms/${data.roomId}/messages?limit=1`);
               return;
             }
+            if (actionId === 'ACCEPT' && data.id && data.type === 'meeting') {
+              // 수락: 회의방 진입 (foreground 자동 전환)
+              router.push(`/meeting/${data.id}` as any);
+              return;
+            }
+            if (actionId === 'DECLINE' && data.type === 'meeting') {
+              // 거절: 진행 중인 CallKit UI 종료 + 서버 거절 신호 (베스트-에포트)
+              const notifId = typeof data.notificationId === 'string' ? data.notificationId : null;
+              const uuid = notifId ? recentRingUuids.get(notifId) : undefined;
+              if (uuid) {
+                endIncomingCall(uuid);
+                recentRingUuids.delete(notifId!);
+              }
+              if (data.id) {
+                api.post(`/meeting/${data.id}/decline`, {}).catch(() => { /* 엔드포인트 미구현이어도 무시 */ });
+              }
+              return;
+            }
           } catch (err) {
             console.warn('[push] action failed', actionId, err);
           }
@@ -171,8 +248,13 @@ export function usePushNotifications() {
       if (path) setTimeout(() => router.push(path as any), 500);
     }).catch(() => { /* ignore */ });
 
+    const cleanup = () => {
+      try { responseSub?.remove?.(); } catch { /* ignore */ }
+      try { receivedSub?.remove?.(); } catch { /* ignore */ }
+    };
+
     if (registeredRef.current) {
-      return () => responseSub.remove();
+      return cleanup;
     }
 
     (async () => {
@@ -228,6 +310,6 @@ export function usePushNotifications() {
       }
     })();
 
-    return () => responseSub.remove();
+    return cleanup;
   }, [user]);
 }

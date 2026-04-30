@@ -14,6 +14,7 @@ import { qs, qsOpt } from '../utils/query';
 import { meetingFileFilter } from '../utils/fileFilter';
 import { canViewMeeting, canJoinMeeting } from '../services/meeting.service';
 import { logger } from '../config/logger';
+import { createNotification } from '../services/notification.service';
 import {
   generateMinutes,
   updateMinutes,
@@ -149,7 +150,120 @@ router.post('/', authenticate, validate(meetingSchema), async (req: Request, res
       },
     });
 
+    // 참가자에게 회의 초대 알림 (호스트 본인 제외)
+    // 모바일은 mapToMobilePayload 에서 mobileType='meeting' + id=meetingId 로 받음
+    // → displayIncomingMeetingCall 트리거 가능 (CallKit/ConnectionService)
+    const startsAt = new Date(data.scheduledAt);
+    const startsLabel = startsAt.toLocaleString('ko-KR', {
+      month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    const inviteeIds = (participantIds ?? []) as string[];
+    await Promise.allSettled(
+      inviteeIds
+        .filter((uid) => uid !== req.user!.id)
+        .map((uid) =>
+          createNotification({
+            recipientId: uid,
+            actorId: req.user!.id,
+            type: 'meeting_invited',
+            title: `회의 초대: ${meeting.title}`,
+            body: `${meeting.host.name}님이 회의에 초대했습니다 · ${startsLabel}`,
+            link: `/meeting/${meeting.id}`,
+            refType: 'meeting',
+            refId: meeting.id,
+            meta: {
+              roomCode: meeting.roomCode,
+              scheduledAt: data.scheduledAt,
+              hostName: meeting.host.name,
+            },
+          }),
+        ),
+    );
+
     res.status(201).json({ success: true, data: meeting });
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /meeting/:id/ring - 호스트가 즉시 시작하면 참가자에게 "수신 통화" 알림 발사
+// (모바일에서 CallKit / ConnectionService UI 트리거 — VoIP push 가 아닌 high-priority FCM/APNs 로 동작)
+router.post('/:id/ring', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: qs(req.params.id) },
+      include: {
+        host: { select: { id: true, name: true } },
+        participants: { select: { userId: true } },
+      },
+    });
+    if (!meeting) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+      return;
+    }
+    if (meeting.hostId !== req.user!.id) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '호스트만 호출할 수 있습니다' } });
+      return;
+    }
+
+    const targets = meeting.participants
+      .map((p) => p.userId)
+      .filter((uid) => uid !== req.user!.id);
+
+    await Promise.allSettled(
+      targets.map((uid) =>
+        createNotification({
+          recipientId: uid,
+          actorId: req.user!.id,
+          type: 'meeting_invited',
+          title: `📞 ${meeting.host.name}님의 통화 호출`,
+          body: meeting.title,
+          link: `/meeting/${meeting.id}`,
+          refType: 'meeting',
+          refId: meeting.id,
+          meta: { ring: true, roomCode: meeting.roomCode, hostName: meeting.host.name },
+        }),
+      ),
+    );
+
+    res.json({ success: true, data: { ringedCount: targets.length } });
+  } catch (err) {
+    logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
+    res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });
+  }
+});
+
+// POST /meeting/:id/decline - 참가자가 통화 호출(ring)에 거절. 호스트에게 거절 알림.
+router.post('/:id/decline', authenticate, async (req: Request, res: Response) => {
+  try {
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: qs(req.params.id) },
+      select: { id: true, title: true, hostId: true },
+    });
+    if (!meeting) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
+      return;
+    }
+    // 호스트에게 1회성 거절 알림 (조용히 — 토스트 수준)
+    if (meeting.hostId !== req.user!.id) {
+      const decliner = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { name: true },
+      });
+      await createNotification({
+        recipientId: meeting.hostId,
+        actorId: req.user!.id,
+        type: 'meeting_invited',
+        title: '통화 거절',
+        body: `${decliner?.name ?? '참가자'}님이 ${meeting.title} 호출을 거절했습니다`,
+        link: `/meeting/${meeting.id}`,
+        refType: 'meeting',
+        refId: meeting.id,
+        meta: { declined: true },
+      }).catch(() => { /* 호스트 알림 실패해도 응답은 OK */ });
+    }
+    res.json({ success: true });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
     res.status(500).json({ success: false, error: { code: 'INTERNAL', message: '서버 오류' } });

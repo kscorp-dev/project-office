@@ -121,7 +121,21 @@ export function mapToMobilePayload(input: CreateNotificationInput): {
   }
   // 회의: meeting_invited / meeting_starting_soon / meeting_minutes_ready
   if (t.startsWith('meeting')) {
-    return { mobileType: 'meeting', mobileExtra: { id: input.refId } };
+    // ring 메타가 있으면 즉시 호출(VoIP 스타일) — CallKit/CallKeep 트리거용
+    // hostName 포함 시 모바일 callkeep 화면에서 표시 가능하도록 평탄화
+    const meta = (input.meta ?? {}) as Record<string, unknown>;
+    const isRing = meta.ring === true;
+    const hostName = typeof meta.hostName === 'string' ? meta.hostName : undefined;
+    return {
+      mobileType: 'meeting',
+      mobileExtra: {
+        id: input.refId,
+        ring: isRing ? '1' : undefined,
+        hostName,
+      },
+      // meeting_invited 만 인라인 [수락]/[거절] 버튼 활성화
+      categoryId: t === 'meeting_invited' ? 'meeting' : undefined,
+    };
   }
   // 작업지시서: task_assigned / task_status_changed
   if (t.startsWith('task_')) {

@@ -81,6 +81,39 @@ describe('mapToMobilePayload', () => {
         expect(r.mobileExtra.id).toBe('m-1');
       },
     );
+
+    it('meeting_invited → categoryId=meeting (인라인 수락/거절 버튼)', () => {
+      const r = mapToMobilePayload({
+        recipientId: 'u', type: 'meeting_invited' as any, title: 't', refId: 'm-1',
+      });
+      expect(r.categoryId).toBe('meeting');
+    });
+
+    it('meeting_starting_soon / meeting_minutes_ready → categoryId 없음', () => {
+      for (const t of ['meeting_starting_soon', 'meeting_minutes_ready']) {
+        const r = mapToMobilePayload({
+          recipientId: 'u', type: t as any, title: 't', refId: 'm-1',
+        });
+        expect(r.categoryId).toBeUndefined();
+      }
+    });
+
+    it('meta.ring=true → mobileExtra.ring="1" (VoIP 즉시 호출 신호)', () => {
+      const r = mapToMobilePayload({
+        recipientId: 'u', type: 'meeting_invited' as any, title: 't', refId: 'm-1',
+        meta: { ring: true, hostName: '김부장' } as any,
+      });
+      expect(r.mobileExtra.ring).toBe('1');
+      expect(r.mobileExtra.hostName).toBe('김부장');
+    });
+
+    it('meta 없음 → ring/hostName 모두 undefined', () => {
+      const r = mapToMobilePayload({
+        recipientId: 'u', type: 'meeting_invited' as any, title: 't', refId: 'm-1',
+      });
+      expect(r.mobileExtra.ring).toBeUndefined();
+      expect(r.mobileExtra.hostName).toBeUndefined();
+    });
   });
 
   describe('작업지시서 (task_*)', () => {

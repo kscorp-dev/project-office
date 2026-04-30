@@ -114,6 +114,20 @@ export default function MeetingDetailScreen() {
 
   const handleJoin = () => router.push(`/meeting/${id}/room` as any);
 
+  const handleRing = async () => {
+    if (!isHost) return;
+    setActionLoading(true);
+    try {
+      const { data } = await api.post(`/meeting/${id}/ring`);
+      const count = data?.data?.ringedCount ?? 0;
+      Alert.alert('호출 발신', `${count}명에게 통화 호출을 보냈습니다`);
+    } catch (err: any) {
+      Alert.alert('오류', err?.response?.data?.error?.message || '호출 실패');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleCancel = () => {
     Alert.alert('회의 취소', '회의를 취소하시겠습니까?', [
       { text: '아니오', style: 'cancel' },
@@ -224,6 +238,11 @@ export default function MeetingDetailScreen() {
             {isHost && (
               <TouchableOpacity style={styles.dangerBtn} onPress={handleEnd} disabled={actionLoading}>
                 <Text style={styles.dangerBtnText}>종료</Text>
+              </TouchableOpacity>
+            )}
+            {isHost && (
+              <TouchableOpacity style={styles.secondaryBtn} onPress={handleRing} disabled={actionLoading}>
+                <Text style={styles.secondaryBtnText}>📞 호출</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.primaryBtn} onPress={handleJoin}>
