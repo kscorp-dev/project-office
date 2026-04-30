@@ -7,6 +7,9 @@ import { router } from 'expo-router';
 import { COLORS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import api from '../../src/services/api';
+import { db } from '../../src/offline-db';
+import { mailMessages } from '../../src/offline-db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 interface MailItem {
   uid: string;
@@ -30,26 +33,86 @@ export default function MailScreen() {
   const [accountLinked, setAccountLinked] = useState<boolean | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
 
-  // 계정 연결 여부 확인 → 연결되어 있으면 INBOX 로드
+  // 계정 연결 여부 확인 → 연결되어 있으면 INBOX 로드 (캐시 우선 + 서버 갱신)
   const fetchMessages = useCallback(async (opts: { forceRefresh?: boolean; searchQuery?: string } = {}) => {
     setLoading(true);
     setAccountError(null);
+
+    // 1) 검색이 아닐 때만 캐시 즉시 표시
+    if (!opts.searchQuery) {
+      try {
+        const cached = await db.select()
+          .from(mailMessages)
+          .where(eq(mailMessages.folder, 'INBOX'))
+          .orderBy(desc(mailMessages.sentAt))
+          .limit(30);
+        if (cached.length > 0) {
+          const mapped = cached.map((c): MailItem => ({
+            uid: c.uid,
+            subject: c.subject ?? '',
+            fromEmail: c.fromEmail ?? '',
+            fromName: c.fromName ?? '',
+            snippet: c.snippet ?? '',
+            sentAt: new Date(c.sentAt ?? 0).toISOString(),
+            isSeen: !!c.isSeen,
+            isFlagged: !!c.isFlagged,
+            hasAttachment: !!c.hasAttachment,
+          }));
+          setMails(mapped);
+          setAccountLinked(true);
+        }
+      } catch { /* 캐시 미초기화 시 무시 */ }
+    }
+
+    // 2) 서버 호출
     try {
       const qs = new URLSearchParams({ folder: 'INBOX', limit: '30' });
       if (opts.forceRefresh) qs.set('refresh', '1');
       if (opts.searchQuery) qs.set('search', opts.searchQuery);
       const res = await api.get(`/mail/messages?${qs.toString()}`);
-      setMails(res.data?.data ?? []);
+      const list = (res.data?.data ?? []) as MailItem[];
+      setMails(list);
       setAccountLinked(true);
+
+      // 3) 검색 결과는 캐시 안 함 (정상 INBOX 만)
+      if (!opts.searchQuery && list.length > 0) {
+        db.transaction(async (tx) => {
+          for (const m of list) {
+            await tx.insert(mailMessages).values({
+              uid: m.uid,
+              folder: 'INBOX',
+              subject: m.subject,
+              fromEmail: m.fromEmail,
+              fromName: m.fromName,
+              snippet: m.snippet,
+              isSeen: m.isSeen,
+              isFlagged: m.isFlagged,
+              hasAttachment: m.hasAttachment,
+              sentAt: m.sentAt ? new Date(m.sentAt).getTime() : null,
+              syncedAt: Date.now(),
+            }).onConflictDoUpdate({
+              target: mailMessages.uid,
+              set: {
+                subject: m.subject, fromEmail: m.fromEmail, fromName: m.fromName,
+                snippet: m.snippet, isSeen: m.isSeen, isFlagged: m.isFlagged,
+                hasAttachment: m.hasAttachment,
+                sentAt: m.sentAt ? new Date(m.sentAt).getTime() : null,
+                syncedAt: Date.now(),
+              },
+            });
+          }
+        }).catch(() => { /* ignore */ });
+      }
     } catch (err: any) {
       const code = err.response?.data?.error?.code;
       if (code === 'MAIL_ACCOUNT_NOT_LINKED') {
         setAccountLinked(false);
+        setMails([]);
       } else {
         setAccountError(err.response?.data?.error?.message || '메일 조회 실패');
-        setAccountLinked(true); // UI 상태는 연결은 되어 있지만 오류 상태
+        setAccountLinked(true);
+        // 캐시 데이터 유지 — 서버 실패해도 mails 비우지 않음
       }
-      setMails([]);
     } finally {
       setLoading(false);
     }

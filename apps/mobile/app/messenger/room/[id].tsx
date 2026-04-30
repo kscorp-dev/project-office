@@ -25,6 +25,10 @@ import api from '../../../src/services/api';
 import { useAuthStore } from '../../../src/store/auth';
 import { useMessengerSocket } from '../../../src/hooks/useMessengerSocket';
 import { useChatRooms } from '../../../src/hooks/useChatRooms';
+import { useScreenCaptureBlock } from '../../../src/hooks/useScreenCaptureBlock';
+import { db } from '../../../src/offline-db';
+import { chatMessages } from '../../../src/offline-db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 interface Sender {
   id: string;
@@ -60,6 +64,8 @@ export default function MessengerRoomScreen() {
   const insets = useSafeAreaInsets();
   const { c, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  // 채팅 내용은 민감 — 스크린샷 차단
+  useScreenCaptureBlock();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -75,20 +81,70 @@ export default function MessengerRoomScreen() {
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
 
-  // ── 초기 메시지 로드 ──
+  // ── 초기 메시지 로드 (캐시 우선 + 서버 갱신, P3-A) ──
   const loadInitial = useCallback(async () => {
     if (!roomId) return;
     setLoading(true);
+
+    // 1) SQLite 캐시에서 즉시 표시 (UI 깜빡임 방지)
+    let hadCache = false;
+    try {
+      const cached = await db.select()
+        .from(chatMessages)
+        .where(eq(chatMessages.roomId, roomId))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(50);
+      if (cached.length > 0) {
+        const list: Message[] = cached.reverse().map((r) => ({
+          id: r.id,
+          roomId: r.roomId,
+          senderId: r.senderId ?? '',
+          sender: r.senderName ? { id: r.senderId ?? '', name: r.senderName } : undefined,
+          type: (r.type ?? 'text') as Message['type'],
+          content: r.content ?? '',
+          fileUrl: r.attachmentUrl ?? undefined,
+          createdAt: new Date(r.createdAt ?? 0).toISOString(),
+        }) as any);
+        setMessages(list);
+        hadCache = true;
+        setLoading(false); // 즉시 UI 보여주기
+      }
+    } catch { /* DB 미초기화 시 무시 */ }
+
+    // 2) 서버 호출
     try {
       const res = await api.get(`/messenger/rooms/${roomId}/messages?limit=50`);
       const list = (res.data?.data ?? []) as Message[];
       setMessages(list);
       setHasMore(res.data?.meta?.hasMore ?? false);
       markRoomRead(roomId);
-      // 서버에 읽음 notification
       emit('message:read', { roomId });
+
+      // 3) 캐시 갱신 (비동기, UI 막지 않음)
+      if (list.length > 0) {
+        db.transaction(async (tx) => {
+          for (const m of list) {
+            await tx.insert(chatMessages).values({
+              id: m.id,
+              roomId,
+              senderId: m.senderId ?? null,
+              senderName: m.sender?.name ?? null,
+              type: m.type,
+              content: m.content ?? null,
+              attachmentUrl: (m as any).fileUrl ?? null,
+              createdAt: new Date(m.createdAt).getTime(),
+            }).onConflictDoUpdate({
+              target: chatMessages.id,
+              set: { content: m.content ?? null, attachmentUrl: (m as any).fileUrl ?? null },
+            });
+          }
+        }).catch(() => { /* 캐시 실패 무시 */ });
+      }
     } catch (err: any) {
-      Alert.alert('오류', err.response?.data?.error?.message || '메시지를 불러올 수 없습니다');
+      // 캐시가 있으면 조용히 폴백 (배너로만 알림), 없으면 alert
+      if (!hadCache) {
+        Alert.alert('오류', err.response?.data?.error?.message || '메시지를 불러올 수 없습니다');
+      }
     } finally {
       setLoading(false);
     }

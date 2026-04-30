@@ -27,6 +27,9 @@ import { Stack } from 'expo-router';
 import { useTheme } from '../src/hooks/useTheme';
 import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
+import { db } from '../src/offline-db';
+import { calendarEvents } from '../src/offline-db/schema';
+import { gte, lte, and } from 'drizzle-orm';
 
 interface CalendarEvent {
   id: string;
@@ -65,22 +68,82 @@ export default function CalendarScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
 
-  // 월별 fetch
+  // 월별 fetch — 캐시 우선 + 서버 갱신 (P3-A)
   const fetchEvents = useCallback(async (month: Date) => {
     setLoading(true);
+    const start = new Date(month.getFullYear(), month.getMonth(), 1);
+    start.setDate(start.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    end.setDate(end.getDate() + 7);
+    end.setHours(23, 59, 59, 999);
+
+    // 1) 캐시에서 해당 범위 즉시 로드
     try {
-      const start = new Date(month.getFullYear(), month.getMonth(), 1);
-      start.setDate(start.getDate() - 7);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-      end.setDate(end.getDate() + 7);
-      end.setHours(23, 59, 59, 999);
+      const cached = await db.select()
+        .from(calendarEvents)
+        .where(and(
+          gte(calendarEvents.startAt, start.getTime()),
+          lte(calendarEvents.startAt, end.getTime()),
+        ));
+      if (cached.length > 0) {
+        const mapped = cached.map((c): CalendarEvent => ({
+          id: c.id,
+          title: c.title,
+          startDate: new Date(c.startAt).toISOString(),
+          endDate: new Date(c.endAt ?? c.startAt).toISOString(),
+          allDay: !!c.allDay,
+          location: c.location,
+          color: c.color,
+          category: c.categoryName ? { id: '', name: c.categoryName, color: c.color ?? '#3b82f6' } : null,
+          creator: c.creatorName ? { id: '', name: c.creatorName } : undefined,
+        }));
+        setEvents(mapped);
+      }
+    } catch { /* 캐시 미초기화 시 무시 */ }
+
+    // 2) 서버 호출
+    try {
       const res = await api.get(
         `/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`,
       );
-      setEvents(res.data?.data ?? []);
+      const list = (res.data?.data ?? []) as CalendarEvent[];
+      setEvents(list);
+
+      // 3) 캐시 비동기 저장 (현재 범위만 갱신)
+      if (list.length > 0) {
+        db.transaction(async (tx) => {
+          for (const ev of list) {
+            await tx.insert(calendarEvents).values({
+              id: ev.id,
+              title: ev.title,
+              startAt: new Date(ev.startDate).getTime(),
+              endAt: new Date(ev.endDate).getTime(),
+              allDay: ev.allDay,
+              location: ev.location ?? null,
+              color: ev.color ?? null,
+              categoryName: ev.category?.name ?? null,
+              creatorName: ev.creator?.name ?? null,
+              syncedAt: Date.now(),
+            }).onConflictDoUpdate({
+              target: calendarEvents.id,
+              set: {
+                title: ev.title,
+                startAt: new Date(ev.startDate).getTime(),
+                endAt: new Date(ev.endDate).getTime(),
+                allDay: ev.allDay,
+                location: ev.location ?? null,
+                color: ev.color ?? null,
+                categoryName: ev.category?.name ?? null,
+                creatorName: ev.creator?.name ?? null,
+                syncedAt: Date.now(),
+              },
+            });
+          }
+        }).catch(() => { /* ignore */ });
+      }
     } catch {
-      setEvents([]);
+      // 서버 실패 → 캐시 데이터 유지 (이미 set 됨), events 비우지 않음
     } finally {
       setLoading(false);
     }
