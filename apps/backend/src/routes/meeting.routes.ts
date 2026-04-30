@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import crypto from 'crypto';
 import path from 'path';
@@ -187,9 +188,18 @@ router.post('/', authenticate, validate(meetingSchema), async (req: Request, res
   }
 });
 
+// 회의 호출(ring) 스팸 방지 — 사용자별 분당 6회 (회의 1번에 호스트가 ~10초 간격으로 ring 가능)
+const ringLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 6,
+  message: { success: false, error: { code: 'RATE_LIMITED', message: '통화 호출은 분당 6회까지 가능합니다' } },
+  keyGenerator: (req) => `${req.user?.id ?? 'anon'}:meeting-ring`,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
 // POST /meeting/:id/ring - 호스트가 즉시 시작하면 참가자에게 "수신 통화" 알림 발사
 // (모바일에서 CallKit / ConnectionService UI 트리거 — VoIP push 가 아닌 high-priority FCM/APNs 로 동작)
-router.post('/:id/ring', authenticate, async (req: Request, res: Response) => {
+router.post('/:id/ring', authenticate, ringLimiter, async (req: Request, res: Response) => {
   try {
     const meeting = await prisma.meeting.findUnique({
       where: { id: qs(req.params.id) },
@@ -297,12 +307,16 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    const { scheduledAt, participantIds, ...rest } = req.body;
+    // mass assignment 방지 — 화이트리스트 (hostId/roomCode/createdAt 등 변경 불가)
+    const { title, description, maxParticipants, password, scheduledAt /*, participantIds */ } = req.body as Record<string, unknown>;
     const updated = await prisma.meeting.update({
       where: { id: qs(req.params.id) },
       data: {
-        ...rest,
-        ...(scheduledAt ? { scheduledAt: new Date(scheduledAt) } : {}),
+        ...(title !== undefined ? { title: title as string } : {}),
+        ...(description !== undefined ? { description: description as string | null } : {}),
+        ...(maxParticipants !== undefined ? { maxParticipants: Number(maxParticipants) } : {}),
+        ...(password !== undefined ? { password: password as string | null } : {}),
+        ...(scheduledAt ? { scheduledAt: new Date(scheduledAt as string) } : {}),
       },
     });
 

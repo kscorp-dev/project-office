@@ -66,6 +66,18 @@ router.post('/events', authenticate, validate(eventSchema), async (req: Request,
   try {
     const { attendeeIds, ...data } = req.body;
 
+    // 회사 전사/부서 일정 생성은 관리자만 (일반 사용자가 임의로 회사 캘린더 spam 차단)
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
+    const isDeptAdmin = req.user!.role === 'dept_admin';
+    if (data.scope === 'company' && !isAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '전사 일정은 관리자만 등록할 수 있습니다' } });
+      return;
+    }
+    if (data.scope === 'department' && !isAdmin && !isDeptAdmin) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '부서 일정은 부서/전체 관리자만 등록할 수 있습니다' } });
+      return;
+    }
+
     const event = await prisma.calendarEvent.create({
       data: {
         ...data,
@@ -109,14 +121,41 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
       res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '수정 권한이 없습니다' } }); return;
     }
 
-    const { startDate, endDate, attendeeIds, repeatUntil, ...rest } = req.body;
+    // mass assignment 방지 — 화이트리스트 명시 (id/creatorId/createdAt 등 변경 불가)
+    const {
+      title, description, location, color, categoryId, allDay, scope, departmentId,
+      repeat, exceptionDates,
+      startDate, endDate, attendeeIds, repeatUntil,
+    } = req.body as Record<string, unknown>;
+
+    // scope 격상은 관리자만 (일반 사용자가 personal → company 변경 차단)
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
+    const isDeptAdmin = req.user!.role === 'dept_admin';
+    if (scope !== undefined && scope !== event.scope) {
+      if (scope === 'company' && !isAdmin) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '전사 일정 격상은 관리자만 가능합니다' } });
+        return;
+      }
+      if (scope === 'department' && !isAdmin && !isDeptAdmin) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '부서 일정 격상은 부서/전체 관리자만 가능합니다' } });
+        return;
+      }
+    }
+    // departmentId 변경도 admin/dept_admin 만 (5차 감사 H2 — 본인 부서 → 타 부서 reassign 차단)
+    if (departmentId !== undefined && departmentId !== event.departmentId && !isAdmin && !isDeptAdmin) {
+      res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: '소속 부서 변경은 관리자만 가능합니다' },
+      });
+      return;
+    }
 
     // attendeeIds가 들어오면 기존 참석자 전체 교체
     if (attendeeIds !== undefined && Array.isArray(attendeeIds)) {
       await prisma.eventAttendee.deleteMany({ where: { eventId: qs(req.params.id) } });
       if (attendeeIds.length > 0) {
         await prisma.eventAttendee.createMany({
-          data: attendeeIds.map((userId: string) => ({ eventId: qs(req.params.id), userId })),
+          data: (attendeeIds as string[]).map((userId: string) => ({ eventId: qs(req.params.id), userId })),
         });
       }
     }
@@ -124,11 +163,20 @@ router.patch('/events/:id', authenticate, async (req: Request, res: Response) =>
     const updated = await prisma.calendarEvent.update({
       where: { id: qs(req.params.id) },
       data: {
-        ...rest,
-        ...(startDate ? { startDate: new Date(startDate) } : {}),
-        ...(endDate ? { endDate: new Date(endDate) } : {}),
+        ...(title !== undefined ? { title: title as string } : {}),
+        ...(description !== undefined ? { description: description as string | null } : {}),
+        ...(location !== undefined ? { location: location as string | null } : {}),
+        ...(color !== undefined ? { color: color as string | null } : {}),
+        ...(categoryId !== undefined ? { categoryId: categoryId as string | null } : {}),
+        ...(allDay !== undefined ? { allDay: !!allDay } : {}),
+        ...(scope !== undefined ? { scope: scope as string } : {}),
+        ...(departmentId !== undefined ? { departmentId: departmentId as string | null } : {}),
+        ...(repeat !== undefined ? { repeat: repeat as any } : {}),
+        ...(exceptionDates !== undefined ? { exceptionDates: exceptionDates as string[] } : {}),
+        ...(startDate ? { startDate: new Date(startDate as string) } : {}),
+        ...(endDate ? { endDate: new Date(endDate as string) } : {}),
         ...(repeatUntil !== undefined
-          ? { repeatUntil: repeatUntil ? new Date(repeatUntil) : null }
+          ? { repeatUntil: repeatUntil ? new Date(repeatUntil as string) : null }
           : {}),
       },
     });

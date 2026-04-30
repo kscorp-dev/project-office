@@ -282,13 +282,27 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    const { instructionDate, dueDate, ...rest } = req.body;
+    // mass assignment 방지 — 화이트리스트 (creatorId/taskNumber/createdAt 등 변경 불가)
+    // status 는 PATCH 에서 제외 — POST /:id/status 가 STATUS_TRANSITIONS 검증 후 변경
+    // (PATCH 로 직접 status='final_complete' 같은 우회 차단)
+    // completedAt 도 PATCH 제외 — 정상 완료 흐름에서만 자동 set
+    const {
+      title, description, priority, category,
+      clientId, deliveryAddress, additionalNote,
+      instructionDate, dueDate,
+    } = req.body as Record<string, unknown>;
     const updated = await prisma.taskOrder.update({
       where: { id: qs(req.params.id) },
       data: {
-        ...rest,
-        ...(instructionDate ? { instructionDate: new Date(instructionDate) } : {}),
-        ...(dueDate ? { dueDate: new Date(dueDate) } : {}),
+        ...(title !== undefined ? { title: title as string } : {}),
+        ...(description !== undefined ? { description: description as string | null } : {}),
+        ...(priority !== undefined ? { priority: priority as any } : {}),
+        ...(category !== undefined ? { category: category as string | null } : {}),
+        ...(clientId !== undefined ? { clientId: clientId as string | null } : {}),
+        ...(deliveryAddress !== undefined ? { deliveryAddress: deliveryAddress as any } : {}),
+        ...(additionalNote !== undefined ? { additionalNote: additionalNote as string | null } : {}),
+        ...(instructionDate ? { instructionDate: new Date(instructionDate as string) } : {}),
+        ...(dueDate ? { dueDate: new Date(dueDate as string) } : {}),
       },
     });
 

@@ -49,7 +49,7 @@ router.post('/zones', authenticate, authorize('super_admin', 'admin'), validate(
   }
 });
 
-router.patch('/zones/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
+router.patch('/zones/:id', authenticate, authorize('super_admin', 'admin'), validate(zoneSchema.partial()), async (req: Request, res: Response) => {
   try {
     const zone = await prisma.parkingZone.update({
       where: { id: qs(req.params.id) },

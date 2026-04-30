@@ -195,8 +195,8 @@ router.post('/items', authenticate, authorize('super_admin', 'admin', 'dept_admi
   }
 });
 
-// PATCH /inventory/items/:id - 자재 수정
-router.patch('/items/:id', authenticate, authorize('super_admin', 'admin', 'dept_admin'), async (req: Request, res: Response) => {
+// PATCH /inventory/items/:id - 자재 수정 (mass assignment 방지를 위해 schema 검증)
+router.patch('/items/:id', authenticate, authorize('super_admin', 'admin', 'dept_admin'), validate(itemSchema.partial()), async (req: Request, res: Response) => {
   try {
     const item = await prisma.inventoryItem.update({
       where: { id: qs(req.params.id) },

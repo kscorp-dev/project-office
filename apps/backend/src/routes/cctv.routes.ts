@@ -144,7 +144,7 @@ router.post('/cameras', authenticate, authorize('super_admin', 'admin'), validat
   }
 });
 
-router.patch('/cameras/:id', authenticate, authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
+router.patch('/cameras/:id', authenticate, authorize('super_admin', 'admin'), validate(cameraSchema.partial()), async (req: Request, res: Response) => {
   try {
     const data = { ...req.body };
     if (data.ptzPassword) {
