@@ -20,6 +20,7 @@ import {
   fetchNotifications, markNotificationAsRead, markAllNotificationsAsRead,
   type Notification,
 } from '../src/hooks/useNotifications';
+import { useScreenCaptureBlock } from '../src/hooks/useScreenCaptureBlock';
 
 const TYPE_ICONS: Record<string, string> = {
   approval_pending:      '📝',
@@ -43,6 +44,8 @@ const TYPE_ICONS: Record<string, string> = {
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  // 알림 본문에 결재 제목 / 메일 발신자 / 메시지 일부 노출 → 스크린샷 차단
+  useScreenCaptureBlock();
   const [rows, setRows] = useState<Notification[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);

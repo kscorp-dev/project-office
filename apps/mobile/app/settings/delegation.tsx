@@ -14,6 +14,7 @@ import {
 import { Stack } from 'expo-router';
 import { COLORS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useScreenCaptureBlock } from '../../src/hooks/useScreenCaptureBlock';
 import api from '../../src/services/api';
 
 interface UserBrief {
@@ -40,6 +41,8 @@ interface Delegation {
 export default function DelegationScreen() {
   const { c, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
+  // 위임 정보 (위임자/위임 대상자 개인정보) — 스크린샷 차단
+  useScreenCaptureBlock();
   const [outgoing, setOutgoing] = useState<Delegation[]>([]);
   const [incoming, setIncoming] = useState<Delegation[]>([]);
   const [loading, setLoading] = useState(true);

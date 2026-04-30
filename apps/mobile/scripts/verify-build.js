@@ -142,6 +142,9 @@ const sensitiveScreens = [
   'app/approval/[id].tsx',
   'app/mail/[uid].tsx',
   'app/messenger/room/[id].tsx',
+  'app/notifications.tsx',
+  'app/task-orders/[id].tsx',
+  'app/settings/delegation.tsx',
 ];
 for (const rel of sensitiveScreens) {
   const filePath = path.join(ROOT, rel);

@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { COLORS, SPACING, RADIUS, type SemanticColors } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useAuthStore } from '../../src/store/auth';
+import { useScreenCaptureBlock } from '../../src/hooks/useScreenCaptureBlock';
 import api from '../../src/services/api';
 
 interface UserLite { id: string; name: string; position?: string | null }
@@ -111,6 +112,8 @@ export default function TaskOrderDetailScreen() {
   const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  // 작업지시서는 영업/단가/거래처 정보 포함 — 스크린샷 차단
+  useScreenCaptureBlock();
 
   const [task, setTask] = useState<TaskOrder | null>(null);
   const [loading, setLoading] = useState(false);
