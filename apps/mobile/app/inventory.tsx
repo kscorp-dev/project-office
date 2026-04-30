@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface InvItem {
@@ -16,6 +17,8 @@ interface InvItem {
 }
 
 export default function InventoryScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [items, setItems] = useState<InvItem[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -95,19 +98,19 @@ export default function InventoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   header: { padding: 12, gap: 6 },
-  search: { backgroundColor: COLORS.white, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: COLORS.gray[200] },
-  summary: { fontSize: 12, color: COLORS.gray[500], marginLeft: 4 },
-  empty: { textAlign: 'center', color: COLORS.gray[400], padding: 40 },
-  card: { backgroundColor: COLORS.white, padding: 14, borderRadius: 14, marginBottom: 8 },
+  search: { backgroundColor: c.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: c.border },
+  summary: { fontSize: 12, color: c.textMuted, marginLeft: 4 },
+  empty: { textAlign: 'center', color: c.textSubtle, padding: 40 },
+  card: { backgroundColor: c.surface, padding: 14, borderRadius: 14, marginBottom: 8 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  name: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
-  code: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
+  name: { fontSize: 14, fontWeight: '600', color: c.text },
+  code: { fontSize: 11, color: c.textSubtle, marginTop: 2 },
   stockBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: COLORS.primary[50] },
   stockBadgeLow: { backgroundColor: '#fef2f2' },
   stockText: { fontSize: 14, fontWeight: '700', color: COLORS.primary[700] },
   stockTextLow: { color: '#dc2626' },
-  meta: { fontSize: 11, color: COLORS.gray[500], marginTop: 2 },
+  meta: { fontSize: 11, color: c.textMuted, marginTop: 2 },
 });

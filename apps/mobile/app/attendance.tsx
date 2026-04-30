@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 import AttendanceCheckSheet from '../src/components/AttendanceCheckSheet';
 
@@ -18,6 +19,8 @@ interface AttRecord {
 interface MonthRow { date: string; checkIn?: string | null; checkOut?: string | null; }
 
 export default function AttendanceScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [today, setToday] = useState<{ checkInAt?: string | null; checkOutAt?: string | null } | null>(null);
   const [month, setMonth] = useState<MonthRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -117,22 +120,22 @@ export default function AttendanceScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   content: { padding: 16, paddingBottom: 40 },
-  todayCard: { backgroundColor: COLORS.white, borderRadius: 18, padding: 20 },
-  todayTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: COLORS.gray[800] },
+  todayCard: { backgroundColor: c.surface, borderRadius: 18, padding: 20 },
+  todayTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: c.text },
   todayGrid: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   todayCell: { flex: 1, padding: 14, backgroundColor: COLORS.primary[50], borderRadius: 12, alignItems: 'center' },
-  cellLabel: { fontSize: 12, color: COLORS.gray[500] },
+  cellLabel: { fontSize: 12, color: c.textMuted },
   cellValue: { fontSize: 22, fontWeight: '700', color: COLORS.primary[700], marginTop: 4 },
   btnRow: { flexDirection: 'row', gap: 10 },
   btn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  btnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.gray[600], marginTop: 20, marginBottom: 8 },
-  card: { backgroundColor: COLORS.white, borderRadius: 14, overflow: 'hidden' },
-  empty: { padding: 24, textAlign: 'center', color: COLORS.gray[400] },
-  monthRow: { flexDirection: 'row', padding: 12, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50], gap: 12 },
-  monthDate: { width: 50, fontWeight: '600', color: COLORS.gray[700] },
-  monthTime: { flex: 1, color: COLORS.gray[600], fontSize: 13 },
+  btnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: c.textMuted, marginTop: 20, marginBottom: 8 },
+  card: { backgroundColor: c.surface, borderRadius: 14, overflow: 'hidden' },
+  empty: { padding: 24, textAlign: 'center', color: c.textSubtle },
+  monthRow: { flexDirection: 'row', padding: 12, borderBottomWidth: 1, borderBottomColor: c.divider, gap: 12 },
+  monthDate: { width: 50, fontWeight: '600', color: c.text },
+  monthTime: { flex: 1, color: c.textMuted, fontSize: 13 },
 });

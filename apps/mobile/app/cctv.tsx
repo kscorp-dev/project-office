@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface CameraItem {
@@ -21,6 +22,8 @@ interface CameraGroup {
 }
 
 export default function CCTVScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [groups, setGroups] = useState<CameraGroup[]>([]);
   const [cameras, setCameras] = useState<CameraItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,9 +32,9 @@ export default function CCTVScreen() {
   const fetch = async () => {
     setLoading(true);
     try {
-      const [g, c] = await Promise.all([api.get('/cctv/groups'), api.get('/cctv/cameras')]);
-      setGroups(g.data?.data ?? []);
-      setCameras(c.data?.data ?? []);
+      const [gRes, camRes] = await Promise.all([api.get('/cctv/groups'), api.get('/cctv/cameras')]);
+      setGroups(gRes.data?.data ?? []);
+      setCameras(camRes.data?.data ?? []);
     } catch {
       setGroups([]);
       setCameras([]);
@@ -41,7 +44,7 @@ export default function CCTVScreen() {
   };
   useEffect(() => { fetch(); }, []);
 
-  const ungrouped = cameras.filter((c) => !c.groupId);
+  const ungrouped = cameras.filter((cam) => !cam.groupId);
 
   return (
     <>
@@ -65,7 +68,7 @@ export default function CCTVScreen() {
               <View key={g.id} style={{ marginBottom: 12 }}>
                 <Text style={styles.sectionTitle}>{g.name}</Text>
                 <View style={styles.card}>
-                  {g.cameras.map((cam) => <CameraRow key={cam.id} cam={cam} />)}
+                  {g.cameras.map((cam) => <CameraRow key={cam.id} cam={cam} styles={styles} />)}
                 </View>
               </View>
             ))}
@@ -73,7 +76,7 @@ export default function CCTVScreen() {
               <View>
                 <Text style={styles.sectionTitle}>미분류</Text>
                 <View style={styles.card}>
-                  {ungrouped.map((cam) => <CameraRow key={cam.id} cam={cam} />)}
+                  {ungrouped.map((cam) => <CameraRow key={cam.id} cam={cam} styles={styles} />)}
                 </View>
               </View>
             )}
@@ -84,7 +87,7 @@ export default function CCTVScreen() {
   );
 }
 
-function CameraRow({ cam }: { cam: CameraItem }) {
+function CameraRow({ cam, styles }: { cam: CameraItem; styles: any }) {
   const online = cam.status === 'online';
   return (
     <View style={styles.camRow}>
@@ -98,16 +101,16 @@ function CameraRow({ cam }: { cam: CameraItem }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   centerBox: { padding: 60, alignItems: 'center' },
-  empty: { color: COLORS.gray[400] },
-  hint: { fontSize: 11, color: COLORS.gray[500], backgroundColor: '#fef3c7', padding: 10, borderRadius: 10, marginBottom: 16 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.gray[700], marginBottom: 6 },
-  card: { backgroundColor: COLORS.white, borderRadius: 14, overflow: 'hidden' },
-  camRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50], gap: 10 },
+  empty: { color: c.textSubtle },
+  hint: { fontSize: 11, color: c.textMuted, backgroundColor: '#fef3c7', padding: 10, borderRadius: 10, marginBottom: 16 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: c.text, marginBottom: 6 },
+  card: { backgroundColor: c.surface, borderRadius: 14, overflow: 'hidden' },
+  camRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: c.divider, gap: 10 },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  camName: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
-  camMeta: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
+  camName: { fontSize: 14, fontWeight: '600', color: c.text },
+  camMeta: { fontSize: 11, color: c.textSubtle, marginTop: 2 },
   ptzBadge: { fontSize: 10, fontWeight: '700', color: COLORS.primary[700], backgroundColor: COLORS.primary[50], paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
 });

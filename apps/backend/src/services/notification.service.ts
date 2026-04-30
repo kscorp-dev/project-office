@@ -89,39 +89,53 @@ export async function createNotification(input: CreateNotificationInput): Promis
 /**
  * NotificationType (DB enum) → 모바일이 이해하는 단순 타입 + 인라인 액션 카테고리 매핑.
  * 모바일은 `data.type` 만 봐서 라우팅하므로, 여기서 한 번에 변환.
+ *
+ * 테스트에서 직접 호출 가능하게 export.
  */
-function mapToMobilePayload(input: CreateNotificationInput): {
+export function mapToMobilePayload(input: CreateNotificationInput): {
   mobileType: string;
   mobileExtra: Record<string, string | undefined>;
   categoryId?: string;
 } {
   const t = String(input.type);
-  // 결재 도착·승인·반려·회수 등은 'approval' 로 통합
+  // 결재 도착·승인·반려·회수·참조 — 'approval' 로 통합
   if (t.startsWith('approval')) {
     return {
       mobileType: 'approval',
       mobileExtra: { id: input.refId },
-      // pending 만 인라인 승인/반려 액션 노출 (이미 처리된 건엔 무의미)
+      // pending 만 잠금화면 인라인 승인/반려 액션 노출 (처리된 건엔 무의미)
       categoryId: t === 'approval_pending' ? 'approval' : undefined,
     };
   }
-  if (t === 'message_new' || t === 'message_mention') {
+  // 메신저: message_received / message_mention
+  if (t === 'message_received' || t === 'message_mention') {
     return {
       mobileType: 'message',
       mobileExtra: { roomId: input.refId },
       categoryId: 'message',
     };
   }
-  if (t === 'mail_new' || t.startsWith('mail')) {
+  // 메일: mail_received (백엔드 enum 정확 명칭)
+  if (t === 'mail_received') {
     return { mobileType: 'mail', mobileExtra: { uid: input.refId } };
   }
+  // 회의: meeting_invited / meeting_starting_soon / meeting_minutes_ready
   if (t.startsWith('meeting')) {
     return { mobileType: 'meeting', mobileExtra: { id: input.refId } };
   }
-  if (t.startsWith('calendar')) {
-    return { mobileType: 'calendar', mobileExtra: { id: input.refId } };
+  // 작업지시서: task_assigned / task_status_changed
+  if (t.startsWith('task_')) {
+    return { mobileType: 'task', mobileExtra: { id: input.refId } };
   }
-  // 기본: 원본 type 유지
+  // 휴가
+  if (t.startsWith('vacation')) {
+    return { mobileType: 'vacation', mobileExtra: { id: input.refId } };
+  }
+  // 게시판
+  if (t.startsWith('post')) {
+    return { mobileType: 'post', mobileExtra: { id: input.refId } };
+  }
+  // 기본: 원본 type 유지 — 모바일 측은 fallback 으로 link 사용
   return { mobileType: t, mobileExtra: { id: input.refId } };
 }
 

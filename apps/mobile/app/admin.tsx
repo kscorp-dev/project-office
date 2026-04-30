@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Alert, TouchableOpacity, Platform } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 import { useAuthStore } from '../src/store/auth';
 
@@ -22,6 +23,8 @@ interface ModuleEntry {
 }
 
 export default function AdminScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
   const isSuperAdmin = user?.role === 'super_admin';
@@ -91,10 +94,10 @@ export default function AdminScreen() {
           <>
             {stats && (
               <View style={styles.statGrid}>
-                <StatCell label="전체 사용자" value={stats.totalUsers} />
-                <StatCell label="활성 사용자" value={stats.activeUsers} />
-                <StatCell label="오늘 로그인" value={stats.todayLogins} />
-                <StatCell label="대기중 결재" value={stats.pendingApprovals} />
+                <StatCell styles={styles} label="전체 사용자" value={stats.totalUsers} />
+                <StatCell styles={styles} label="활성 사용자" value={stats.activeUsers} />
+                <StatCell styles={styles} label="오늘 로그인" value={stats.todayLogins} />
+                <StatCell styles={styles} label="대기중 결재" value={stats.pendingApprovals} />
               </View>
             )}
 
@@ -135,7 +138,7 @@ export default function AdminScreen() {
   );
 }
 
-function StatCell({ label, value }: { label: string; value: number }) {
+function StatCell({ label, value, styles }: { label: string; value: number; styles: any }) {
   return (
     <View style={styles.statCell}>
       <Text style={styles.statValue}>{value}</Text>
@@ -144,25 +147,25 @@ function StatCell({ label, value }: { label: string; value: number }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  empty: { color: COLORS.gray[400] },
+  empty: { color: c.textSubtle },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statCell: { width: '47%', backgroundColor: COLORS.white, padding: 16, borderRadius: 14, alignItems: 'center' },
+  statCell: { width: '47%', backgroundColor: c.surface, padding: 16, borderRadius: 14, alignItems: 'center' },
   statValue: { fontSize: 28, fontWeight: '700', color: COLORS.primary[500] },
-  statLabel: { fontSize: 12, color: COLORS.gray[500], marginTop: 4 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.gray[700], marginTop: 20, marginBottom: 6 },
-  hint: { fontSize: 11, color: COLORS.gray[500], marginBottom: 10 },
-  card: { backgroundColor: COLORS.white, borderRadius: 14, overflow: 'hidden' },
-  modRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50], gap: 12 },
+  statLabel: { fontSize: 12, color: c.textMuted, marginTop: 4 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: c.text, marginTop: 20, marginBottom: 6 },
+  hint: { fontSize: 11, color: c.textMuted, marginBottom: 10 },
+  card: { backgroundColor: c.surface, borderRadius: 14, overflow: 'hidden' },
+  modRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: c.divider, gap: 12 },
   modRowLocked: { opacity: 0.55 },
-  modName: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800] },
+  modName: { fontSize: 14, fontWeight: '600', color: c.text },
   modCritical: { color: '#b45309', fontSize: 10 },
-  modId: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 2 },
+  modId: { fontSize: 11, color: c.textSubtle, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginTop: 2 },
   toggle: { width: 44, height: 24, borderRadius: 12, padding: 2 },
   toggleOn: { backgroundColor: '#10b981' },
-  toggleOff: { backgroundColor: COLORS.gray[300] },
-  toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.white },
+  toggleOff: { backgroundColor: c.border },
+  toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#ffffff' },
   toggleKnobOn: { transform: [{ translateX: 20 }] },
 });

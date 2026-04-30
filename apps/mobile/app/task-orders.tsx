@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Platform } from 'react-native';
-import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { Stack, router } from 'expo-router';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface TaskOrder {
@@ -36,6 +37,8 @@ const PRIO_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 export default function TaskOrdersScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [box, setBox] = useState<'all' | 'sent' | 'received'>('all');
   const [items, setItems] = useState<TaskOrder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,7 +87,12 @@ export default function TaskOrdersScreen() {
               const st = STATUS_LABEL[t.status] ?? STATUS_LABEL.draft;
               const pr = PRIO_LABEL[t.priority] ?? PRIO_LABEL.normal;
               return (
-                <TouchableOpacity key={t.id} style={styles.card}>
+                <TouchableOpacity
+                  key={t.id}
+                  style={styles.card}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/task-orders/${t.id}` as any)}
+                >
                   <View style={styles.cardHeader}>
                     <Text style={styles.taskNumber}>{t.taskNumber}</Text>
                     <View style={[styles.pill, { backgroundColor: st.color + '22' }]}>
@@ -111,20 +119,20 @@ export default function TaskOrdersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   tabs: { flexDirection: 'row', padding: 12, gap: 6 },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.gray[200] },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border },
   tabActive: { backgroundColor: COLORS.primary[500], borderColor: COLORS.primary[500] },
-  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.gray[500] },
-  tabTextActive: { color: COLORS.white },
-  empty: { textAlign: 'center', color: COLORS.gray[400], padding: 40 },
-  card: { backgroundColor: COLORS.white, padding: 14, borderRadius: 14, marginBottom: 10 },
+  tabText: { fontSize: 13, fontWeight: '600', color: c.textMuted },
+  tabTextActive: { color: '#ffffff' },
+  empty: { textAlign: 'center', color: c.textSubtle, padding: 40 },
+  card: { backgroundColor: c.surface, padding: 14, borderRadius: 14, marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  taskNumber: { fontSize: 11, color: COLORS.gray[400], fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  title: { fontSize: 15, fontWeight: '600', color: COLORS.gray[800], marginBottom: 8 },
+  taskNumber: { fontSize: 11, color: c.textSubtle, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  title: { fontSize: 15, fontWeight: '600', color: c.text, marginBottom: 8 },
   metaRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   pillText: { fontSize: 10, fontWeight: '700' },
-  meta: { fontSize: 11, color: COLORS.gray[500] },
+  meta: { fontSize: 11, color: c.textMuted },
 });

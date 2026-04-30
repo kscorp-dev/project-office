@@ -76,6 +76,7 @@ export default function RootLayout() {
             <Stack.Screen name="meeting/[id]/room" options={{ headerShown: false, animation: 'slide_from_bottom' }} />
             <Stack.Screen name="messenger/room/[id]" options={{ headerShown: true, ...headerOpts }} />
             <Stack.Screen name="approval/[id]" options={{ headerShown: true, ...headerOpts }} />
+            <Stack.Screen name="task-orders/[id]" options={{ headerShown: true, ...headerOpts }} />
             <Stack.Screen name="notifications" options={{ headerShown: true, title: '알림', ...headerOpts }} />
             <Stack.Screen name="settings/calendar-sync" options={{ headerShown: true, title: '외부 캘린더 연동', ...headerOpts }} />
           </Stack>

@@ -90,10 +90,22 @@ export function usePushNotifications() {
       switch (data.type) {
         case 'approval': return data.id ? `/approval/${data.id}` : null;
         case 'message':  return data.roomId ? `/messenger/room/${data.roomId}` : null;
-        case 'mail':    return '/mail';
+        case 'mail':     return '/mail';
         case 'meeting':  return data.id ? `/meeting/${data.id}` : null;
         case 'calendar': return '/calendar';
-        default: return null;
+        case 'task':     return data.id ? `/task-orders/${data.id}` : '/task-orders';
+        case 'vacation': return '/attendance';
+        case 'post':     return '/board';
+        default:
+          // 호환: 백엔드가 보내는 link 필드를 fallback 으로
+          if (typeof data.link === 'string' && data.link.startsWith('/')) {
+            // 웹 link 는 '/approval/documents/:id' 형태일 수 있음 → 모바일 라우트로 변환
+            const link = data.link as string;
+            const m = link.match(/^\/approval\/documents\/([\w-]+)/);
+            if (m) return `/approval/${m[1]}`;
+            return link.startsWith('/') ? link : null;
+          }
+          return null;
       }
     }
 

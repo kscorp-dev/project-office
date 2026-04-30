@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface CalendarEvent {
@@ -17,6 +18,8 @@ interface CalendarEvent {
 }
 
 export default function CalendarScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,15 +105,15 @@ export default function CalendarScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   content: { padding: 16, paddingBottom: 40 },
   centerBox: { padding: 60, alignItems: 'center' },
-  empty: { color: COLORS.gray[400] },
-  dayHeader: { fontSize: 13, fontWeight: '700', color: COLORS.gray[700], marginBottom: 6 },
-  eventCard: { backgroundColor: COLORS.white, padding: 12, borderRadius: 12, marginBottom: 6, borderLeftWidth: 4 },
+  empty: { color: c.textSubtle },
+  dayHeader: { fontSize: 13, fontWeight: '700', color: c.text, marginBottom: 6 },
+  eventCard: { backgroundColor: c.surface, padding: 12, borderRadius: 12, marginBottom: 6, borderLeftWidth: 4 },
   eventHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  eventTitle: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800], flex: 1 },
-  eventTime: { fontSize: 12, color: COLORS.gray[500], marginLeft: 8 },
-  eventMeta: { fontSize: 11, color: COLORS.gray[400], marginTop: 3 },
+  eventTitle: { fontSize: 14, fontWeight: '600', color: c.text, flex: 1 },
+  eventTime: { fontSize: 12, color: c.textMuted, marginLeft: 8 },
+  eventMeta: { fontSize: 11, color: c.textSubtle, marginTop: 3 },
 });

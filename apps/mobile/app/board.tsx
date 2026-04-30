@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface Board {
@@ -23,6 +24,8 @@ interface Post {
 }
 
 export default function BoardScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [boards, setBoards] = useState<Board[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
@@ -113,17 +116,17 @@ export default function BoardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   tabs: { maxHeight: 52, paddingVertical: 10 },
-  tab: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: COLORS.white, borderRadius: 20, borderWidth: 1, borderColor: COLORS.gray[200] },
+  tab: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.surface, borderRadius: 20, borderWidth: 1, borderColor: c.border },
   tabActive: { backgroundColor: COLORS.primary[500], borderColor: COLORS.primary[500] },
-  tabText: { fontSize: 13, color: COLORS.gray[600], fontWeight: '600' },
-  tabTextActive: { color: COLORS.white },
+  tabText: { fontSize: 13, color: c.textMuted, fontWeight: '600' },
+  tabTextActive: { color: '#ffffff' },
   centerBox: { padding: 60, alignItems: 'center' },
-  empty: { color: COLORS.gray[400] },
-  postRow: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50], gap: 8 },
+  empty: { color: c.textSubtle },
+  postRow: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.divider, gap: 8 },
   pin: { fontSize: 14 },
-  postTitle: { fontSize: 14, fontWeight: '600', color: COLORS.gray[800], marginBottom: 4 },
-  postMeta: { fontSize: 11, color: COLORS.gray[400] },
+  postTitle: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 4 },
+  postMeta: { fontSize: 11, color: c.textSubtle },
 });

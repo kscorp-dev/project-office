@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl, Platform } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import api from '../src/services/api';
 
 interface ParkingEvent {
@@ -21,6 +22,8 @@ interface Stats {
 }
 
 export default function ParkingScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -59,10 +62,10 @@ export default function ParkingScreen() {
           <>
             {/* 통계 */}
             <View style={styles.statGrid}>
-              <StatCell label="현재 주차" value={stats.currentParked} color={COLORS.primary[500]} />
-              <StatCell label="오늘 입차" value={stats.todayEntries} color="#10b981" />
-              <StatCell label="오늘 출차" value={stats.todayExits} color="#f97316" />
-              <StatCell label="구역 수" value={stats.totalZones} color={COLORS.gray[500]} />
+              <StatCell styles={styles} label="현재 주차" value={stats.currentParked} color={COLORS.primary[500]} />
+              <StatCell styles={styles} label="오늘 입차" value={stats.todayEntries} color="#10b981" />
+              <StatCell styles={styles} label="오늘 출차" value={stats.todayExits} color="#f97316" />
+              <StatCell styles={styles} label="구역 수" value={stats.totalZones} color={c.textSubtle} />
             </View>
 
             <Text style={styles.sectionTitle}>최근 이벤트</Text>
@@ -90,7 +93,7 @@ export default function ParkingScreen() {
   );
 }
 
-function StatCell({ label, value, color }: { label: string; value: number; color: string }) {
+function StatCell({ label, value, color, styles }: { label: string; value: number; color: string; styles: any }) {
   return (
     <View style={styles.statCell}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
@@ -99,21 +102,21 @@ function StatCell({ label, value, color }: { label: string; value: number; color
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   content: { padding: 16, paddingBottom: 40 },
   centerBox: { padding: 60, alignItems: 'center' },
-  empty: { color: COLORS.gray[400], textAlign: 'center', padding: 20 },
+  empty: { color: c.textSubtle, textAlign: 'center', padding: 20 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statCell: { width: '47%', backgroundColor: COLORS.white, padding: 16, borderRadius: 14, alignItems: 'center' },
+  statCell: { width: '47%', backgroundColor: c.surface, padding: 16, borderRadius: 14, alignItems: 'center' },
   statValue: { fontSize: 28, fontWeight: '700' },
-  statLabel: { fontSize: 12, color: COLORS.gray[500], marginTop: 4 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.gray[600], marginTop: 20, marginBottom: 8 },
-  card: { backgroundColor: COLORS.white, borderRadius: 14, overflow: 'hidden' },
-  eventRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50], gap: 12 },
+  statLabel: { fontSize: 12, color: c.textMuted, marginTop: 4 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: c.textMuted, marginTop: 20, marginBottom: 8 },
+  card: { backgroundColor: c.surface, borderRadius: 14, overflow: 'hidden' },
+  eventRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: c.divider, gap: 12 },
   typePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 11, fontWeight: '700' },
   typeIn: { backgroundColor: '#d1fae5', color: '#047857' },
   typeOut: { backgroundColor: '#fed7aa', color: '#c2410c' },
-  plate: { fontSize: 14, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: COLORS.gray[800] },
-  eventMeta: { fontSize: 11, color: COLORS.gray[400], marginTop: 2 },
+  plate: { fontSize: 14, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: c.text },
+  eventMeta: { fontSize: 11, color: c.textSubtle, marginTop: 2 },
 });

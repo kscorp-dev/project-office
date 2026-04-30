@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
-import { COLORS } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
+import { COLORS, type SemanticColors } from '../src/constants/theme';
 import { useAuthStore } from '../src/store/auth';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -12,6 +14,8 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function ProfileScreen() {
+  const { c, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(c, isDark), [c, isDark]);
   const user = useAuthStore((s) => s.user);
 
   return (
@@ -29,17 +33,17 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.infoCard}>
-          <InfoRow label="사번" value={user?.employeeId} />
-          <InfoRow label="이메일" value={user?.email} />
-          <InfoRow label="역할" value={user?.role ? ROLE_LABEL[user.role] ?? user.role : '-'} />
-          <InfoRow label="상태" value={user?.status || '-'} />
+          <InfoRow styles={styles} label="사번" value={user?.employeeId} />
+          <InfoRow styles={styles} label="이메일" value={user?.email} />
+          <InfoRow styles={styles} label="역할" value={user?.role ? ROLE_LABEL[user.role] ?? user.role : '-'} />
+          <InfoRow styles={styles} label="상태" value={user?.status || '-'} />
         </View>
       </ScrollView>
     </>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+function InfoRow({ label, value, styles }: { label: string; value?: string | null; styles: any }) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -48,15 +52,15 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  card: { backgroundColor: COLORS.white, borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 12 },
+const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  card: { backgroundColor: c.surface, borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 12 },
   avatarBig: { width: 80, height: 80, borderRadius: 20, backgroundColor: COLORS.primary[500], justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   avatarBigText: { color: COLORS.white, fontSize: 32, fontWeight: '700' },
-  name: { fontSize: 18, fontWeight: '700', color: COLORS.gray[800] },
-  position: { fontSize: 13, color: COLORS.gray[500], marginTop: 4 },
-  infoCard: { backgroundColor: COLORS.white, borderRadius: 16, overflow: 'hidden' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', padding: 14, borderBottomWidth: 1, borderBottomColor: COLORS.gray[50] },
-  rowLabel: { color: COLORS.gray[500], fontSize: 13 },
-  rowValue: { color: COLORS.gray[800], fontSize: 13, fontWeight: '500' },
+  name: { fontSize: 18, fontWeight: '700', color: c.text },
+  position: { fontSize: 13, color: c.textMuted, marginTop: 4 },
+  infoCard: { backgroundColor: c.surface, borderRadius: 16, overflow: 'hidden' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', padding: 14, borderBottomWidth: 1, borderBottomColor: c.divider },
+  rowLabel: { color: c.textMuted, fontSize: 13 },
+  rowValue: { color: c.text, fontSize: 13, fontWeight: '500' },
 });
