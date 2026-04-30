@@ -163,8 +163,27 @@ export function setupMeetingSocket(io: SocketIOServer) {
       }
     });
 
+    // ────── 권한 헬퍼 ──────
+    // 보낸 사용자(socket)가 데이터의 meetingId 룸에 속해있는지 + target 소켓도 같은 룸인지.
+    // WebRTC offer/answer/ice 는 client-to-client 라 룸 외 socket ID 로 임의 emit 시
+    // 다른 회의 참가자의 RTC 상태를 오염시킬 수 있음 (audit C1).
+    function senderInRoom(): string | null {
+      const mid = socket.data.meetingId as string | undefined;
+      if (!mid) return null;
+      const room = rooms.get(mid);
+      if (!room || !room.has(socket.id)) return null;
+      return mid;
+    }
+    function targetInSameRoom(targetSocketId: string): boolean {
+      const mid = senderInRoom();
+      if (!mid) return false;
+      const room = rooms.get(mid);
+      return !!room && room.has(targetSocketId);
+    }
+
     // ────── WebRTC SDP Offer ──────
     socket.on('meeting:offer', (data: { to: string; sdp: unknown }) => {
+      if (!targetInSameRoom(data.to)) return; // 같은 회의 참가자만 RTC 협상 가능
       socket.to(data.to).emit('meeting:offer', {
         from: socket.id,
         sdp: data.sdp,
@@ -173,6 +192,7 @@ export function setupMeetingSocket(io: SocketIOServer) {
 
     // ────── WebRTC SDP Answer ──────
     socket.on('meeting:answer', (data: { to: string; sdp: unknown }) => {
+      if (!targetInSameRoom(data.to)) return;
       socket.to(data.to).emit('meeting:answer', {
         from: socket.id,
         sdp: data.sdp,
@@ -181,6 +201,7 @@ export function setupMeetingSocket(io: SocketIOServer) {
 
     // ────── WebRTC ICE Candidate ──────
     socket.on('meeting:ice-candidate', (data: { to: string; candidate: unknown }) => {
+      if (!targetInSameRoom(data.to)) return;
       socket.to(data.to).emit('meeting:ice-candidate', {
         from: socket.id,
         candidate: data.candidate,
@@ -207,6 +228,9 @@ export function setupMeetingSocket(io: SocketIOServer) {
 
     // ────── 화면 공유 시작/중지 ──────
     socket.on('meeting:screen-share', (data: { meetingId: string; isSharing: boolean }) => {
+      // 본인이 해당 회의의 참가자일 때만 broadcast (외부 socket 이 임의 회의에 spam 방지)
+      const room = rooms.get(data.meetingId);
+      if (!room || !room.has(socket.id)) return;
       socket.to(data.meetingId).emit('meeting:screen-share', {
         socketId: socket.id,
         userId,
@@ -271,11 +295,15 @@ export function setupMeetingSocket(io: SocketIOServer) {
 
     // ────── 문서 공유 알림 (REST 업로드 후 호출) ──────
     socket.on('meeting:share-document', (data: { meetingId: string; document: unknown }) => {
+      const room = rooms.get(data.meetingId);
+      if (!room || !room.has(socket.id)) return;
       socket.to(data.meetingId).emit('meeting:document-shared', data.document);
     });
 
     // ────── 문서 삭제 알림 ──────
     socket.on('meeting:remove-document', (data: { meetingId: string; documentId: string }) => {
+      const room = rooms.get(data.meetingId);
+      if (!room || !room.has(socket.id)) return;
       socket.to(data.meetingId).emit('meeting:document-removed', { documentId: data.documentId });
     });
 

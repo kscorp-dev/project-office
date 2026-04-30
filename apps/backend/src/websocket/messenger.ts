@@ -84,24 +84,44 @@ export function setupMessengerSocket(io: SocketIOServer) {
       }
     });
 
-    // 읽음 처리
+    // 읽음 처리 — 본인이 활성 참가자인 룸만 처리 (audit C3)
     socket.on('message:read', async (data: { roomId: string }) => {
       try {
-        await prisma.chatParticipant.update({
-          where: { roomId_userId: { roomId: data.roomId, userId } },
+        // updateMany + 명시적 leftAt: null 조건으로 비참가/탈퇴 사용자가 임의 룸의 lastReadAt 변경 차단
+        const result = await prisma.chatParticipant.updateMany({
+          where: { roomId: data.roomId, userId, leftAt: null },
           data: { lastReadAt: new Date() },
         });
-
+        if (result.count === 0) return; // 비참가자였음 — 브로드캐스트도 차단
         messenger.to(data.roomId).emit('message:read', { userId, roomId: data.roomId });
       } catch {}
     });
 
-    // 타이핑 표시
-    socket.on('typing:start', (data: { roomId: string }) => {
+    // 타이핑 — 본인이 활성 참가자인 룸만 broadcast 허용 (audit C3)
+    //   in-memory 캐시 없이 DB 조회는 매 keystroke 마다 부담 → 첫 접근 시 검사하고
+    //   socket.data 에 멤버십 set 캐시. 룸 leave/추가 시 socket.io adapter 가 갱신해줘야 하나
+    //   여기서는 단순화 — 1분 TTL 캐시.
+    const TYPING_MEMBERSHIP_TTL_MS = 60_000;
+    const membership = new Map<string, number>(); // roomId → expiresAt
+    async function isActiveMember(roomId: string): Promise<boolean> {
+      const exp = membership.get(roomId);
+      if (exp && Date.now() < exp) return true;
+      const found = await prisma.chatParticipant.findFirst({
+        where: { roomId, userId, leftAt: null },
+        select: { id: true },
+      });
+      if (found) {
+        membership.set(roomId, Date.now() + TYPING_MEMBERSHIP_TTL_MS);
+        return true;
+      }
+      return false;
+    }
+    socket.on('typing:start', async (data: { roomId: string }) => {
+      if (!(await isActiveMember(data.roomId))) return;
       socket.to(data.roomId).emit('typing:start', { userId, roomId: data.roomId });
     });
-
-    socket.on('typing:stop', (data: { roomId: string }) => {
+    socket.on('typing:stop', async (data: { roomId: string }) => {
+      if (!(await isActiveMember(data.roomId))) return;
       socket.to(data.roomId).emit('typing:stop', { userId, roomId: data.roomId });
     });
 

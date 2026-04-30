@@ -156,4 +156,18 @@ describe('POST /meeting/:id/decline', () => {
       .set('Authorization', `Bearer ${tokenFor(alice)}`);
     expect(res.status).toBe(404);
   });
+
+  it('회의 참가자 아닌 외부인이 decline 시도 → 403 (2차 감사 C2)', async () => {
+    const res = await request(app)
+      .post(`/meeting/${meetingId}/decline`)
+      .set('Authorization', `Bearer ${tokenFor(outsider)}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+
+    // 호스트에게 알림 안 갔는지 확인 (스팸 차단)
+    const notifs = await prisma.notification.findMany({
+      where: { recipientId: host.id, refId: meetingId },
+    });
+    expect(notifs).toHaveLength(0);
+  });
 });

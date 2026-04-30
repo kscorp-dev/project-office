@@ -239,14 +239,24 @@ router.post('/:id/decline', authenticate, async (req: Request, res: Response) =>
   try {
     const meeting = await prisma.meeting.findUnique({
       where: { id: qs(req.params.id) },
-      select: { id: true, title: true, hostId: true },
+      select: {
+        id: true, title: true, hostId: true,
+        participants: { select: { userId: true } },
+      },
     });
     if (!meeting) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '회의를 찾을 수 없습니다' } });
       return;
     }
+    // 권한 검증 — 회의 참가자 또는 호스트만 decline 가능 (외부인이 호스트 스팸하는 것 차단)
+    const isHost = meeting.hostId === req.user!.id;
+    const isParticipant = meeting.participants.some((p) => p.userId === req.user!.id);
+    if (!isHost && !isParticipant) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '회의 참가자만 거절할 수 있습니다' } });
+      return;
+    }
     // 호스트에게 1회성 거절 알림 (조용히 — 토스트 수준)
-    if (meeting.hostId !== req.user!.id) {
+    if (!isHost) {
       const decliner = await prisma.user.findUnique({
         where: { id: req.user!.id },
         select: { name: true },
