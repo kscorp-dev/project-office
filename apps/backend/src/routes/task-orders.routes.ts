@@ -195,6 +195,15 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
+    // 권한: 작성자 / 배정자 / 관리자만 (영업·단가·거래처 IDOR 차단)
+    const isAdmin = ['super_admin', 'admin'].includes(req.user!.role);
+    const isCreator = task.creatorId === req.user!.id;
+    const isAssignee = task.assignees.some((a) => a.userId === req.user!.id);
+    if (!isAdmin && !isCreator && !isAssignee) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '이 작업지시서를 조회할 권한이 없습니다' } });
+      return;
+    }
+
     res.json({ success: true, data: task });
   } catch (err) {
     logger.warn({ err, path: req.path, method: req.method }, 'Internal error');
@@ -382,11 +391,24 @@ router.post('/:id/status', authenticate, async (req: Request, res: Response) => 
 // POST /task-orders/:id/comments - 코멘트 추가
 router.post('/:id/comments', authenticate, async (req: Request, res: Response) => {
   try {
+    const taskId = qs(req.params.id);
+    // 권한: 작성자/배정자/관리자만 댓글 작성 가능 (IDOR 방지)
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
+    const content = String(req.body?.content ?? '').trim();
+    if (!content) {
+      res.status(400).json({ success: false, error: { code: 'CONTENT_REQUIRED', message: '내용을 입력하세요' } });
+      return;
+    }
     const comment = await prisma.taskComment.create({
       data: {
-        taskId: qs(req.params.id),
+        taskId,
         userId: req.user!.id,
-        content: req.body.content,
+        content: content.slice(0, 5000),
       },
       include: { user: { select: { id: true, name: true } } },
     });
@@ -400,8 +422,16 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response) =
 // PATCH /task-orders/:id/checklist/:checkId - 체크리스트 토글
 router.patch('/:id/checklist/:checkId', authenticate, async (req: Request, res: Response) => {
   try {
+    const taskId = qs(req.params.id);
+    // 권한: 작성자/배정자/관리자만 체크리스트 토글 가능
+    const access = await canAccessTask(taskId, req.user!.id, req.user!.role);
+    if (!access.ok) {
+      const status = access.reason === 'NOT_FOUND' ? 404 : 403;
+      res.status(status).json({ success: false, error: { code: access.reason, message: '접근 권한이 없습니다' } });
+      return;
+    }
     const item = await prisma.taskChecklist.findUnique({ where: { id: qs(req.params.checkId) } });
-    if (!item) {
+    if (!item || item.taskId !== taskId) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '체크리스트 항목을 찾을 수 없습니다' } });
       return;
     }
