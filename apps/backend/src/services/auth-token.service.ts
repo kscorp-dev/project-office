@@ -130,10 +130,9 @@ export async function verifyInvite(token: string): Promise<{
 /**
  * 초대 수락 — 토큰 + 비밀번호로 사용자 계정 활성화
  */
-export async function acceptInvite(
-  token: string,
-  password: string,
-): Promise<{ userId: string; email: string }> {
+/** 비밀번호 정책 — register/changePassword 와 동일 (audit 7차 M2 — 일관성) */
+const PASSWORD_COMPLEXITY = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*])/;
+function validatePasswordStrength(password: string): void {
   if (password.length < config.password.minLength || password.length > config.password.maxLength) {
     throw new AppError(
       400,
@@ -141,6 +140,20 @@ export async function acceptInvite(
       `비밀번호는 ${config.password.minLength}~${config.password.maxLength}자여야 합니다`,
     );
   }
+  if (!PASSWORD_COMPLEXITY.test(password)) {
+    throw new AppError(
+      400,
+      'WEAK_PASSWORD',
+      '비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다',
+    );
+  }
+}
+
+export async function acceptInvite(
+  token: string,
+  password: string,
+): Promise<{ userId: string; email: string }> {
+  validatePasswordStrength(password);
 
   const record = await prisma.authToken.findUnique({ where: { token } });
   if (!record || record.type !== 'invite') {
@@ -252,16 +265,7 @@ export async function resetPasswordWithToken(
   token: string,
   newPassword: string,
 ): Promise<{ userId: string }> {
-  if (
-    newPassword.length < config.password.minLength ||
-    newPassword.length > config.password.maxLength
-  ) {
-    throw new AppError(
-      400,
-      'INVALID_PASSWORD',
-      `비밀번호는 ${config.password.minLength}~${config.password.maxLength}자여야 합니다`,
-    );
-  }
+  validatePasswordStrength(newPassword);
 
   const record = await prisma.authToken.findUnique({ where: { token } });
   if (!record || record.type !== 'password_reset') {

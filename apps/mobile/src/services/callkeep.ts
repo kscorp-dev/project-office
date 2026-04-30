@@ -20,8 +20,34 @@ type CallKeepModule = typeof import('react-native-callkeep').default;
 let CallKeep: CallKeepModule | null = null;
 let ready = false;
 
-// UUID → meetingId 매핑. answerCall 이벤트에서 원 meetingId 복원용
-const uuidToMeeting = new Map<string, string>();
+// UUID → meetingId 매핑. answerCall 이벤트에서 원 meetingId 복원용.
+// 5분 TTL 자동 정리 — 사용자가 응답/거절 안 하고 push 만 누적되는 경우 메모리 누수 방지 (audit 7차 M1)
+interface UuidEntry { meetingId: string; expiresAt: number }
+const uuidToMeeting = new Map<string, UuidEntry>();
+const UUID_TTL_MS = 5 * 60_000;
+const MAX_PENDING_UUIDS = 50;
+
+function pruneUuids(): void {
+  const now = Date.now();
+  for (const [uuid, entry] of uuidToMeeting.entries()) {
+    if (entry.expiresAt < now) uuidToMeeting.delete(uuid);
+  }
+  // 그래도 cap 초과면 가장 오래된 것 우선 제거
+  if (uuidToMeeting.size > MAX_PENDING_UUIDS) {
+    const sorted = Array.from(uuidToMeeting.entries())
+      .sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    while (uuidToMeeting.size > MAX_PENDING_UUIDS) {
+      const next = sorted.shift();
+      if (!next) break;
+      uuidToMeeting.delete(next[0]);
+    }
+  }
+}
+
+/** 외부(usePushNotifications hook 등) 에서 사용자 변경 시 호출 — 이전 사용자의 pending call 정리 */
+export function clearPendingCalls(): void {
+  uuidToMeeting.clear();
+}
 
 function safeLoadCallKeep(): CallKeepModule | null {
   if (CallKeep) return CallKeep;
@@ -67,11 +93,11 @@ export async function setupCallKeep(): Promise<void> {
     });
 
     ck.addEventListener('answerCall', ({ callUUID }: { callUUID: string }) => {
-      const meetingId = uuidToMeeting.get(callUUID);
+      const entry = uuidToMeeting.get(callUUID);
       uuidToMeeting.delete(callUUID);
-      console.info('[CallKeep] answerCall', { callUUID, meetingId });
-      if (meetingId) {
-        router.push(`/meeting/${meetingId}` as any);
+      console.info('[CallKeep] answerCall', { callUUID, meetingId: entry?.meetingId });
+      if (entry?.meetingId) {
+        router.push(`/meeting/${entry.meetingId}` as any);
       }
     });
 
@@ -115,7 +141,8 @@ export function displayIncomingMeetingCall(
     console.info('[CallKeep] 모듈 없음 — 인앱 알림으로 폴백 필요');
     return;
   }
-  uuidToMeeting.set(uuid, meetingId);
+  pruneUuids();
+  uuidToMeeting.set(uuid, { meetingId, expiresAt: Date.now() + UUID_TTL_MS });
 
   if (Platform.OS === 'ios') {
     ck.displayIncomingCall(uuid, callerName, callerName, 'generic', hasVideo);

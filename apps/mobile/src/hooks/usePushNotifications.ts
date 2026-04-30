@@ -32,8 +32,28 @@ try {
   // 모듈 없으면 noop
 }
 
-// 알림 ID → CallKit UUID 매핑 (거절 시 endIncomingCall 호출용)
-const recentRingUuids = new Map<string, string>();
+// 알림 ID → CallKit UUID 매핑 (거절 시 endIncomingCall 호출용).
+// 5분 TTL — 응답 없는 ring 누적 방지 (audit 7차 M3)
+interface RingEntry { uuid: string; expiresAt: number }
+const recentRingUuids = new Map<string, RingEntry>();
+const RING_TTL_MS = 5 * 60_000;
+const MAX_PENDING_RINGS = 50;
+
+function pruneRings() {
+  const now = Date.now();
+  for (const [k, e] of recentRingUuids.entries()) {
+    if (e.expiresAt < now) recentRingUuids.delete(k);
+  }
+  if (recentRingUuids.size > MAX_PENDING_RINGS) {
+    const sorted = Array.from(recentRingUuids.entries())
+      .sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    while (recentRingUuids.size > MAX_PENDING_RINGS) {
+      const next = sorted.shift();
+      if (!next) break;
+      recentRingUuids.delete(next[0]);
+    }
+  }
+}
 
 function generateCallUUID(): string {
   // RFC 4122 v4 간이 구현
@@ -160,7 +180,8 @@ export function usePushNotifications() {
           displayIncomingMeetingCall(uuid, meetingId, callerName, true);
           // 알림 ID 와 UUID 매핑 — 거절 시 endIncomingCall 호출 가능
           if (typeof data.notificationId === 'string') {
-            recentRingUuids.set(data.notificationId, uuid);
+            pruneRings();
+            recentRingUuids.set(data.notificationId, { uuid, expiresAt: Date.now() + RING_TTL_MS });
           }
         } catch (e) {
           console.warn('[push] CallKit display failed', e);
@@ -215,9 +236,9 @@ export function usePushNotifications() {
             if (actionId === 'DECLINE' && data.type === 'meeting') {
               // 거절: 진행 중인 CallKit UI 종료 + 서버 거절 신호 (베스트-에포트)
               const notifId = typeof data.notificationId === 'string' ? data.notificationId : null;
-              const uuid = notifId ? recentRingUuids.get(notifId) : undefined;
-              if (uuid) {
-                endIncomingCall(uuid);
+              const entry = notifId ? recentRingUuids.get(notifId) : undefined;
+              if (entry) {
+                endIncomingCall(entry.uuid);
                 recentRingUuids.delete(notifId!);
               }
               if (data.id) {

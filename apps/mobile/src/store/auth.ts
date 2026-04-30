@@ -110,6 +110,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       clearOfflineDb().catch(() => { /* ignore */ });
     } catch { /* offline-db 미초기화 환경 */ }
 
+    // CallKit pending 통화 정리 — 이전 사용자의 ring 응답을 다른 사용자가 받지 않게 (audit 7차 M3)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { clearPendingCalls } = require('../services/callkeep');
+      clearPendingCalls();
+    } catch { /* callkeep 미존재 환경 */ }
+
     set({ user: null, accessToken: null, refreshToken: null });
   },
 
