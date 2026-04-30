@@ -49,6 +49,23 @@ export async function createDelegation(input: CreateDelegationInput) {
     throw new AppError(400, 'TARGET_INACTIVE', '비활성 사용자에게는 위임할 수 없습니다');
   }
 
+  // 같은 from→to 활성 위임에 시간 겹침이 있으면 차단 (감사 로그 어지러움 방지)
+  // 겹침 조건: 새 [start, end] 와 기존 [s, e] 가 교차
+  //   기존.startDate <= 새.endDate AND 기존.endDate >= 새.startDate
+  const overlapping = await prisma.approvalDelegation.findFirst({
+    where: {
+      fromUserId: input.fromUserId,
+      toUserId: input.toUserId,
+      isActive: true,
+      startDate: { lte: input.endDate },
+      endDate: { gte: input.startDate },
+    },
+  });
+  if (overlapping) {
+    throw new AppError(409, 'DUPLICATE_DELEGATION',
+      '이미 같은 대상에게 겹치는 기간의 활성 위임이 존재합니다');
+  }
+
   return prisma.approvalDelegation.create({
     data: {
       fromUserId: input.fromUserId,

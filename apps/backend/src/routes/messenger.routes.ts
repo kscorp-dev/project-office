@@ -14,6 +14,7 @@ import { AppError } from '../services/auth.service';
 import { qs, qsOpt } from '../utils/query';
 import { messengerFileFilter } from '../utils/fileFilter';
 import { logger } from '../config/logger';
+import { createNotification } from '../services/notification.service';
 
 const router = Router();
 router.use(checkModule('messenger'));
@@ -553,10 +554,17 @@ router.post(
         res.status(400).json({ success: false, error: { code: 'NOT_GROUP', message: '1:1 채팅에는 멤버를 추가할 수 없습니다' } });
         return;
       }
-      // 권한: 활성 멤버만 추가 가능
+      // 권한: 방장 또는 admin 만 멤버 추가 가능 (DELETE 와 정책 일치 — H5)
+      //   - 일반 멤버는 외부인을 임의로 초대할 수 없음
       const requester = room.participants.find((p) => p.userId === req.user!.id && !p.leftAt);
+      const isCreator = room.creatorId === req.user!.id;
+      const isAdmin = ['admin', 'super_admin'].includes(req.user!.role);
       if (!requester) {
-        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '참가자만 멤버를 추가할 수 있습니다' } });
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '참가자가 아닙니다' } });
+        return;
+      }
+      if (!isCreator && !isAdmin) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: '방장만 멤버를 추가할 수 있습니다' } });
         return;
       }
 
@@ -629,6 +637,23 @@ router.post(
           roomId, addedUserIds: toAdd, byUserId: req.user!.id,
         });
       }
+
+      // 새로 추가된 사용자에게 푸시 알림 (오프라인 상태에서도 채팅에 초대됐음을 인지) — H3
+      const roomTitle = room.name ?? '그룹 채팅';
+      await Promise.allSettled(
+        toAdd.map((uid) =>
+          createNotification({
+            recipientId: uid,
+            actorId: req.user!.id,
+            type: 'message_received',
+            title: `${roomTitle}`,
+            body: `${adderName}님이 회원님을 그룹 대화에 초대했습니다`,
+            link: `/messenger/room/${roomId}`,
+            refType: 'messenger_room',
+            refId: roomId,
+          }),
+        ),
+      );
 
       res.json({
         success: true,

@@ -169,6 +169,34 @@ describe('POST /messenger/rooms/:id/members', () => {
     expect(res.status).toBe(403);
   });
 
+  it('일반 멤버(방장 아님) 가 추가 시도 → 403 (방장만 초대 가능, H5)', async () => {
+    const res = await request(app)
+      .post(`/messenger/rooms/${groupRoomId}/members`)
+      .set('Authorization', `Bearer ${tokenFor(alice)}`) // alice 는 멤버지만 방장 아님
+      .send({ userIds: [bob.id] });
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toContain('방장만');
+  });
+
+  it('새 멤버 추가 시 알림 자동 발사 (H3)', async () => {
+    // 추가 전 bob 의 알림 0개
+    await prisma.notification.deleteMany({ where: { recipientId: bob.id } });
+
+    const res = await request(app)
+      .post(`/messenger/rooms/${groupRoomId}/members`)
+      .set('Authorization', `Bearer ${tokenFor(creator)}`)
+      .send({ userIds: [bob.id] });
+    expect(res.status).toBe(200);
+
+    const notifs = await prisma.notification.findMany({ where: { recipientId: bob.id } });
+    expect(notifs).toHaveLength(1);
+    expect(notifs[0].type).toBe('message_received');
+    expect(notifs[0].refId).toBe(groupRoomId);
+    expect(notifs[0].body).toContain('초대했습니다');
+
+    await prisma.notification.deleteMany({ where: { recipientId: bob.id } });
+  });
+
   it('떠난 사용자 재추가 → leftAt=null 로 복원', async () => {
     // alice 가 떠남
     await prisma.chatParticipant.updateMany({

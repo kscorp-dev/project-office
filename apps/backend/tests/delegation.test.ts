@@ -131,6 +131,58 @@ describe('POST /approvals/delegations', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('PAST_RANGE');
   });
+
+  it('같은 from→to 기간 겹침 활성 위임 → 409 DUPLICATE_DELEGATION (H6)', async () => {
+    // 첫 위임 생성
+    const dlg1 = await prisma.approvalDelegation.create({
+      data: {
+        fromUserId: alice.id,
+        toUserId: bob.id,
+        startDate: new Date(Date.now() + 60_000),
+        endDate: new Date(Date.now() + 86400_000 * 7),
+        isActive: true,
+      },
+    });
+    dlgIds.push(dlg1.id);
+
+    // 두 번째 — 기간 겹침 → 차단되어야 함
+    const res = await request(app)
+      .post('/approvals/delegations')
+      .set('Authorization', `Bearer ${tokenFor(alice)}`)
+      .send({
+        toUserId: bob.id,
+        startDate: new Date(Date.now() + 86400_000).toISOString(),
+        endDate: new Date(Date.now() + 86400_000 * 14).toISOString(),
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('DUPLICATE_DELEGATION');
+  });
+
+  it('비활성 위임은 중복 검사에서 제외됨', async () => {
+    // 비활성 위임 1건
+    const dlg1 = await prisma.approvalDelegation.create({
+      data: {
+        fromUserId: alice.id,
+        toUserId: bob.id,
+        startDate: new Date(Date.now() + 60_000),
+        endDate: new Date(Date.now() + 86400_000 * 7),
+        isActive: false, // ← 비활성
+      },
+    });
+    dlgIds.push(dlg1.id);
+
+    // 같은 기간 새 활성 위임 → 허용 (비활성이므로)
+    const res = await request(app)
+      .post('/approvals/delegations')
+      .set('Authorization', `Bearer ${tokenFor(alice)}`)
+      .send({
+        toUserId: bob.id,
+        startDate: new Date(Date.now() + 86400_000).toISOString(),
+        endDate: new Date(Date.now() + 86400_000 * 5).toISOString(),
+      });
+    expect(res.status).toBe(201);
+    dlgIds.push(res.body.data.id);
+  });
 });
 
 describe('GET /approvals/delegations', () => {
