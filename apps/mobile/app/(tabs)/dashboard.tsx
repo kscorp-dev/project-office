@@ -19,6 +19,17 @@ const QUICK_MENU = [
   { key: 'meeting',  label: '화상회의', emoji: '🎥',  route: '/meeting' },
 ];
 
+interface DashboardSummary {
+  pendingApprovals: number;
+  delegatedPendingApprovals: number;
+  unreadMessages: number;
+  unreadNotifications: number;
+  todayEvents: number;
+  myActiveTasks: number;
+  attendance: { checkedIn: boolean; checkInAt: string | null };
+  delegations: Array<{ fromUserId: string; fromUserName: string }>;
+}
+
 export default function DashboardScreen() {
   const { user } = useAuthStore();
   const { c, isDark } = useTheme();
@@ -26,22 +37,26 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { unreadCount } = useNotifications();
   const [today, setToday] = useState<{ checkIn?: any; checkOut?: any } | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [checkSheet, setCheckSheet] = useState<{ open: boolean; type: 'check_in' | 'check_out' } | null>(null);
 
-  const fetchToday = useCallback(async () => {
-    try {
-      const res = await api.get('/attendance/today');
-      setToday(res.data?.data ?? null);
-    } catch { /* ignore */ }
+  const fetchAll = useCallback(async () => {
+    // 통합 stats + 상세 attendance 를 병렬 호출 (round-trip 절감)
+    const [todayRes, summaryRes] = await Promise.allSettled([
+      api.get('/attendance/today'),
+      api.get('/dashboard/summary'),
+    ]);
+    if (todayRes.status === 'fulfilled') setToday(todayRes.value.data?.data ?? null);
+    if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value.data?.data ?? null);
   }, []);
 
-  useEffect(() => { fetchToday(); }, [fetchToday]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchToday();
+    await fetchAll();
     setRefreshing(false);
-  }, [fetchToday]);
+  }, [fetchAll]);
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? '좋은 아침이에요' : now.getHours() < 18 ? '좋은 오후에요' : '좋은 저녁이에요';
@@ -79,20 +94,70 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 오늘 요약 */}
+      {/* 오늘 요약 — 4개 카드 (실데이터) */}
       <View style={styles.summaryRow}>
         {[
-          { label: '일정', value: '0건', color: COLORS.primary[500] },
-          { label: '메일', value: '2건', color: COLORS.info },
-          { label: '결재', value: '0건', color: COLORS.warning },
-          { label: '작업', value: '0건', color: c.textMuted },
+          {
+            key: 'event',
+            label: '일정',
+            value: summary?.todayEvents ?? 0,
+            color: COLORS.primary[500],
+            route: '/calendar',
+          },
+          {
+            key: 'msg',
+            label: '메시지',
+            value: summary?.unreadMessages ?? 0,
+            color: COLORS.info,
+            route: '/(tabs)/messenger',
+          },
+          {
+            key: 'approval',
+            label: '결재',
+            value: (summary?.pendingApprovals ?? 0) + (summary?.delegatedPendingApprovals ?? 0),
+            color: COLORS.warning,
+            route: '/(tabs)/approval',
+          },
+          {
+            key: 'task',
+            label: '작업',
+            value: summary?.myActiveTasks ?? 0,
+            color: c.textMuted,
+            route: '/task-orders',
+          },
         ].map((s) => (
-          <View key={s.label} style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: s.color }]}>{s.value}</Text>
+          <TouchableOpacity
+            key={s.key}
+            onPress={() => router.push(s.route as any)}
+            activeOpacity={0.7}
+            style={styles.summaryItem}
+          >
+            <Text style={[styles.summaryValue, { color: s.color }]}>{s.value}건</Text>
             <Text style={styles.summaryLabel}>{s.label}</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
+
+      {/* 위임 받은 결재 알림 (있을 때만) */}
+      {summary && summary.delegations.length > 0 && (
+        <TouchableOpacity
+          style={styles.delegationBanner}
+          onPress={() => router.push('/(tabs)/approval' as any)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.delegationIcon}>🔁</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.delegationTitle}>
+              {summary.delegations.map((d) => d.fromUserName).join(', ')}님으로부터 결재 위임 받음
+            </Text>
+            {summary.delegatedPendingApprovals > 0 && (
+              <Text style={styles.delegationSub}>
+                위임받은 대기 결재 {summary.delegatedPendingApprovals}건
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* 바로가기 */}
       <Text style={styles.sectionTitle}>바로가기</Text>
@@ -149,7 +214,7 @@ export default function DashboardScreen() {
           visible={checkSheet.open}
           type={checkSheet.type}
           onClose={() => setCheckSheet(null)}
-          onSuccess={() => { fetchToday(); setCheckSheet(null); }}
+          onSuccess={() => { fetchAll(); setCheckSheet(null); }}
         />
       )}
 
@@ -204,6 +269,16 @@ const makeStyles = (c: SemanticColors, isDark: boolean) => StyleSheet.create({
   },
   summaryValue: { fontSize: 18, fontWeight: '700' },
   summaryLabel: { fontSize: 11, color: c.textMuted, marginTop: 4 },
+
+  delegationBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: isDark ? '#3a2a08' : '#fef3c7',
+    borderRadius: 14, padding: 14, marginBottom: 20,
+    borderWidth: 1, borderColor: isDark ? '#5a4112' : '#fcd34d',
+  },
+  delegationIcon: { fontSize: 22 },
+  delegationTitle: { fontSize: 13, fontWeight: '600', color: isDark ? '#fbbf24' : '#92400e' },
+  delegationSub: { fontSize: 11, color: isDark ? '#d4a44a' : '#a16207', marginTop: 2 },
 
   sectionTitle: {
     fontSize: 16, fontWeight: '700', color: c.text, marginBottom: 12,

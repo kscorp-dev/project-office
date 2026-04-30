@@ -36,6 +36,8 @@ import notificationRoutes from './routes/notification.routes';
 import holidayRoutes from './routes/holiday.routes';
 import calendarSyncRoutes from './routes/calendar-sync.routes';
 import modulesRoutes from './routes/modules.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import delegationRoutes from './routes/delegation.routes';
 
 // WebSocket handlers
 import { setupMessengerSocket } from './websocket/messenger';
@@ -119,6 +121,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/approvals/delegations', delegationRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/messenger', messengerRoutes);
 app.use('/api/cctv', cctvRoutes);
@@ -137,6 +140,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/calendar-sync', calendarSyncRoutes);
 app.use('/api/modules', modulesRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // 404 Handler
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
